@@ -76,6 +76,24 @@ program
   });
 
 program
+  .command("reconcile")
+  .argument("<workspace>", "Workspace directory")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, options: { json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const result = await runtime.reconcileWorkspace();
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(`Reconcile status: ${result.status}`);
+    console.log(`Reconciled at: ${result.reconciledAt}`);
+    console.log(`Events: ${result.events.length}`);
+  });
+
+program
   .command("serve")
   .argument("<workspace>", "Workspace directory")
   .option("--host <host>", "Host to bind", "127.0.0.1")

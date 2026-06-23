@@ -243,6 +243,110 @@ describe("WorkspaceRuntime", () => {
     await runtime.deleteNode({ path: "Archive/Note.md" });
     await expect(fs.stat(path.join(root, "Archive", "Note.md"))).rejects.toThrow();
   });
+
+  it("reconciles external page edits as page.changed events", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Idea.md"), "# Idea", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+    const events: RumiEventEnvelope[] = [];
+    const unsubscribe = runtime.events.subscribe((event) => {
+      events.push(event);
+    });
+
+    await fs.writeFile(path.join(root, "Idea.md"), "# Updated externally", "utf8");
+    const result = await runtime.reconcileWorkspace();
+    unsubscribe();
+
+    expect(result.events).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: {
+        name: "page.changed",
+        path: "Idea.md",
+        changedBy: "filesystem",
+        affects: ["body", "frontmatter"]
+      }
+    });
+  });
+
+  it("reconciles external page add and delete operations", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+
+    await fs.writeFile(path.join(root, "New.md"), "# New", "utf8");
+    const added = await runtime.reconcileWorkspace();
+    expect(added.events).toMatchObject([
+      {
+        name: "page.changed",
+        path: "New.md",
+        changedBy: "filesystem",
+        affects: ["tree", "body", "frontmatter"]
+      },
+      {
+        name: "workspace.treeChanged",
+        affects: ["tree"]
+      }
+    ]);
+
+    await fs.rm(path.join(root, "New.md"));
+    const removed = await runtime.reconcileWorkspace();
+    expect(removed.events).toMatchObject([
+      {
+        name: "page.deleted",
+        path: "New.md",
+        affects: ["tree"]
+      },
+      {
+        name: "workspace.treeChanged",
+        affects: ["tree"]
+      }
+    ]);
+  });
+
+  it("reconciles atomic write style replacement as a page edit", async () => {
+    const root = await tempWorkspace();
+    const filePath = path.join(root, "Idea.md");
+    await fs.writeFile(filePath, "# Idea", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+
+    const replacementPath = path.join(root, ".Idea.md.tmp");
+    await fs.writeFile(replacementPath, "# Atomic update", "utf8");
+    await fs.rename(replacementPath, filePath);
+    const result = await runtime.reconcileWorkspace();
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      name: "page.changed",
+      path: "Idea.md",
+      changedBy: "filesystem"
+    });
+  });
+
+  it("reconciles likely external file moves by fingerprint", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Old.md"), "# Same content", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+
+    await fs.rename(path.join(root, "Old.md"), path.join(root, "New.md"));
+    const result = await runtime.reconcileWorkspace();
+
+    expect(result.events).toMatchObject([
+      {
+        name: "page.moved",
+        previousPath: "Old.md",
+        path: "New.md",
+        affects: ["tree"]
+      },
+      {
+        name: "workspace.treeChanged",
+        affects: ["tree"]
+      }
+    ]);
+  });
 });
 
 async function tempWorkspace(): Promise<string> {

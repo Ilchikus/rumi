@@ -70,3 +70,16 @@ The first client behavior is invalidation/refetch:
 - Always refresh the tree on `page.changed`.
 - If the changed page is open and the editor is clean, refetch the page.
 - If the changed page is open and the editor is dirty, keep the local draft and show a conflict/refresh notice.
+
+## Watcher Reconciliation
+
+The server starts a runtime-owned filesystem watcher for the served workspace. Raw watcher events are debounced and reconciled against an in-memory workspace snapshot before anything is published.
+
+Watcher-originated events use the same event names as runtime commands:
+
+- External page content edits publish `page.changed` with `changedBy: "filesystem"`.
+- External page creates publish `page.changed` and `workspace.treeChanged`.
+- External page deletes publish `page.deleted` and `workspace.treeChanged`.
+- Likely external file moves are matched by unique content fingerprint and publish `page.moved` plus `workspace.treeChanged`.
+
+The current watcher snapshot is in-memory only. Persistent index updates remain part of the later SQLite/index slice.

@@ -31,6 +31,7 @@ export type RumiLogLevel = "silent" | "fatal" | "error" | "warn" | "info" | "deb
 
 export async function createRumiServer(options: CreateRumiServerOptions): Promise<StartedRumiServer> {
   const runtime = await WorkspaceRuntime.open({ rootPath: options.workspacePath });
+  await runtime.startWatchingWorkspace();
   const server = Fastify({
     logger:
       options.logLevel === "silent"
@@ -61,6 +62,10 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
         message: error.message
       }
     });
+  });
+
+  server.addHook("onClose", async () => {
+    await runtime.stopWatchingWorkspace();
   });
 
   server.get("/api/workspace", async (request) => {

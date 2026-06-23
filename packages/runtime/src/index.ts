@@ -29,6 +29,7 @@ import {
   isHiddenFromTree,
   normalizeWorkspacePath
 } from "@rumi/workspace-format";
+import { WorkspaceWatcher, type WorkspaceReconcileResult } from "./watcher";
 
 export interface WorkspaceRuntimeOptions {
   rootPath: string;
@@ -71,6 +72,7 @@ export class WorkspaceRuntime {
   readonly rootPath: string;
   readonly name: string;
   readonly events = new RuntimeEventBus();
+  private workspaceWatcher: WorkspaceWatcher | null = null;
 
   private constructor(rootPath: string) {
     this.rootPath = rootPath;
@@ -274,6 +276,21 @@ export class WorkspaceRuntime {
     };
   }
 
+  async reconcileWorkspace(): Promise<WorkspaceReconcileResult> {
+    const watcher = await this.getWorkspaceWatcher();
+    return watcher.reconcile();
+  }
+
+  async startWatchingWorkspace(): Promise<void> {
+    const watcher = await this.getWorkspaceWatcher();
+    await watcher.start();
+  }
+
+  async stopWatchingWorkspace(): Promise<void> {
+    await this.workspaceWatcher?.stop();
+    this.workspaceWatcher = null;
+  }
+
   private async readDirectoryTree(relPath: string): Promise<WorkspaceNode> {
     const absolutePath = this.resolveAbsolutePath(relPath);
     const entries = await fs.readdir(absolutePath, { withFileTypes: true });
@@ -382,6 +399,21 @@ export class WorkspaceRuntime {
     for (const event of result.events) {
       this.events.publish(event);
     }
+  }
+
+  private async getWorkspaceWatcher(): Promise<WorkspaceWatcher> {
+    if (!this.workspaceWatcher) {
+      this.workspaceWatcher = await WorkspaceWatcher.create({
+        rootPath: this.rootPath,
+        onEvents: (events) => {
+          for (const event of events) {
+            this.events.publish(event);
+          }
+        }
+      });
+    }
+
+    return this.workspaceWatcher;
   }
 }
 

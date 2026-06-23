@@ -1,5 +1,5 @@
 ---
-status: idea
+status: active
 order: 5
 areas:
   - watcher
@@ -9,7 +9,7 @@ depends_on:
   - M01
   - M02
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-06-23"
 ---
 # M05 Watcher Index Reconciliation
 
@@ -25,6 +25,10 @@ Make external file edits safe and visible.
 - Normalized events.
 - `rumi reconcile`.
 - `rumi index`.
+
+## Progress
+
+The first watcher slice is implemented as server-side debounced reconciliation against an in-memory snapshot. It emits normalized events for external edits, creates, deletes, and likely moves. SQLite index updates and persistent reconciliation memory are still pending.
 
 ## Exit Criteria
 

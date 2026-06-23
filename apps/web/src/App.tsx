@@ -3,10 +3,10 @@ import type { ReactElement } from "react";
 import { SidebarSimple } from "@phosphor-icons/react";
 import { RumiApiClient } from "@rumi/api-client";
 import type { PageDocument, RumiEvent, SavePageResult, WorkspaceNode } from "@rumi/contracts";
+import { LightProseMirrorEditor, type LightProseMirrorEditorHandle } from "./components/editor/LightProseMirrorEditor";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
-import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
 
 type LoadState = "idle" | "loading" | "error";
@@ -36,6 +36,7 @@ export function App(): ReactElement {
   const draftBodyRef = useRef("");
   const saveStateRef = useRef<SaveState>("idle");
   const selectionRef = useRef<SidebarSelection | null>(null);
+  const editorRef = useRef<LightProseMirrorEditorHandle | null>(null);
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
 
@@ -73,6 +74,8 @@ export function App(): ReactElement {
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  const getCurrentDraftBody = useCallback(() => editorRef.current?.getMarkdown() ?? draftBodyRef.current, []);
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(getViewportWidth());
@@ -298,9 +301,10 @@ export function App(): ReactElement {
             setSelection({ nodePath: nextNodePath, openPath: null, kind: currentSelection.kind });
             setSaveState("idle");
           } else if (wasDirty && currentPage && currentSelection.openPath) {
+            const currentDraftBody = getCurrentDraftBody();
             const nextPagePath = replacePathPrefix(currentPage.path, node.path, result.path);
-            setPage({ ...currentPage, path: nextPagePath, markdownBody: draftBodyRef.current });
-            setDraftBody(draftBodyRef.current);
+            setPage({ ...currentPage, path: nextPagePath, markdownBody: currentDraftBody });
+            setDraftBody(currentDraftBody);
             setSelection({ nodePath: nextNodePath, openPath: nextPagePath, kind: pageKindToNodeKind(currentPage.kind) });
             setSaveState("dirty");
           } else {
@@ -327,7 +331,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, loadTree]
+    [api, getCurrentDraftBody, loadTree]
   );
 
   const savePage = useCallback(async () => {
@@ -338,12 +342,14 @@ export function App(): ReactElement {
     setSaveState("saving");
     setMessage("");
 
+    const markdownBody = getCurrentDraftBody();
+
     try {
       const result: SavePageResult = await api.savePage({
         path: page.path,
         baseVersion: page.version,
         frontmatter: page.frontmatter,
-        markdownBody: draftBody,
+        markdownBody,
         reason: "manual-save"
       });
 
@@ -355,10 +361,12 @@ export function App(): ReactElement {
 
       setPage({
         ...page,
-        markdownBody: draftBody,
+        markdownBody,
         version: result.version,
         contentHash: result.contentHash
       });
+      editorRef.current?.markClean(markdownBody);
+      setDraftBody(markdownBody);
       setSaveState("saved");
       setMessage("Saved");
       await loadTree();
@@ -366,7 +374,7 @@ export function App(): ReactElement {
       setSaveState("error");
       setMessage(errorMessage(error));
     }
-  }, [api, draftBody, loadTree, page]);
+  }, [api, getCurrentDraftBody, loadTree, page]);
 
   const reloadPage = useCallback(async () => {
     if (page) {
@@ -447,7 +455,12 @@ export function App(): ReactElement {
             : nextNodePath;
 
       if (saveStateRef.current === "dirty") {
+        const currentDraftBody = getCurrentDraftBody();
         setSelection({ ...currentSelection, nodePath: nextNodePath, openPath: nextOpenTarget });
+        setPage((currentPage) =>
+          currentPage ? { ...currentPage, path: nextOpenTarget, markdownBody: currentDraftBody } : currentPage
+        );
+        setDraftBody(currentDraftBody);
         setSaveState("conflict");
         setMessage("This page moved elsewhere while it had local edits.");
         return;
@@ -464,7 +477,7 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [api, loadTree]
+    [api, getCurrentDraftBody, loadTree]
   );
 
   const handleDeletedEvent = useCallback(
@@ -609,19 +622,20 @@ export function App(): ReactElement {
               <p className="mt-3 text-xs text-muted-foreground">version {page.version.slice(0, 10)}</p>
             </section>
 
-            <label className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+            <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
               <span className="text-xs font-semibold uppercase text-muted-foreground">Markdown body</span>
-              <Textarea
-                value={draftBody}
-                spellCheck
-                className="min-h-[55vh] font-mono"
-                onChange={(event) => {
-                  setDraftBody(event.target.value);
+              <div className="min-h-[55vh] overflow-auto rounded-md border border-input bg-background">
+                <LightProseMirrorEditor
+                  ref={editorRef}
+                  documentKey={page.path}
+                  markdown={draftBody}
+                  onDirty={() => {
                   setSaveState("dirty");
                   setMessage("");
                 }}
-              />
-            </label>
+                />
+              </div>
+            </section>
           </div>
         ) : (
           <div className="grid place-items-center p-8 text-muted-foreground">

@@ -5,11 +5,12 @@ areas:
   - assets
   - search
   - web
+  - editor
 depends_on:
   - M05
   - M06
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-06-23"
 ---
 # M07 Assets Search Polish
 
@@ -23,6 +24,7 @@ Add the next layer of workspace quality after core runtime, editor, and database
 - Asset reference indexing.
 - Search over title/path/frontmatter/body.
 - Basic search ranking.
+- Official Rumi block editor preset.
 - UI polish around common workflows.
 
 ## Exit Criteria

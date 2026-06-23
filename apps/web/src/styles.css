@@ -42,3 +42,95 @@
     font: inherit;
   }
 }
+
+@layer components {
+  .rumi-prosemirror {
+    min-height: 55vh;
+    padding: 1.5rem;
+    outline: none;
+    color: hsl(var(--foreground));
+    line-height: 1.7;
+  }
+
+  .rumi-prosemirror:focus {
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.16) inset;
+  }
+
+  .rumi-prosemirror > * + * {
+    margin-top: 0.75rem;
+  }
+
+  .rumi-prosemirror p {
+    margin: 0;
+  }
+
+  .rumi-prosemirror h1,
+  .rumi-prosemirror h2,
+  .rumi-prosemirror h3,
+  .rumi-prosemirror h4,
+  .rumi-prosemirror h5,
+  .rumi-prosemirror h6 {
+    margin: 1.25rem 0 0;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .rumi-prosemirror h1 {
+    font-size: 1.75rem;
+  }
+
+  .rumi-prosemirror h2 {
+    font-size: 1.4rem;
+  }
+
+  .rumi-prosemirror h3 {
+    font-size: 1.2rem;
+  }
+
+  .rumi-prosemirror ul,
+  .rumi-prosemirror ol {
+    margin: 0.75rem 0 0;
+    padding-left: 1.5rem;
+  }
+
+  .rumi-prosemirror li + li {
+    margin-top: 0.25rem;
+  }
+
+  .rumi-prosemirror blockquote {
+    margin: 0.9rem 0 0;
+    border-left: 3px solid hsl(var(--border));
+    padding-left: 1rem;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .rumi-prosemirror pre {
+    overflow: auto;
+    border-radius: 0.375rem;
+    background: hsl(var(--muted));
+    padding: 0.85rem 1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .rumi-prosemirror :not(pre) > code {
+    border-radius: 0.25rem;
+    background: hsl(var(--muted));
+    padding: 0.08rem 0.25rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.9em;
+  }
+
+  .rumi-prosemirror a {
+    color: hsl(var(--foreground));
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  .rumi-prosemirror hr {
+    margin: 1.5rem 0 0;
+    border: 0;
+    border-top: 1px solid hsl(var(--border));
+  }
+}

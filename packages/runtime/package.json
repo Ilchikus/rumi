@@ -1,0 +1,14 @@
+{
+  "name": "@rumi/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@rumi/contracts": "workspace:*",
+    "@rumi/markdown": "workspace:*",
+    "@rumi/workspace-format": "workspace:*"
+  }
+}

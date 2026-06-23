@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@rumi/contracts": ["packages/contracts/src/index.ts"],
+      "@rumi/api-client": ["packages/api-client/src/index.ts"],
+      "@rumi/markdown": ["packages/markdown/src/index.ts"],
+      "@rumi/runtime": ["packages/runtime/src/index.ts"],
+      "@rumi/workspace-format": ["packages/workspace-format/src/index.ts"],
+      "@rumi/server": ["apps/server/src/server.ts"]
+    }
+  }
+}

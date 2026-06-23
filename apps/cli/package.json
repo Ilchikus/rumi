@@ -1,0 +1,14 @@
+{
+  "name": "@rumi/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "rumi": "./src/index.ts"
+  },
+  "dependencies": {
+    "@rumi/runtime": "workspace:*",
+    "@rumi/server": "workspace:*",
+    "commander": "^12.1.0"
+  }
+}

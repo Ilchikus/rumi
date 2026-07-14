@@ -139,3 +139,20 @@ export interface ApiErrorResponse {
     message: string;
   };
 }
+
+export type AuthMode = "none" | "password";
+
+export interface AuthUser {
+  username: string;
+}
+
+export interface AuthSessionResult {
+  mode: AuthMode;
+  authenticated: boolean;
+  user?: AuthUser;
+}
+
+export interface AuthLoginRequest {
+  username: string;
+  password: string;
+}

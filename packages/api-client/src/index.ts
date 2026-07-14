@@ -1,4 +1,6 @@
 import type {
+  AuthLoginRequest,
+  AuthSessionResult,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
@@ -29,6 +31,26 @@ export class RumiApiClient {
     this.baseUrl = options.baseUrl ?? "";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.eventSourceImpl = options.eventSourceImpl ?? globalThis.EventSource;
+  }
+
+  async getAuthSession(): Promise<AuthSessionResult> {
+    return this.request<AuthSessionResult>("/api/auth/session");
+  }
+
+  async login(request: AuthLoginRequest): Promise<AuthSessionResult> {
+    return this.request<AuthSessionResult>("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async logout(): Promise<AuthSessionResult> {
+    return this.request<AuthSessionResult>("/api/auth/logout", {
+      method: "POST"
+    });
   }
 
   async getWorkspace(): Promise<OpenWorkspaceResult> {
@@ -130,7 +152,10 @@ export class RumiApiClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      credentials: "include",
+      ...init
+    });
     const data = (await response.json()) as unknown;
 
     if (!response.ok) {

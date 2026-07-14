@@ -40,6 +40,21 @@ Before changing plans or implementation, read:
 7. The relevant task in [docs/Tasks/Tasks.db.md](docs/Tasks/Tasks.db.md)
 8. Any relevant contract in [docs/Contracts/Contracts.db.md](docs/Contracts/Contracts.db.md)
 
+## Simplicity And Reliability Rule
+
+Before making changes, plan for the simplest reliable solution that fits Rumi's current model.
+
+Prefer boring, direct, inspectable designs over clever abstractions. Add new layers, protocols, state machines, background work, or generalized APIs only when they remove real complexity or protect an important product boundary.
+
+When planning or implementing, explicitly check:
+
+- Can this be solved with the existing runtime, API, client state, or UI primitive?
+- Is the proposed behavior easy to reason about, test, and recover from?
+- Does it reduce the chance of data loss, stale UI, hidden coupling, or future migration pain?
+- Is there a smaller vertical slice that proves the same direction?
+
+If two approaches both work, choose the one with fewer moving parts and clearer failure modes.
+
 ## Work Pipeline
 
 Every feature should move through this shape:

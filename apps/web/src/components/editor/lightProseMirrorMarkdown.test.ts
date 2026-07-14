@@ -23,4 +23,21 @@ describe("light ProseMirror Markdown bridge", () => {
     expect(markdown).toContain("- Two");
     expect(markdown).toContain("> Quote");
   });
+
+  it("does not create executable links from unsafe Markdown URLs", () => {
+    const document = parseLightMarkdown(
+      "[unsafe](javascript:alert(1)) [also unsafe](data:text/html,boom) [safe](https://example.com)"
+    );
+    const linkTargets: string[] = [];
+
+    document.descendants((node) => {
+      for (const mark of node.marks) {
+        if (mark.type.name === "link" && typeof mark.attrs.href === "string") {
+          linkTargets.push(mark.attrs.href);
+        }
+      }
+    });
+
+    expect(linkTargets).toEqual(["https://example.com"]);
+  });
 });

@@ -15,13 +15,23 @@ const logLevel = resolveLogLevel({
   ...(explicitLogLevel ? { explicit: explicitLogLevel } : {})
 });
 const prettyLogs = !process.argv.includes("--json-logs");
+const authMode = resolveAuthMode(optionValue("--auth") ?? "none");
+const authStatePath = optionValue("--auth-state");
 
 const started = await startRumiServer({
   workspacePath,
   host,
   port,
   logLevel,
-  prettyLogs
+  prettyLogs,
+  auth:
+    authMode === "password"
+      ? {
+          mode: "password",
+          ...(authStatePath ? { statePath: authStatePath } : {}),
+          ...(process.argv.includes("--secure-cookies") ? { secureCookies: true } : {})
+        }
+      : { mode: "none" }
 });
 
 console.log(`Rumi server listening at ${started.url}`);
@@ -35,4 +45,17 @@ function resolveLogLevel(options: { verbose: boolean; explicit?: string }): Rumi
   }
 
   return value as RumiLogLevel;
+}
+
+function optionValue(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function resolveAuthMode(value: string): "none" | "password" {
+  if (value !== "none" && value !== "password") {
+    throw new Error(`Invalid auth mode: ${value}`);
+  }
+
+  return value;
 }

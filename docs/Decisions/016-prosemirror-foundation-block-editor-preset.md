@@ -5,16 +5,16 @@ areas:
   - web
   - frontend
 impact: high
-created: "2026-06-23"
-updated: "2026-06-23"
+created: 2026-06-23
+updated: 2026-06-23
 ---
 # ProseMirror Foundation With Block Editor Preset
 
 ## Decision
 
-Use ProseMirror as Rumi's editor foundation.
+\>Use ProseMirror as Rumi's editor foundation.
 
-The official Rumi block editor should be an assembled preset on top of that foundation, not the foundation itself.
+\*The official Rumi block editor should be an assembled preset on top of that foundation, not the foundation itself.\*
 
 ## Shape
 

@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-06-23"
+updated: "2026-07-14"
 ---
 # API Shape
 
@@ -16,7 +16,7 @@ Core behaviors:
 - Request/response validation.
 - Standard error shape.
 - Conflict response for stale writes.
-- Auth later.
+- Configurable instance authentication at the HTTP boundary.
 - Event stream subscription.
 
 Example response principles:
@@ -28,6 +28,13 @@ error: returns stable code and message
 ```
 
 API tests should protect shape, not duplicate every runtime behavior test.
+
+## Authentication
+
+`GET /api/auth/session` reports the configured auth mode and current session. Password mode uses
+`POST /api/auth/login` and `POST /api/auth/logout`; every other workspace API route, including the
+event stream, requires a valid session. None mode leaves workspace routes available to the network
+boundary selected by the operator.
 
 ## Event Stream
 

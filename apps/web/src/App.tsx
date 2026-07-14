@@ -17,6 +17,7 @@ const SIDEBAR_COLLAPSED_KEY = "rumi-new-sidebar-collapsed";
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 520;
+const MOBILE_SIDEBAR_TRANSITION_MS = 200;
 
 export function App(): ReactElement {
   const api = useMemo(() => new RumiApiClient(), []);
@@ -30,6 +31,7 @@ export function App(): ReactElement {
   const [message, setMessage] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSavedSidebarCollapsed());
+  const [sidebarMounted, setSidebarMounted] = useState(() => !sidebarCollapsed);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
   const pageRef = useRef<PageDocument | null>(null);
@@ -37,8 +39,13 @@ export function App(): ReactElement {
   const saveStateRef = useRef<SaveState>("idle");
   const selectionRef = useRef<SidebarSelection | null>(null);
   const editorRef = useRef<LightProseMirrorEditorHandle | null>(null);
+  const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
+  const pageLoadCacheGenerationRef = useRef(0);
+  const openRequestIdRef = useRef(0);
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
+  const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
+  const blurContent = isNarrow && !sidebarCollapsed;
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -77,6 +84,65 @@ export function App(): ReactElement {
 
   const getCurrentDraftBody = useCallback(() => editorRef.current?.getMarkdown() ?? draftBodyRef.current, []);
 
+  const clearPageLoadCache = useCallback(() => {
+    pageLoadCacheGenerationRef.current += 1;
+    pageLoadCacheRef.current.clear();
+  }, []);
+
+  const forgetCachedPage = useCallback((path: string) => {
+    pageLoadCacheGenerationRef.current += 1;
+    pageLoadCacheRef.current.delete(path);
+  }, []);
+
+  const cacheResolvedPage = useCallback((nextPage: PageDocument) => {
+    pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
+  }, []);
+
+  const loadPage = useCallback(
+    async (path: string): Promise<PageDocument> => {
+      const cachedRequest = pageLoadCacheRef.current.get(path);
+
+      if (cachedRequest) {
+        return cachedRequest;
+      }
+
+      const requestGeneration = pageLoadCacheGenerationRef.current;
+      const request = api.openPage(path).then(
+        (nextPage) => {
+          if (pageLoadCacheGenerationRef.current === requestGeneration && pageLoadCacheRef.current.get(path) === request) {
+            cacheResolvedPage(nextPage);
+          }
+
+          return nextPage;
+        },
+        (error: unknown) => {
+          if (pageLoadCacheRef.current.get(path) === request) {
+            pageLoadCacheRef.current.delete(path);
+          }
+
+          throw error;
+        }
+      );
+
+      pageLoadCacheRef.current.set(path, request);
+      return request;
+    },
+    [api, cacheResolvedPage]
+  );
+
+  const prefetchNode = useCallback(
+    (node: WorkspaceNode) => {
+      const openPath = openPathForNode(node);
+
+      if (!openPath || pageRef.current?.path === openPath) {
+        return;
+      }
+
+      void loadPage(openPath);
+    },
+    [loadPage]
+  );
+
   useEffect(() => {
     const handleResize = () => setViewportWidth(getViewportWidth());
     window.addEventListener("resize", handleResize);
@@ -96,6 +162,24 @@ export function App(): ReactElement {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isNarrow, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) {
+      setSidebarMounted(true);
+      return;
+    }
+
+    if (!isNarrow) {
+      setSidebarMounted(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSidebarMounted(false);
+    }, MOBILE_SIDEBAR_TRANSITION_MS);
+
+    return () => window.clearTimeout(timeout);
   }, [isNarrow, sidebarCollapsed]);
 
   useEffect(() => {
@@ -125,10 +209,15 @@ export function App(): ReactElement {
 
   const openNode = useCallback(
     async (node: WorkspaceNode) => {
-      const openPath = node.companionPath ?? (node.kind === "page" ? node.path : null);
+      const requestId = ++openRequestIdRef.current;
+      const openPath = openPathForNode(node);
       setSelection({ nodePath: node.path, openPath, kind: node.kind });
       setSaveState("idle");
       setMessage("");
+
+      if (isNarrow && openPath) {
+        setSidebarCollapsedState(true, setSidebarCollapsed);
+      }
 
       if (!openPath) {
         setPage(null);
@@ -139,16 +228,25 @@ export function App(): ReactElement {
       setLoadState("loading");
 
       try {
-        const nextPage = await api.openPage(openPath);
+        const nextPage = await loadPage(openPath);
+
+        if (requestId !== openRequestIdRef.current) {
+          return;
+        }
+
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setLoadState("idle");
       } catch (error) {
+        if (requestId !== openRequestIdRef.current) {
+          return;
+        }
+
         setLoadState("error");
         setMessage(errorMessage(error));
       }
     },
-    [api]
+    [isNarrow, loadPage]
   );
 
   const refreshAfterMutation = useCallback(
@@ -156,13 +254,13 @@ export function App(): ReactElement {
       await loadTree();
 
       if (openPath) {
-        const nextPage = await api.openPage(openPath);
+        const nextPage = await loadPage(openPath);
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setSelection({ nodePath: openPath, openPath, kind: "page" });
       }
     },
-    [api, loadTree]
+    [loadPage, loadTree]
   );
 
   const createPage = useCallback(async (parentPath: string, name: string) => {
@@ -172,6 +270,7 @@ export function App(): ReactElement {
         name,
         markdownBody: `# ${stripMarkdownExtension(name)}\n`
       });
+      clearPageLoadCache();
       await refreshAfterMutation(result.path);
       setMessage(`Created ${result.path}`);
     } catch (error) {
@@ -179,11 +278,12 @@ export function App(): ReactElement {
       setSaveState("error");
       throw error;
     }
-  }, [api, refreshAfterMutation]);
+  }, [api, clearPageLoadCache, refreshAfterMutation]);
 
   const createFolder = useCallback(async (parentPath: string, name: string) => {
     try {
       const result = await api.createFolder({ parentPath, name });
+      clearPageLoadCache();
       await refreshAfterMutation(result.path);
       setMessage(`Created ${result.path}`);
     } catch (error) {
@@ -191,7 +291,7 @@ export function App(): ReactElement {
       setSaveState("error");
       throw error;
     }
-  }, [api, refreshAfterMutation]);
+  }, [api, clearPageLoadCache, refreshAfterMutation]);
 
   const renameNode = useCallback(
     async (node: WorkspaceNode, nextName: string): Promise<boolean> => {
@@ -202,6 +302,7 @@ export function App(): ReactElement {
       try {
         const currentSelection = selectionRef.current;
         const result = await api.renameNode({ path: node.path, newName: nextName.trim() });
+        clearPageLoadCache();
         await loadTree();
 
         if (currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)) {
@@ -217,7 +318,7 @@ export function App(): ReactElement {
                 : nextNodePath;
 
           try {
-            const nextPage = await api.openPage(nextOpenTarget);
+            const nextPage = await loadPage(nextOpenTarget);
             setPage(nextPage);
             setDraftBody(nextPage.markdownBody);
             setSelection({ nodePath: nextNodePath, openPath: nextPage.path, kind: pageKindToNodeKind(nextPage.kind) });
@@ -237,7 +338,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, loadTree]
+    [api, clearPageLoadCache, loadPage, loadTree]
   );
 
   const deleteNode = useCallback(
@@ -249,6 +350,7 @@ export function App(): ReactElement {
       try {
         const isFolder = node.kind === "folder" || node.kind === "database";
         await api.deleteNode({ path: node.path, recursive: isFolder });
+        clearPageLoadCache();
         await loadTree();
 
         const currentSelection = selectionRef.current;
@@ -267,7 +369,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, loadTree]
+    [api, clearPageLoadCache, loadTree]
   );
 
   const moveNode = useCallback(
@@ -281,6 +383,7 @@ export function App(): ReactElement {
         const currentPage = pageRef.current;
         const wasDirty = saveStateRef.current === "dirty";
         const result = await api.moveNode({ path: node.path, newParentPath });
+        clearPageLoadCache();
         await loadTree();
 
         if (currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)) {
@@ -309,7 +412,7 @@ export function App(): ReactElement {
             setSaveState("dirty");
           } else {
             try {
-              const nextPage = await api.openPage(nextOpenTarget);
+              const nextPage = await loadPage(nextOpenTarget);
               setPage(nextPage);
               setDraftBody(nextPage.markdownBody);
               setSelection({ nodePath: nextNodePath, openPath: nextPage.path, kind: pageKindToNodeKind(nextPage.kind) });
@@ -331,7 +434,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, getCurrentDraftBody, loadTree]
+    [api, clearPageLoadCache, getCurrentDraftBody, loadPage, loadTree]
   );
 
   const savePage = useCallback(async () => {
@@ -354,17 +457,21 @@ export function App(): ReactElement {
       });
 
       if (result.status === "conflict") {
+        forgetCachedPage(page.path);
         setSaveState("conflict");
         setMessage("This page changed on disk. Reload it before saving again.");
         return;
       }
 
-      setPage({
+      const savedPage = {
         ...page,
         markdownBody,
         version: result.version,
         contentHash: result.contentHash
-      });
+      };
+
+      setPage(savedPage);
+      cacheResolvedPage(savedPage);
       editorRef.current?.markClean(markdownBody);
       setDraftBody(markdownBody);
       setSaveState("saved");
@@ -374,17 +481,18 @@ export function App(): ReactElement {
       setSaveState("error");
       setMessage(errorMessage(error));
     }
-  }, [api, getCurrentDraftBody, loadTree, page]);
+  }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, loadTree, page]);
 
   const reloadPage = useCallback(async () => {
     if (page) {
+      forgetCachedPage(page.path);
       await openNode({
         path: page.path,
         name: page.path.split("/").at(-1) ?? page.path,
         kind: "page"
       });
     }
-  }, [openNode, page]);
+  }, [forgetCachedPage, openNode, page]);
 
   const handlePageChangedEvent = useCallback(
     async (event: RumiEvent) => {
@@ -392,6 +500,7 @@ export function App(): ReactElement {
         return;
       }
 
+      forgetCachedPage(event.path);
       await loadTree();
 
       const currentPage = pageRef.current;
@@ -415,7 +524,7 @@ export function App(): ReactElement {
       }
 
       try {
-        const nextPage = await api.openPage(event.path);
+        const nextPage = await loadPage(event.path);
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setSaveState("idle");
@@ -425,16 +534,18 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [api, loadTree]
+    [forgetCachedPage, loadPage, loadTree]
   );
 
   const handleMovedEvent = useCallback(
     async (event: RumiEvent) => {
       if (!event.path || !event.previousPath) {
+        clearPageLoadCache();
         await loadTree();
         return;
       }
 
+      clearPageLoadCache();
       await loadTree();
 
       const currentSelection = selectionRef.current;
@@ -467,7 +578,7 @@ export function App(): ReactElement {
       }
 
       try {
-        const nextPage = await api.openPage(nextOpenTarget);
+        const nextPage = await loadPage(nextOpenTarget);
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setSelection({ nodePath: nextNodePath, openPath: nextPage.path, kind: pageKindToNodeKind(nextPage.kind) });
@@ -477,16 +588,18 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [api, getCurrentDraftBody, loadTree]
+    [clearPageLoadCache, getCurrentDraftBody, loadPage, loadTree]
   );
 
   const handleDeletedEvent = useCallback(
     async (event: RumiEvent) => {
       if (!event.path) {
+        clearPageLoadCache();
         await loadTree();
         return;
       }
 
+      clearPageLoadCache();
       await loadTree();
 
       const currentSelection = selectionRef.current;
@@ -499,7 +612,7 @@ export function App(): ReactElement {
         setMessage("The open item was deleted.");
       }
     },
-    [loadTree]
+    [clearPageLoadCache, loadTree]
   );
 
   useEffect(() => {
@@ -517,27 +630,34 @@ export function App(): ReactElement {
       }
 
       if (event.name === "folder.childrenChanged" || event.name === "workspace.treeChanged") {
+        clearPageLoadCache();
         void loadTree();
       }
     });
-  }, [api, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree]);
+  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree]);
 
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-background text-foreground">
-      {isNarrow && !sidebarCollapsed && (
+      {isNarrow && renderSidebar && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-foreground/20"
+          className={cn(
+            "fixed inset-0 z-30 bg-foreground/20 transition-opacity duration-200 ease-out",
+            sidebarCollapsed ? "pointer-events-none opacity-0" : "opacity-100"
+          )}
           aria-label="Close sidebar"
           onClick={() => setSidebarCollapsedState(true, setSidebarCollapsed)}
         />
       )}
 
-      {!sidebarCollapsed ? (
+      {renderSidebar ? (
         <div
           className={cn(
             "relative z-40 h-screen min-h-0 shrink-0 bg-background",
-            isNarrow && "fixed inset-y-0 left-0 shadow-xl"
+            isNarrow && [
+              "fixed inset-y-0 left-0 transform-gpu shadow-xl transition-transform duration-200 ease-out",
+              sidebarCollapsed ? "pointer-events-none -translate-x-full" : "translate-x-0"
+            ]
           )}
           style={{ width: visibleSidebarWidth }}
         >
@@ -549,6 +669,7 @@ export function App(): ReactElement {
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsedState(!sidebarCollapsed, setSidebarCollapsed)}
             onRefresh={() => void loadTree()}
+            onPrefetchNode={prefetchNode}
             onOpenNode={(node) => void openNode(node)}
             onCreatePage={createPage}
             onCreateFolder={createFolder}
@@ -568,7 +689,20 @@ export function App(): ReactElement {
             />
           )}
         </div>
-      ) : (
+      ) : !isNarrow ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="fixed left-3 top-3 z-30 bg-background shadow-sm"
+          onClick={() => setSidebarCollapsedState(false, setSidebarCollapsed)}
+          title="Open sidebar"
+        >
+          <SidebarSimple size={17} />
+        </Button>
+      ) : null}
+
+      {isNarrow && sidebarCollapsed && !sidebarMounted && (
         <Button
           type="button"
           size="icon"
@@ -581,7 +715,12 @@ export function App(): ReactElement {
         </Button>
       )}
 
-      <section className="grid min-h-screen min-w-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)]">
+      <section
+        className={cn(
+          "grid min-h-screen min-w-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)] transition-[filter] duration-200 ease-out",
+          blurContent ? "blur-sm" : "blur-0"
+        )}
+      >
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase text-muted-foreground">Page</p>
@@ -708,6 +847,10 @@ function replacePathPrefix(path: string, previousPrefix: string, nextPrefix: str
 
 function pageKindToNodeKind(kind: PageDocument["kind"]): WorkspaceNode["kind"] {
   return kind === "database" ? "database" : kind === "folder" ? "folder" : "page";
+}
+
+function openPathForNode(node: WorkspaceNode): string | null {
+  return node.companionPath ?? (node.kind === "page" ? node.path : null);
 }
 
 function displayPath(path: string): string {

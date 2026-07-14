@@ -63,6 +63,7 @@ interface SidebarProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onRefresh: () => void;
+  onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
@@ -105,6 +106,7 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   onRefresh,
+  onPrefetchNode,
   onOpenNode,
   onCreatePage,
   onCreateFolder,
@@ -286,6 +288,7 @@ export function Sidebar({
                 expandedPaths={expandedPaths}
                 renamingPath={renamingPath}
                 createTarget={createTarget}
+                onPrefetchNode={onPrefetchNode}
                 onOpenNode={onOpenNode}
                 onToggleExpanded={toggleExpanded}
                 onStartCreate={startCreate}
@@ -356,6 +359,7 @@ interface TreeNodeProps {
   expandedPaths: Set<string>;
   renamingPath: string | null;
   createTarget: CreateTarget | null;
+  onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onToggleExpanded: (path: string) => void;
   onStartCreate: (parentPath: string, kind: CreateKind) => void;
@@ -377,6 +381,7 @@ function TreeNode({
   expandedPaths,
   renamingPath,
   createTarget,
+  onPrefetchNode,
   onOpenNode,
   onToggleExpanded,
   onStartCreate,
@@ -402,7 +407,7 @@ function TreeNode({
     <div data-sidebar-node="true">
       <div
         className={cn(
-          "group flex h-8 items-center gap-1 rounded-md pr-1 text-sm hover:bg-accent",
+          "rumi-sidebar-node group flex h-8 items-center gap-1 rounded-md pr-1 text-sm hover:bg-accent",
           isSelected && "bg-accent text-accent-foreground"
         )}
         style={{ paddingLeft: TREE_ROW_PADDING_PX }}
@@ -434,6 +439,9 @@ function TreeNode({
         <button
           type="button"
           className="grid h-6 w-5 shrink-0 place-items-center text-muted-foreground"
+          onPointerEnter={() => onPrefetchNode(node)}
+          onPointerDown={() => onPrefetchNode(node)}
+          onFocus={() => onPrefetchNode(node)}
           onClick={() => onOpenNode(node)}
           onDoubleClick={(event) => {
             event.preventDefault();
@@ -454,6 +462,9 @@ function TreeNode({
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
+            onPointerEnter={() => onPrefetchNode(node)}
+            onPointerDown={() => onPrefetchNode(node)}
+            onFocus={() => onPrefetchNode(node)}
             onClick={() => onOpenNode(node)}
             onDoubleClick={(event) => {
               event.preventDefault();
@@ -498,6 +509,7 @@ function TreeNode({
               expandedPaths={expandedPaths}
               renamingPath={renamingPath}
               createTarget={createTarget}
+              onPrefetchNode={onPrefetchNode}
               onOpenNode={onOpenNode}
               onToggleExpanded={onToggleExpanded}
               onStartCreate={onStartCreate}
@@ -536,7 +548,7 @@ function NodeMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 hover:bg-background/70 hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="rumi-sidebar-node-menu grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-100 hover:bg-background/70 hover:text-foreground data-[state=open]:opacity-100"
           aria-label={`Actions for ${displayName(node.name)}`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
@@ -895,7 +907,7 @@ function CreateInput({
   const dismissedRef = useRef(false);
 
   useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus());
+    return focusInlineNameInput(inputRef, false);
   }, []);
 
   const close = useCallback(() => {
@@ -946,6 +958,12 @@ function CreateInput({
     }
   };
 
+  useOutsidePointerDown(inputRef, () => {
+    if (!dismissedRef.current) {
+      void submit();
+    }
+  });
+
   return (
     <div
       className="flex h-8 items-center gap-1 pr-1"
@@ -964,11 +982,6 @@ function CreateInput({
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.stopPropagation()}
-        onBlur={() => {
-          if (!dismissedRef.current) {
-            void submit();
-          }
-        }}
         onKeyDown={handleKeyDown}
         onChange={(event) => setName(sanitizeWorkspaceName(event.target.value).sanitized)}
       />
@@ -992,10 +1005,7 @@ function RenameInput({
   const dismissedRef = useRef(false);
 
   useEffect(() => {
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
+    return focusInlineNameInput(inputRef, true);
   }, []);
 
   const close = useCallback(() => {
@@ -1046,6 +1056,12 @@ function RenameInput({
     }
   };
 
+  useOutsidePointerDown(inputRef, () => {
+    if (!dismissedRef.current) {
+      void submit();
+    }
+  });
+
   return (
     <Input
       ref={inputRef}
@@ -1056,15 +1072,51 @@ function RenameInput({
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
-      onBlur={() => {
-        if (!dismissedRef.current) {
-          void submit();
-        }
-      }}
       onKeyDown={handleKeyDown}
       onChange={(event) => setName(sanitizeWorkspaceName(event.target.value).sanitized)}
     />
   );
+}
+
+function focusInlineNameInput(ref: { current: HTMLInputElement | null }, select: boolean): () => void {
+  let animationFrame = 0;
+  const timeout = window.setTimeout(() => {
+    animationFrame = window.requestAnimationFrame(() => {
+      ref.current?.focus();
+
+      if (select) {
+        ref.current?.select();
+      }
+    });
+  }, 0);
+
+  return () => {
+    window.clearTimeout(timeout);
+
+    if (animationFrame) {
+      window.cancelAnimationFrame(animationFrame);
+    }
+  };
+}
+
+function useOutsidePointerDown<T extends HTMLElement>(
+  ref: { current: T | null },
+  onOutsidePointerDown: () => void
+): void {
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Node) || ref.current?.contains(target)) {
+        return;
+      }
+
+      onOutsidePointerDown();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [onOutsidePointerDown, ref]);
 }
 
 function NodeIcon({ kind, expanded }: { kind: WorkspaceNode["kind"]; expanded: boolean }): ReactElement {

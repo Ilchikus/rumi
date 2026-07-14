@@ -44,6 +44,17 @@
 }
 
 @layer components {
+  @media (hover: hover) and (pointer: fine) {
+    .rumi-sidebar-node .rumi-sidebar-node-menu {
+      opacity: 0;
+    }
+
+    .rumi-sidebar-node:hover .rumi-sidebar-node-menu,
+    .rumi-sidebar-node .rumi-sidebar-node-menu[data-state="open"] {
+      opacity: 1;
+    }
+  }
+
   .rumi-prosemirror {
     min-height: 55vh;
     padding: 1.5rem;

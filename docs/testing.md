@@ -68,7 +68,7 @@ API tests should verify:
 - Version conflict behavior.
 - Error shape.
 - Event emission when relevant.
-- Auth later.
+- Auth session, login, logout, protected workspace routes, and protected SSE behavior.
 
 Do not expose one endpoint per old Electron IPC method. API tests should protect domain commands.
 
@@ -80,7 +80,7 @@ CLI tests should verify:
 - Human output basics.
 - `--json` output shape.
 - Direct runtime mode.
-- Server API mode later.
+- Server API mode, authentication configuration, and password reset behavior.
 
 The CLI must not implement separate workspace behavior.
 
@@ -94,6 +94,7 @@ Use UI smoke tests for flows where wiring matters:
 - Receive external change event.
 - Rename from sidebar and keep active page coherent.
 - Basic database record update.
+- Password login and authenticated application startup.
 
 Avoid huge brittle UI suites early.
 

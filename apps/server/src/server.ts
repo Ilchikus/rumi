@@ -1,5 +1,8 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import { isIP } from "node:net";
 import type {
+  AuthLoginRequest,
+  AuthSessionResult,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
@@ -9,11 +12,20 @@ import type {
   SavePageRequest
 } from "@rumi/contracts";
 import { WorkspaceRuntime } from "@rumi/runtime";
+import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
+
+const SESSION_COOKIE_NAME = "rumi_session";
+const PUBLIC_AUTH_PATHS = new Set([
+  "/api/auth/session",
+  "/api/auth/login",
+  "/api/auth/logout"
+]);
 
 export interface CreateRumiServerOptions {
   workspacePath: string;
   logLevel?: RumiLogLevel;
   prettyLogs?: boolean;
+  auth?: RumiAuthOptions;
 }
 
 export interface StartRumiServerOptions extends CreateRumiServerOptions {
@@ -30,6 +42,16 @@ export interface StartedRumiServer {
 export type RumiLogLevel = "silent" | "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 
 export async function createRumiServer(options: CreateRumiServerOptions): Promise<StartedRumiServer> {
+  const authOptions = options.auth ?? { mode: "none" };
+  const passwordAuth =
+    authOptions.mode === "password"
+      ? await LocalPasswordAuth.open({
+          workspacePath: options.workspacePath,
+          ...(authOptions.statePath ? { statePath: authOptions.statePath } : {}),
+          ...(authOptions.sessionTtlMs ? { sessionTtlMs: authOptions.sessionTtlMs } : {})
+        })
+      : null;
+  const loginThrottle = new LoginThrottle();
   const runtime = await WorkspaceRuntime.open({ rootPath: options.workspacePath });
   await runtime.startWatchingWorkspace();
   const server = Fastify({
@@ -56,16 +78,171 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
 
   server.setErrorHandler((error: Error, _request, reply) => {
     _request.log.error({ err: error }, "request.error");
-    reply.status(500).send({
+    const statusCode = errorStatusCode(error);
+    reply.status(statusCode).send({
       error: {
-        code: "internal_error",
-        message: error.message
+        code: statusCode >= 500 ? "internal_error" : "invalid_request",
+        message: statusCode >= 500 ? "Internal server error" : error.message
       }
     });
   });
 
   server.addHook("onClose", async () => {
     await runtime.stopWatchingWorkspace();
+  });
+
+  server.addHook("onSend", async (request, reply, payload) => {
+    if (request.url.startsWith("/api/")) {
+      reply.header("cache-control", "private, no-store");
+      reply.header("x-content-type-options", "nosniff");
+    }
+
+    return payload;
+  });
+
+  server.addHook("onRequest", async (request, reply) => {
+    const requestPath = request.url.split("?", 1)[0] ?? request.url;
+
+    if (!requestPath.startsWith("/api/")) {
+      return;
+    }
+
+    if (!isSafeMethod(request.method) && !isSameOriginRequest(request)) {
+      return reply.status(403).send({
+        error: {
+          code: "cross_origin_request",
+          message: "Cross-origin API requests are not allowed"
+        }
+      });
+    }
+
+    if (authOptions.mode === "none" || PUBLIC_AUTH_PATHS.has(requestPath)) {
+      return;
+    }
+
+    const username = await passwordAuth!.authenticate(readSessionCookie(request));
+
+    if (!username) {
+      return reply.status(401).send({
+        error: {
+          code: "authentication_required",
+          message: "Authentication required"
+        }
+      });
+    }
+  });
+
+  server.get("/api/auth/session", async (request, reply): Promise<AuthSessionResult> => {
+    reply.header("cache-control", "no-store");
+
+    if (authOptions.mode === "none") {
+      return {
+        mode: "none",
+        authenticated: true
+      };
+    }
+
+    const username = await passwordAuth!.authenticate(readSessionCookie(request));
+
+    return username
+      ? {
+          mode: "password",
+          authenticated: true,
+          user: { username }
+        }
+      : {
+          mode: "password",
+          authenticated: false
+        };
+  });
+
+  server.post<{ Body: AuthLoginRequest | unknown }>("/api/auth/login", async (request, reply) => {
+    reply.header("cache-control", "no-store");
+
+    if (authOptions.mode !== "password") {
+      return reply.status(400).send({
+        error: {
+          code: "password_auth_disabled",
+          message: "Password authentication is not enabled"
+        }
+      });
+    }
+
+    if (!isLoginRequest(request.body)) {
+      return reply.status(400).send({
+        error: {
+          code: "invalid_login_request",
+          message: "Username and password are required"
+        }
+      });
+    }
+
+    if (!isSecureRequest(request) && !isLoopbackProxyRequest(request)) {
+      return reply.status(426).send({
+        error: {
+          code: "secure_transport_required",
+          message: "Password login requires HTTPS"
+        }
+      });
+    }
+
+    const throttleKey = loginThrottleKey(request);
+    const retryAfterSeconds = loginThrottle.beginAttempt(throttleKey);
+
+    if (retryAfterSeconds !== null) {
+      reply.header("retry-after", String(retryAfterSeconds));
+      return reply.status(429).send({
+        error: {
+          code: "too_many_login_attempts",
+          message: "Too many login attempts. Try again shortly."
+        }
+      });
+    }
+
+    const session = await passwordAuth!.login(request.body.username, request.body.password);
+
+    if (!session) {
+      return reply.status(401).send({
+        error: {
+          code: "invalid_credentials",
+          message: "Invalid username or password"
+        }
+      });
+    }
+
+    loginThrottle.recordSuccess(throttleKey);
+    reply.header(
+      "set-cookie",
+      serializeSessionCookie(session.token, {
+        maxAgeSeconds: Math.max(1, Math.floor(passwordAuth!.sessionTtlMs / 1_000)),
+        secure: authOptions.secureCookies ?? isSecureRequest(request)
+      })
+    );
+
+    const result: AuthSessionResult = {
+      mode: "password",
+      authenticated: true,
+      user: { username: session.username }
+    };
+    return result;
+  });
+
+  server.post("/api/auth/logout", async (request, reply): Promise<AuthSessionResult> => {
+    reply.header("cache-control", "no-store");
+
+    if (passwordAuth) {
+      await passwordAuth.logout(readSessionCookie(request));
+    }
+
+    reply.header(
+      "set-cookie",
+      clearSessionCookie(authOptions.mode === "password" && (authOptions.secureCookies ?? isSecureRequest(request)))
+    );
+
+    return {
+      mode: authOptions.mode,
+      authenticated: authOptions.mode === "none"
+    };
   });
 
   server.get("/api/workspace", async (request) => {
@@ -200,3 +377,175 @@ export async function startRumiServer(options: StartRumiServerOptions): Promise<
     url
   };
 }
+
+class LoginThrottle {
+  private readonly attempts = new Map<string, { failures: number; blockedUntil: number }>();
+
+  beginAttempt(key: string): number | null {
+    const attempt = this.attempts.get(key);
+
+    if (attempt && attempt.blockedUntil > Date.now()) {
+      return Math.max(1, Math.ceil((attempt.blockedUntil - Date.now()) / 1_000));
+    }
+
+    const failures = (attempt?.failures ?? 0) + 1;
+    this.attempts.set(key, {
+      failures,
+      blockedUntil: failures >= 5 ? Date.now() + 60_000 : 0
+    });
+    return null;
+  }
+
+  recordSuccess(key: string): void {
+    this.attempts.delete(key);
+  }
+}
+
+function readSessionCookie(request: FastifyRequest): string | undefined {
+  const cookieHeader = request.headers.cookie;
+
+  if (!cookieHeader) {
+    return undefined;
+  }
+
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+
+    if (separator < 0 || part.slice(0, separator).trim() !== SESSION_COOKIE_NAME) {
+      continue;
+    }
+
+    const value = part.slice(separator + 1).trim();
+
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function serializeSessionCookie(
+  token: string,
+  options: { maxAgeSeconds: number; secure: boolean }
+): string {
+  return [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${options.maxAgeSeconds}`,
+    ...(options.secure ? ["Secure"] : [])
+  ].join("; ");
+}
+
+function clearSessionCookie(secure: boolean): string {
+  return [
+    `${SESSION_COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    ...(secure ? ["Secure"] : [])
+  ].join("; ");
+}
+
+function isSafeMethod(method: string): boolean {
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+function isSameOriginRequest(request: FastifyRequest): boolean {
+  if (firstHeaderValue(request.headers["sec-fetch-site"]) === "cross-site") {
+    return false;
+  }
+
+  const originHeader = firstHeaderValue(request.headers.origin);
+
+  if (!originHeader) {
+    return true;
+  }
+
+  const host = firstHeaderValue(request.headers["x-forwarded-host"]) ?? request.headers.host;
+  const protocol = firstHeaderValue(request.headers["x-forwarded-proto"]) ?? request.protocol;
+
+  if (!host || !protocol) {
+    return false;
+  }
+
+  try {
+    return new URL(originHeader).origin === `${protocol}://${host}`;
+  } catch {
+    return false;
+  }
+}
+
+function isSecureRequest(request: FastifyRequest): boolean {
+  return (firstHeaderValue(request.headers["x-forwarded-proto"]) ?? request.protocol) === "https";
+}
+
+function isLoopbackProxyRequest(request: FastifyRequest): boolean {
+  return isLoopbackAddress(
+    firstHeaderValue(request.headers["x-rumi-client-address"]) ?? request.ip
+  );
+}
+
+function loginThrottleKey(request: FastifyRequest): string {
+  const proxyAddress = firstHeaderValue(request.headers["x-rumi-client-address"]);
+  const cloudflareAddress = firstHeaderValue(request.headers["cf-connecting-ip"]);
+
+  if (
+    isSecureRequest(request) &&
+    isLoopbackAddress(proxyAddress) &&
+    cloudflareAddress &&
+    isIP(normalizeAddress(cloudflareAddress)) !== 0
+  ) {
+    return `cloudflare:${normalizeAddress(cloudflareAddress)}`;
+  }
+
+  return `client:${normalizeAddress(proxyAddress ?? request.ip)}`;
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value?.split(",", 1)[0];
+  return first?.trim().toLowerCase();
+}
+
+function normalizeAddress(address: string): string {
+  return address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+}
+
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) {
+    return false;
+  }
+
+  const normalized = normalizeAddress(address);
+  return isIP(normalized) !== 0 && (normalized === "::1" || normalized.startsWith("127."));
+}
+
+function isLoginRequest(value: unknown): value is AuthLoginRequest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "username" in value &&
+    "password" in value &&
+    typeof value.username === "string" &&
+    typeof value.password === "string" &&
+    value.username.length <= 64 &&
+    value.password.length <= 1_024
+  );
+}
+
+function errorStatusCode(error: Error): number {
+  if ("statusCode" in error && typeof error.statusCode === "number") {
+    return error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+  }
+
+  return 500;
+}
+
+export { resolveAuthStatePath, setLocalPassword } from "./auth";
+export type { RumiAuthOptions, SetLocalPasswordOptions } from "./auth";

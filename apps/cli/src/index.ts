@@ -269,6 +269,7 @@ program
     });
 
     console.log(`Rumi server listening at ${started.url}`);
+    installShutdownHandlers(started.server);
   });
 
 program.parseAsync().catch((error: unknown) => {
@@ -378,4 +379,23 @@ function readHiddenLine(label: string): Promise<string> {
     input.resume();
     input.on("data", handleData);
   });
+}
+
+function installShutdownHandlers(server: { close: () => Promise<void> }): void {
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    console.log(`Rumi server received ${signal}; closing cleanly.`);
+    void server.close().catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
+  };
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }

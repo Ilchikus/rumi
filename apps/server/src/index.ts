@@ -41,6 +41,7 @@ const started = await startRumiServer({
 });
 
 console.log(`Rumi server listening at ${started.url}`);
+installShutdownHandlers(started.server);
 
 function resolveLogLevel(options: { verbose: boolean; explicit?: string }): RumiLogLevel {
   const value = options.explicit ?? (options.verbose ? "info" : "warn");
@@ -64,4 +65,23 @@ function resolveAuthMode(value: string): "none" | "password" {
   }
 
   return value;
+}
+
+function installShutdownHandlers(server: { close: () => Promise<void> }): void {
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    console.log(`Rumi server received ${signal}; closing cleanly.`);
+    void server.close().catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
+  };
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }

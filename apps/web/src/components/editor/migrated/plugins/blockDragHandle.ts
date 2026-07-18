@@ -205,7 +205,8 @@ class BlockDragHandleView {
 
     this.scrollParent = this.findScrollParent(this.view.dom)
 
-    document.body.appendChild(this.handle)
+    const handleParent = this.getEditorWrapper() ?? document.body
+    handleParent.appendChild(this.handle)
     document.body.appendChild(this.dropIndicator)
     document.body.appendChild(this.headingHighlight)
 
@@ -242,7 +243,7 @@ class BlockDragHandleView {
     const el = document.createElement("button")
     el.type = "button"
     el.style.cssText = `
-      position: fixed;
+      position: absolute;
       width: 20px;
       height: 20px;
       padding: 0;
@@ -518,7 +519,22 @@ class BlockDragHandleView {
 
   private onScroll = () => {
     if (this.hoveredBlock !== null && this.draggedBlock === null) {
-      this.positionHandle()
+      // The handle lives in the editor wrapper, so the browser scrolls it with
+      // its block. Refresh only viewport visibility and hover geometry here;
+      // rewriting fixed coordinates on every scroll frame caused visible lag.
+      const dom = this.view.nodeDOM(this.hoveredBlock.pos)
+      if (!dom || !(dom instanceof HTMLElement)) {
+        this.hideHandle()
+      } else {
+        const rect = dom.getBoundingClientRect()
+        this.hoveredBlockRect = rect
+        if (this.scrollParent) {
+          const parentRect = this.scrollParent.getBoundingClientRect()
+          this.handle.style.display = rect.bottom < parentRect.top || rect.top > parentRect.bottom
+            ? "none"
+            : "flex"
+        }
+      }
     }
     this.closeContextMenu()
   }
@@ -774,12 +790,13 @@ class BlockDragHandleView {
       }
     }
 
+    const wrapperRect = this.getEditorWrapper()?.getBoundingClientRect()
     const editorRect = this.view.dom.getBoundingClientRect()
     this.handle.style.display = "flex"
     // Keep every block handle on one stable gutter axis. Indentation changes
     // the block content, but it must not move the affordance used to grab it.
-    this.handle.style.left = `${editorRect.left - HANDLE_OFFSET}px`
-    this.handle.style.top = `${rect.top + 2}px`
+    this.handle.style.left = `${editorRect.left - (wrapperRect?.left ?? 0) - HANDLE_OFFSET}px`
+    this.handle.style.top = `${rect.top - (wrapperRect?.top ?? 0) + 2}px`
   }
 
   private hideHandle() {
@@ -1359,12 +1376,13 @@ class BlockDragHandleView {
     e.dataTransfer.dropEffect = "move"
 
     if (this.dragGhost) {
+      const wrapperRect = this.getEditorWrapper()?.getBoundingClientRect()
       const editorRect = this.view.dom.getBoundingClientRect()
       this.dragGhost.style.top = `${e.clientY - 12}px`
       this.dragGhost.style.left = `${this.draggedBlockX}px`
       this.handle.style.display = "flex"
-      this.handle.style.top = `${e.clientY - 12 + 2}px`
-      this.handle.style.left = `${editorRect.left - HANDLE_OFFSET}px`
+      this.handle.style.top = `${e.clientY - (wrapperRect?.top ?? 0) - 12 + 2}px`
+      this.handle.style.left = `${editorRect.left - (wrapperRect?.left ?? 0) - HANDLE_OFFSET}px`
     }
 
     const target = this.getDropTarget(e.clientY)

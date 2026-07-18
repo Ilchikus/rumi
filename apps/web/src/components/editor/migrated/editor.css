@@ -1,5 +1,6 @@
 /* ProseMirror Editor Styles */
 .prosemirror-editor-wrapper {
+  position: relative;
   min-height: 100%;
   padding-bottom: 90vh;
   cursor: text;

@@ -41,10 +41,12 @@ import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-tables/style/tables.css";
 import {
   blockSelectionPlugin,
+  canNestListItem,
   canMoveSelectedBlocks,
   collectSelectableBlockPositions,
   createDeleteSelectedBlocksTransaction,
   createDuplicateSelectedBlocksTransaction,
+  createNestListItemTransaction,
   createMoveSelectedBlocksTransaction,
   getBlockSelection,
   isBlockSelected,
@@ -128,6 +130,7 @@ interface ActiveBlockState {
   right: number;
   top: number;
   height: number;
+  handleLeft: number;
   handleTop: number;
 }
 
@@ -144,6 +147,8 @@ interface DraggedBlock {
   isListItem: boolean;
 }
 
+type ListDragIntent = "reorder" | "indent" | "outdent";
+
 interface DropIndicatorState {
   left: number;
   top: number;
@@ -157,8 +162,8 @@ interface AreaSelectionState {
   height: number;
 }
 
-const LIST_DRAG_INDENT_THRESHOLD = 64;
-const LIST_DRAG_OUTDENT_THRESHOLD = 24;
+const LIST_DRAG_INDENT_THRESHOLD = 36;
+const LIST_DRAG_OUTDENT_THRESHOLD = 28;
 const BLOCK_HOVER_GUTTER = 72;
 const BLOCK_HOVER_VERTICAL_TOLERANCE = 12;
 
@@ -436,7 +441,8 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           if (
             current?.pos === block?.pos &&
             current?.top === block?.top &&
-            current?.left === block?.left
+            current?.left === block?.left &&
+            current?.handleLeft === block?.handleLeft
           ) {
             return;
           }
@@ -752,6 +758,28 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return;
       }
 
+      const intent = listDragIntent(dragged, clientX);
+      const targetNode = view.state.doc.nodeAt(target.pos);
+
+      if (intent === "indent" && targetNode?.type.name === "list_item") {
+        if (target.pos === dragged.primaryPos) {
+          const listItem = schema.nodes.list_item;
+          if (listItem) sinkListItem(listItem)(view.state, view.dispatch, view);
+        } else {
+          const transaction = createNestListItemTransaction(
+            view.state,
+            dragged.primaryPos,
+            target.pos
+          );
+          if (transaction) view.dispatch(transaction);
+        }
+
+        draggedBlockRef.current = null;
+        setDropIndicator(null);
+        view.focus();
+        return;
+      }
+
       const insertAfterTarget = clientY > target.top + target.height / 2;
       const transaction = createMoveSelectedBlocksTransaction(
         view.state,
@@ -759,7 +787,6 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         target.pos,
         insertAfterTarget
       );
-      const deltaX = clientX - dragged.startX;
       const canAdjustIndent =
         dragged.positions.length === 1 &&
         dragged.isListItem &&
@@ -772,9 +799,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       if (canAdjustIndent) {
         const listItem = schema.nodes.list_item;
 
-        if (listItem && deltaX > LIST_DRAG_INDENT_THRESHOLD) {
-          sinkListItem(listItem)(view.state, view.dispatch, view);
-        } else if (listItem && deltaX < -LIST_DRAG_OUTDENT_THRESHOLD) {
+        if (listItem && intent === "outdent") {
           liftListItem(listItem)(view.state, view.dispatch, view);
         }
       }
@@ -791,30 +816,38 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       if (!dragged || !view) return;
 
       const target = blockAtCoordinates(view, clientX, clientY);
-
-      const isHorizontalSelfIndent = Boolean(
+      const intent = listDragIntent(dragged, clientX);
+      const targetNode = target ? view.state.doc.nodeAt(target.pos) : null;
+      const isSelfIndentChange = Boolean(
         target &&
+        intent !== "reorder" &&
+        target.pos === dragged.primaryPos
+      );
+      const isNestDrop = Boolean(
+        target &&
+        intent === "indent" &&
         dragged.positions.length === 1 &&
-        dragged.isListItem &&
-        target.pos === dragged.primaryPos &&
-        (clientX - dragged.startX > LIST_DRAG_INDENT_THRESHOLD ||
-          clientX - dragged.startX < -LIST_DRAG_OUTDENT_THRESHOLD)
+        targetNode?.type.name === "list_item" &&
+        canNestListItem(view.state.doc, dragged.primaryPos, target.pos)
       );
 
       if (
         !target ||
-        (!isHorizontalSelfIndent &&
+        (!isSelfIndentChange &&
+          !isNestDrop &&
           !canMoveSelectedBlocks(view.state.doc, dragged.positions, target.pos))
       ) {
         setDropIndicator(null);
         return;
       }
 
-      const insertAfterTarget = clientY > target.top + target.height / 2;
+      const insertAfterTarget = intent === "indent"
+        ? true
+        : clientY > target.top + target.height / 2;
       const indentationOffset = dragged.isListItem
-        ? clientX - dragged.startX > LIST_DRAG_INDENT_THRESHOLD
+        ? intent === "indent"
           ? 24
-          : clientX - dragged.startX < -LIST_DRAG_OUTDENT_THRESHOLD
+          : intent === "outdent"
             ? -24
             : 0
         : 0;
@@ -900,7 +933,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           <div
             data-rumi-editor-overlay
             className="fixed z-20 flex items-center rounded-md border border-border bg-background p-0.5 shadow-sm"
-            style={{ left: Math.max(8, activeBlock.left - 68), top: activeBlock.handleTop }}
+            style={{ left: activeBlock.handleLeft, top: activeBlock.handleTop }}
             onMouseLeave={(event) => {
               if (draggedBlockRef.current) {
                 return;
@@ -987,7 +1020,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
 
                 setBlockMenu({
                   pos: activeBlock.pos,
-                  left: Math.max(8, activeBlock.left - 68),
+                  left: activeBlock.handleLeft,
                   top: activeBlock.handleTop + 32
                 });
               }}
@@ -1445,7 +1478,7 @@ function verticalDistance(block: ActiveBlockState, top: number): number {
 
 function isWithinBlockHoverZone(block: ActiveBlockState, left: number, top: number): boolean {
   return (
-    left >= block.left - BLOCK_HOVER_GUTTER &&
+    left >= block.handleLeft - 4 &&
     left <= block.right &&
     verticalDistance(block, top) <= BLOCK_HOVER_VERTICAL_TOLERANCE
   );
@@ -1467,6 +1500,7 @@ function blockGeometryAtPosition(view: EditorView, pos: number): ActiveBlockStat
     : dom;
   const lineRect = firstLine.getBoundingClientRect();
   const blockRect = dom.getBoundingClientRect();
+  const editorRect = view.dom.getBoundingClientRect();
   const anchorLeft = node?.type.name === "list_item" ? blockRect.left : lineRect.left;
   return {
     pos,
@@ -1474,8 +1508,18 @@ function blockGeometryAtPosition(view: EditorView, pos: number): ActiveBlockStat
     right: Math.max(anchorLeft, lineRect.right),
     top: lineRect.top,
     height: lineRect.height,
+    handleLeft: Math.max(8, editorRect.left - 68),
     handleTop: lineRect.top + Math.max(0, (lineRect.height - 28) / 2)
   };
+}
+
+function listDragIntent(dragged: DraggedBlock, clientX: number): ListDragIntent {
+  if (!dragged.isListItem || dragged.positions.length !== 1) return "reorder";
+
+  const deltaX = clientX - dragged.startX;
+  if (deltaX >= LIST_DRAG_INDENT_THRESHOLD) return "indent";
+  if (deltaX <= -LIST_DRAG_OUTDENT_THRESHOLD) return "outdent";
+  return "reorder";
 }
 
 function taskListItemNodeView(

@@ -2,6 +2,7 @@ import { EditorState } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 import {
   collectSelectableBlockPositions,
+  createNestListItemTransaction,
   createDeleteSelectedBlocksTransaction,
   createDuplicateSelectedBlocksTransaction,
   createMoveSelectedBlocksTransaction,
@@ -97,6 +98,44 @@ describe("block editor structural mutations", () => {
     expect(transaction).not.toBeNull();
     expect(serializeLightMarkdown(transaction!.doc)).toMatch(/- One\n- Three\n- Two\n  - Nested/);
     expect(createMoveSelectedBlocksTransaction(state, [nested], three, true)).toBeNull();
+  });
+
+  it("nests a dragged list item directly under its drop target", () => {
+    const doc = parseLightMarkdown("- One\n- Two\n- Three\n");
+    const state = EditorState.create({ doc });
+    const positions = collectSelectableBlockPositions(doc);
+    const one = positions.find((pos) => doc.nodeAt(pos)?.textContent === "One")!;
+    const three = positions.find((pos) => doc.nodeAt(pos)?.textContent === "Three")!;
+    const transaction = createNestListItemTransaction(state, three, one);
+
+    expect(transaction).not.toBeNull();
+    expect(serializeLightMarkdown(transaction!.doc)).toBe("- One\n  - Three\n- Two");
+  });
+
+  it("moves a nested item across levels without leaving an empty source list", () => {
+    const doc = parseLightMarkdown("- One\n  - Nested\n- Two\n");
+    const state = EditorState.create({ doc });
+    const positions = collectSelectableBlockPositions(doc);
+    const nested = positions.find((pos) => doc.nodeAt(pos)?.textContent === "Nested")!;
+    const two = positions.find((pos) => doc.nodeAt(pos)?.textContent === "Two")!;
+    const transaction = createNestListItemTransaction(state, nested, two);
+
+    expect(transaction).not.toBeNull();
+    expect(serializeLightMarkdown(transaction!.doc)).toBe("- One\n- Two\n  - Nested");
+  });
+
+  it("appends to an existing nested list and refuses to nest a parent under its child", () => {
+    const doc = parseLightMarkdown("- One\n  - Child\n- Two\n");
+    const state = EditorState.create({ doc });
+    const positions = collectSelectableBlockPositions(doc);
+    const one = positions.find((pos) => doc.nodeAt(pos)?.textContent === "OneChild")!;
+    const child = positions.find((pos) => doc.nodeAt(pos)?.textContent === "Child")!;
+    const two = positions.find((pos) => doc.nodeAt(pos)?.textContent === "Two")!;
+    const transaction = createNestListItemTransaction(state, two, one);
+
+    expect(transaction).not.toBeNull();
+    expect(serializeLightMarkdown(transaction!.doc)).toBe("- One\n  - Child\n  - Two");
+    expect(createNestListItemTransaction(state, one, child)).toBeNull();
   });
 
   it("duplicates a parent list item only once when its child is also selected", () => {

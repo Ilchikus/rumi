@@ -349,6 +349,84 @@ export function createMoveSelectedBlocksTransaction(
   return transaction.scrollIntoView();
 }
 
+/**
+ * Move one list item into the nested list owned by another item. This is a
+ * distinct operation from sibling reordering: the target becomes the parent,
+ * regardless of whether the pointer is over its upper or lower half.
+ */
+export function createNestListItemTransaction(
+  state: EditorState,
+  sourcePos: number,
+  targetPos: number
+): Transaction | null {
+  if (!canNestListItem(state.doc, sourcePos, targetPos)) return null;
+
+  const source = state.doc.nodeAt(sourcePos)!;
+  const $source = state.doc.resolve(sourcePos);
+  const sourceList = $source.parent;
+  const transaction = state.tr;
+
+  if (sourceList.childCount === 1) {
+    const sourceListPos = $source.before($source.depth);
+    transaction.delete(sourceListPos, sourceListPos + sourceList.nodeSize);
+  } else {
+    transaction.delete(sourcePos, sourcePos + source.nodeSize);
+  }
+
+  const mappedTarget = transaction.mapping.mapResult(targetPos, 1);
+  if (mappedTarget.deleted) return null;
+
+  const target = transaction.doc.nodeAt(mappedTarget.pos);
+  if (!target || target.type.name !== "list_item") return null;
+
+  const existingNestedList = target.lastChild?.type === sourceList.type
+    ? target.lastChild
+    : null;
+  let insertedItemPos: number;
+
+  if (existingNestedList) {
+    const nestedListPos =
+      mappedTarget.pos + 1 + target.content.size - existingNestedList.nodeSize;
+    insertedItemPos = nestedListPos + existingNestedList.nodeSize - 1;
+    transaction.insert(insertedItemPos, source);
+  } else {
+    const nestedListPos = mappedTarget.pos + target.nodeSize - 1;
+    transaction.insert(nestedListPos, sourceList.type.create(null, source));
+    insertedItemPos = nestedListPos + 1;
+  }
+
+  transaction.setMeta(blockSelectionKey, {
+    selectedBlocks: [insertedItemPos],
+    anchorBlock: insertedItemPos
+  } satisfies BlockSelectionState);
+  transaction.setSelection(NodeSelection.create(transaction.doc, insertedItemPos));
+  return transaction.scrollIntoView();
+}
+
+export function canNestListItem(
+  doc: ProseMirrorNode,
+  sourcePos: number,
+  targetPos: number
+): boolean {
+  const source = doc.nodeAt(sourcePos);
+  const target = doc.nodeAt(targetPos);
+
+  if (
+    sourcePos === targetPos ||
+    source?.type.name !== "list_item" ||
+    target?.type.name !== "list_item" ||
+    (targetPos > sourcePos && targetPos < sourcePos + source.nodeSize)
+  ) {
+    return false;
+  }
+
+  const $source = doc.resolve(sourcePos);
+  return (
+    $source.parent.type.name === "bullet_list" ||
+    $source.parent.type.name === "ordered_list"
+  );
+}
+
 export function canMoveSelectedBlocks(
   doc: ProseMirrorNode,
   positions: readonly number[],

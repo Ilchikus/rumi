@@ -13,7 +13,6 @@ const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14
 const COPY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"></path></svg>`
 const PLUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"></path></svg>`
 
-const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.62,87.62,0,0,1-6.4,32.94l-44.7-27.49a15.92,15.92,0,0,0-6.24-2.23l-22.82-3.08a16.11,16.11,0,0,0-16,7.86h-8.72l-3.8-7.86a15.91,15.91,0,0,0-11-8.67l-8-1.73L96.14,104h16.71a16.06,16.06,0,0,0,7.73-2l12.25-6.76a16.62,16.62,0,0,0,3-2.14l26.91-24.34A15.93,15.93,0,0,0,168,57.48V40.64A88.11,88.11,0,0,1,216,128ZM40,128a87.53,87.53,0,0,1,8.54-37.8l11.34,30.27a16,16,0,0,0,11.62,10l21.43,4.61L96.74,143a16.09,16.09,0,0,0,14.4,9h1.48l-7.23,38.61A16,16,0,0,0,109.52,208l1.55,2.8A88.13,88.13,0,0,1,40,128Z"></path></svg>`
 const MERMAID_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M200,152a31.84,31.84,0,0,0-19.53,6.68l-23.11-18A31.65,31.65,0,0,0,160,128a31.65,31.65,0,0,0-2.64-12.68l23.11-18A31.84,31.84,0,0,0,200,104a32,32,0,1,0-32-32,31.65,31.65,0,0,0,2.64,12.68l-23.11,18a31.92,31.92,0,0,0-39.06,0l-23.11-18A31.65,31.65,0,0,0,88,72a32,32,0,1,0-32,32,31.84,31.84,0,0,0,19.53-6.68l23.11,18A31.65,31.65,0,0,0,96,128a31.65,31.65,0,0,0,2.64,12.68l-23.11,18A31.84,31.84,0,0,0,56,152a32,32,0,1,0,32,32,31.65,31.65,0,0,0-2.64-12.68l23.11-18a31.92,31.92,0,0,0,39.06,0l23.11,18A31.65,31.65,0,0,0,168,184a32,32,0,1,0,32-32Zm0-96a16,16,0,1,1-16,16A16,16,0,0,1,200,56ZM56,88A16,16,0,1,1,72,72,16,16,0,0,1,56,88Zm72,56a16,16,0,1,1,16-16A16,16,0,0,1,128,144ZM56,200a16,16,0,1,1,16-16A16,16,0,0,1,56,200Zm144,0a16,16,0,1,1,16-16A16,16,0,0,1,200,200Z"></path></svg>`
 
 const HOVER_ZONE = 64
@@ -39,7 +38,6 @@ const BLOCK_TYPE_OPTIONS: BlockTypeOption[] = [
   { label: "Code Block", icon: "{ }", type: "code_block" },
   { label: "Mermaid", icon: MERMAID_SVG, type: "mermaid" },
   { label: "Table", icon: "⊞", type: "table" },
-  { label: "Bookmark", icon: GLOBE_SVG, type: "bookmark" },
   { label: "Divider", icon: "—", type: "horizontal_rule" },
 ]
 
@@ -1190,11 +1188,6 @@ class BlockDragHandleView {
     B -->|No| D[Result 2]`
       const newNode = schema.nodes.mermaid.create({ code: defaultCode, mode: "split" })
       tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "bookmark") {
-      const url = prompt("Enter URL:")
-      if (!url) return
-      const newNode = schema.nodes.bookmark.create({ url })
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
     } else if (opt.type === "horizontal_rule") {
       const newNode = schema.nodes.horizontal_rule.create()
       tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
@@ -1250,10 +1243,6 @@ class BlockDragHandleView {
     B -->|Yes| C[Result 1]
     B -->|No| D[Result 2]`
         newNode = schema.nodes.mermaid.create({ code: defaultCode, mode: "split" })
-      } else if (opt.type === "bookmark") {
-        // Use text content as URL (or placeholder if empty)
-        const url = textContent.trim() || "https://example.com"
-        newNode = schema.nodes.bookmark.create({ url })
       } else if (opt.type === "horizontal_rule") {
         newNode = schema.nodes.horizontal_rule.create()
       }

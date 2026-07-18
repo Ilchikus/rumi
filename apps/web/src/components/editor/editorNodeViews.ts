@@ -313,70 +313,6 @@ async function renderMermaid(
   }
 }
 
-export function bookmarkNodeView(
-  initialNode: ProseMirrorNode,
-  view: EditorView,
-  getPos: () => number | undefined,
-  openHref: (href: string) => void
-): NodeView {
-  let node = initialNode;
-  const dom = document.createElement("div");
-  dom.className = "rumi-bookmark-card";
-  dom.contentEditable = "false";
-  const content = document.createElement("button");
-  content.type = "button";
-  content.className = "rumi-bookmark-content";
-  const title = document.createElement("strong");
-  const address = document.createElement("span");
-  const actions = document.createElement("div");
-  actions.className = "rumi-embed-actions";
-  const copy = embedButton("Copy");
-  const edit = embedButton("Edit");
-  actions.append(copy, edit);
-  content.append(title, address);
-  dom.append(content, actions);
-
-  const render = () => {
-    const url = String(node.attrs.url ?? "");
-    title.textContent = hostnameForUrl(url) || "Bookmark";
-    address.textContent = url;
-    dom.dataset.url = url;
-  };
-
-  content.addEventListener("click", () => openHref(String(node.attrs.url ?? "")));
-  copy.addEventListener("click", () => void navigator.clipboard?.writeText(String(node.attrs.url ?? "")));
-  edit.addEventListener("click", () => {
-    const input = document.createElement("input");
-    input.className = "rumi-embed-input";
-    input.value = String(node.attrs.url ?? "");
-    input.setAttribute("aria-label", "Bookmark URL");
-    dom.replaceChild(input, content);
-    input.focus();
-    input.select();
-
-    const finish = (save: boolean) => {
-      const pos = getPos();
-      const url = input.value.trim();
-      if (save && url && typeof pos === "number") {
-        view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, url }));
-      }
-      if (input.parentNode === dom) dom.replaceChild(content, input);
-      view.focus();
-    };
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") finish(true);
-      if (event.key === "Escape") finish(false);
-    });
-    input.addEventListener("blur", () => finish(true), { once: true });
-  });
-
-  render();
-  return atomNodeView(dom, () => node, (nextNode) => {
-    node = nextNode;
-    render();
-  });
-}
-
 export function fileEmbedNodeView(initialNode: ProseMirrorNode): NodeView {
   let node = initialNode;
   const dom = document.createElement("div");
@@ -536,14 +472,6 @@ function embedButton(label: string): HTMLButtonElement {
   button.className = "rumi-embed-button";
   button.textContent = label;
   return button;
-}
-
-function hostnameForUrl(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./u, "");
-  } catch {
-    return "";
-  }
 }
 
 function workspaceAssetUrl(src: string): string {

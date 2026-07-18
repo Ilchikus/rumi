@@ -1,5 +1,13 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
-import { Plugin, PluginKey, EditorState, Transaction } from "prosemirror-state"
+import {
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Command,
+  type EditorState,
+  type Transaction
+} from "prosemirror-state"
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view"
 import { Schema } from "prosemirror-model"
 
@@ -9,6 +17,155 @@ export interface MultiBlockSelectionState {
 }
 
 export const multiBlockSelectionKey = new PluginKey<MultiBlockSelectionState>("multiBlockSelection")
+
+export type BlockMoveDirection = "up" | "down"
+
+interface TopLevelBlock {
+  node: import("prosemirror-model").Node
+  pos: number
+}
+
+function topLevelBlocks(state: EditorState): TopLevelBlock[] {
+  const blocks: TopLevelBlock[] = []
+  state.doc.forEach((node, pos) => blocks.push({ node, pos }))
+  return blocks
+}
+
+function currentTopLevelBlockPos(state: EditorState): number | null {
+  const { $from } = state.selection
+  if ($from.depth > 0) return $from.before(1)
+  return state.doc.nodeAt(state.selection.from) ? state.selection.from : null
+}
+
+function blockPositions(blocks: readonly TopLevelBlock[]): number[] {
+  const positions: number[] = []
+  let pos = 0
+  for (const block of blocks) {
+    positions.push(pos)
+    pos += block.node.nodeSize
+  }
+  return positions
+}
+
+export function createMoveBlocksTransaction(
+  state: EditorState,
+  direction: BlockMoveDirection
+): Transaction | null {
+  const blocks = topLevelBlocks(state)
+  const pluginState = multiBlockSelectionKey.getState(state)
+  const selectedByPlugin = pluginState?.selectedBlocks ?? []
+  const currentPos = currentTopLevelBlockPos(state)
+  const requestedPositions = selectedByPlugin.length > 0
+    ? [...new Set(selectedByPlugin)].sort((left, right) => left - right)
+    : currentPos === null ? [] : [currentPos]
+  const selectedIndices = requestedPositions
+    .map((pos) => blocks.findIndex((block) => block.pos === pos))
+    .filter((index) => index >= 0)
+
+  if (selectedIndices.length === 0) return null
+
+  const firstIndex = selectedIndices[0]
+  const lastIndex = selectedIndices[selectedIndices.length - 1]
+  const isContiguous = selectedIndices.every((index, offset) => index === firstIndex + offset)
+  if (!isContiguous) return null
+  if (direction === "up" && firstIndex === 0) return null
+  if (direction === "down" && lastIndex === blocks.length - 1) return null
+
+  const group = blocks.slice(firstIndex, lastIndex + 1)
+  let reordered: TopLevelBlock[]
+  let movedStartIndex: number
+
+  if (direction === "up") {
+    reordered = [
+      ...blocks.slice(0, firstIndex - 1),
+      ...group,
+      blocks[firstIndex - 1],
+      ...blocks.slice(lastIndex + 1)
+    ]
+    movedStartIndex = firstIndex - 1
+  } else {
+    reordered = [
+      ...blocks.slice(0, firstIndex),
+      blocks[lastIndex + 1],
+      ...group,
+      ...blocks.slice(lastIndex + 2)
+    ]
+    movedStartIndex = firstIndex + 1
+  }
+
+  const positions = blockPositions(reordered)
+  const movedPositions = group.map((_, offset) => positions[movedStartIndex + offset])
+  const transaction = state.tr.replaceWith(
+    0,
+    state.doc.content.size,
+    reordered.map((block) => block.node)
+  )
+
+  if (selectedByPlugin.length > 0) {
+    transaction.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: movedPositions,
+      anchorBlock: movedPositions[0] ?? null
+    })
+    transaction.setMeta("multiBlockKeep", true)
+    if (movedPositions[0] !== undefined) {
+      transaction.setSelection(NodeSelection.create(transaction.doc, movedPositions[0]))
+    }
+  } else if (movedPositions[0] !== undefined && currentPos !== null) {
+    if (state.selection instanceof TextSelection) {
+      const movedNode = group[0].node
+      const minTextPos = movedPositions[0] + 1
+      const maxTextPos = movedPositions[0] + movedNode.nodeSize - 1
+      const mappedAnchor = Math.max(
+        minTextPos,
+        Math.min(maxTextPos, movedPositions[0] + (state.selection.anchor - currentPos))
+      )
+      const mappedHead = Math.max(
+        minTextPos,
+        Math.min(maxTextPos, movedPositions[0] + (state.selection.head - currentPos))
+      )
+      transaction.setSelection(TextSelection.create(transaction.doc, mappedAnchor, mappedHead))
+    } else {
+      transaction.setSelection(NodeSelection.create(transaction.doc, movedPositions[0]))
+    }
+  }
+
+  return transaction.scrollIntoView()
+}
+
+export function moveBlocks(direction: BlockMoveDirection): Command {
+  return (state, dispatch) => {
+    const transaction = createMoveBlocksTransaction(state, direction)
+    if (!transaction) return false
+    dispatch?.(transaction)
+    return true
+  }
+}
+
+export const selectAllBlocksInStages: Command = (state, dispatch) => {
+  const blocks = topLevelBlocks(state)
+  if (blocks.length === 0) return false
+
+  const current = multiBlockSelectionKey.getState(state)
+  const currentPos = currentTopLevelBlockPos(state)
+  const selectedBlocks = current?.selectedBlocks.length
+    ? blocks.map((block) => block.pos)
+    : currentPos === null ? [] : [currentPos]
+
+  if (selectedBlocks.length === 0) return false
+
+  if (dispatch) {
+    const transaction = state.tr
+      .setMeta(multiBlockSelectionKey, {
+        selectedBlocks,
+        anchorBlock: selectedBlocks[0] ?? null
+      })
+      .setMeta("multiBlockKeep", true)
+      .setSelection(NodeSelection.create(state.doc, selectedBlocks[0]))
+    dispatch(transaction.scrollIntoView())
+  }
+
+  return true
+}
 
 export function clearMultiBlockSelection(view: EditorView) {
   const tr = view.state.tr.setMeta(multiBlockSelectionKey, {

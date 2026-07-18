@@ -150,18 +150,27 @@ const nodes: { [key: string]: NodeSpec } = {
   table_cell: {
     content: "inline*",
     tableRole: "cell",
-    attrs: { colspan: { default: 1 }, rowspan: { default: 1 } },
+    attrs: {
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      alignment: { default: null }
+    },
     isolating: true,
     parseDOM: [{ tag: "td", getAttrs(dom: HTMLElement) {
       return {
         colspan: Number(dom.getAttribute("colspan") || 1),
-        rowspan: Number(dom.getAttribute("rowspan") || 1)
+        rowspan: Number(dom.getAttribute("rowspan") || 1),
+        alignment: dom.getAttribute("data-alignment") || dom.style.textAlign || null
       }
     }}],
     toDOM(node) {
       const attrs: Record<string, string> = {}
       if (node.attrs.colspan !== 1) attrs.colspan = String(node.attrs.colspan)
       if (node.attrs.rowspan !== 1) attrs.rowspan = String(node.attrs.rowspan)
+      if (node.attrs.alignment) {
+        attrs["data-alignment"] = node.attrs.alignment
+        attrs.style = `text-align: ${node.attrs.alignment}`
+      }
       return ["td", attrs, 0]
     }
   },
@@ -169,47 +178,28 @@ const nodes: { [key: string]: NodeSpec } = {
   table_header: {
     content: "inline*",
     tableRole: "header_cell",
-    attrs: { colspan: { default: 1 }, rowspan: { default: 1 } },
+    attrs: {
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      alignment: { default: null }
+    },
     isolating: true,
     parseDOM: [{ tag: "th", getAttrs(dom: HTMLElement) {
       return {
         colspan: Number(dom.getAttribute("colspan") || 1),
-        rowspan: Number(dom.getAttribute("rowspan") || 1)
+        rowspan: Number(dom.getAttribute("rowspan") || 1),
+        alignment: dom.getAttribute("data-alignment") || dom.style.textAlign || null
       }
     }}],
     toDOM(node) {
       const attrs: Record<string, string> = {}
       if (node.attrs.colspan !== 1) attrs.colspan = String(node.attrs.colspan)
       if (node.attrs.rowspan !== 1) attrs.rowspan = String(node.attrs.rowspan)
-      return ["th", attrs, 0]
-    }
-  },
-
-  bookmark: {
-    group: "block",
-    atom: true,
-    attrs: {
-      url: { default: "" },
-      title: { default: null },
-      description: { default: null },
-      favicon: { default: null }
-    },
-    parseDOM: [{ tag: "div.bookmark-block", getAttrs(dom: HTMLElement) {
-      return {
-        url: dom.getAttribute("data-url") || "",
-        title: dom.getAttribute("data-title") || null,
-        description: dom.getAttribute("data-description") || null,
-        favicon: dom.getAttribute("data-favicon") || null
+      if (node.attrs.alignment) {
+        attrs["data-alignment"] = node.attrs.alignment
+        attrs.style = `text-align: ${node.attrs.alignment}`
       }
-    }}],
-    toDOM(node) {
-      return ["div", {
-        class: "bookmark-block",
-        "data-url": node.attrs.url,
-        "data-title": node.attrs.title || "",
-        "data-description": node.attrs.description || "",
-        "data-favicon": node.attrs.favicon || ""
-      }]
+      return ["th", attrs, 0]
     }
   },
 

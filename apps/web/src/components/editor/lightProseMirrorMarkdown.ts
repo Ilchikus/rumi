@@ -33,16 +33,6 @@ const taskListItem: NodeSpec = {
   }
 };
 const tableNodeSpecs = tableNodes({ tableGroup: "block", cellContent: "inline*", cellAttributes: {} });
-const bookmarkNode: NodeSpec = {
-  group: "block",
-  atom: true,
-  attrs: { url: { default: "" } },
-  parseDOM: [{
-    tag: "div[data-rumi-bookmark]",
-    getAttrs: (dom) => ({ url: (dom as HTMLElement).getAttribute("data-rumi-bookmark") ?? "" })
-  }],
-  toDOM: (node) => ["div", { "data-rumi-bookmark": node.attrs.url }]
-};
 const fileEmbedNode: NodeSpec = {
   group: "block",
   atom: true,
@@ -93,7 +83,6 @@ const databaseEmbedNode: NodeSpec = {
 const nodes = commonMarkSchema.spec.nodes
   .update("list_item", taskListItem)
   .append(tableNodeSpecs)
-  .addToEnd("bookmark", bookmarkNode)
   .addToEnd("file_embed", fileEmbedNode)
   .addToEnd("image_block", imageBlockNode)
   .addToEnd("database_embed", databaseEmbedNode);
@@ -119,7 +108,8 @@ export const lightEditorSchema = new Schema({ nodes, marks });
 
 const markdownIt = MarkdownIt("commonmark", { html: false, linkify: true }).enable([
   "table",
-  "strikethrough"
+  "strikethrough",
+  "linkify"
 ]);
 installDelimitedMark(markdownIt, "highlight", "==");
 installDelimitedMark(markdownIt, "underline", "++");
@@ -178,10 +168,6 @@ const lightMarkdownSerializer = new MarkdownSerializer(
     table_row() {},
     table_header() {},
     table_cell() {},
-    bookmark(state, node) {
-      state.write(String(node.attrs.url ?? ""));
-      state.closeBlock(node);
-    },
     file_embed(state, node) {
       state.write(`![[${String(node.attrs.src ?? "")}]]`);
       state.closeBlock(node);
@@ -304,11 +290,6 @@ function transformSpecialBlocks(doc: ProseMirrorNode): ProseMirrorNode {
           return lightEditorSchema.nodes.file_embed!.create({ src: file[1].trim() });
         }
 
-        const link = lightEditorSchema.marks.link?.isInSet(child.marks);
-        const href = link?.attrs.href ? String(link.attrs.href) : "";
-        if (/^https?:\/\/[^\s]+$/iu.test(text) && (!href || href === text)) {
-          return lightEditorSchema.nodes.bookmark!.create({ url: href || text });
-        }
       }
     }
 

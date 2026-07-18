@@ -1,7 +1,6 @@
 import { EditorState, TextSelection } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 import {
-  createBookmarkTransaction,
   createDividerTransaction,
   createTaskListTransaction
 } from "./editorActions";
@@ -49,15 +48,6 @@ describe("Rumi editor structural actions", () => {
     expect(transaction!.doc.child(1).type.name).toBe("paragraph");
   });
 
-  it("turns a standalone URL into a bookmark and keeps a place to continue writing", () => {
-    const state = paragraphState("https://rumi.md");
-    const transaction = createBookmarkTransaction(state);
-
-    expect(transaction).not.toBeNull();
-    expect(transaction!.doc.child(0).type.name).toBe("bookmark");
-    expect(transaction!.doc.child(0).attrs.url).toBe("https://rumi.md");
-    expect(transaction!.doc.child(1).type.name).toBe("paragraph");
-  });
 });
 
 describe("Rumi editor paste actions", () => {
@@ -75,14 +65,15 @@ describe("Rumi editor paste actions", () => {
     expect(serializeLightMarkdown(transaction!.doc)).toBe("[Rumi docs](https://rumi.md)");
   });
 
-  it("pastes a standalone URL into an empty paragraph as a bookmark", () => {
+  it("pastes a standalone URL into an empty paragraph as an inline link", () => {
     const transaction = createPlainTextPasteTransaction(
       paragraphState(""),
       "https://rumi.md",
       lightEditorSchema
     );
 
-    expect(transaction?.doc.firstChild?.type.name).toBe("bookmark");
+    expect(transaction?.doc.firstChild?.type.name).toBe("paragraph");
+    expect(serializeLightMarkdown(transaction!.doc)).toBe("<https://rumi.md>");
   });
 
   it("parses multi-block Markdown instead of flattening it", () => {

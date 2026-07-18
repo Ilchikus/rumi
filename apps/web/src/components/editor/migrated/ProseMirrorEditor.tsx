@@ -25,7 +25,6 @@ import { tableEditing, columnResizing } from "prosemirror-tables"
 import { tableControlsPlugin } from "./plugins/tableControls"
 import { codeBlockNodeView } from "./plugins/codeBlockView"
 import { codeHighlightPlugin } from "./plugins/codeHighlight"
-import { bookmarkNodeView } from "./plugins/bookmarkNodeView"
 import { fileNodeView } from "./plugins/fileNodeView"
 import { imageNodeView } from "./plugins/imageNodeView"
 import { mermaidNodeView } from "./plugins/mermaidNodeView"
@@ -132,7 +131,6 @@ function ProseMirrorEditor(
       nodeViews: {
         heading: (node, view, getPos) => headingNodeView(node, view, getPos),
         code_block: (node, view, getPos) => codeBlockNodeView(node, view, getPos),
-        bookmark: (node, view, getPos) => bookmarkNodeView(node, view, getPos),
         file_embed: (node, view, getPos) => fileNodeView(node, view, getPos),
         image: (node, view, getPos) => imageNodeView(node, view, getPos),
         mermaid: (node, view, getPos) => mermaidNodeView(node, view, getPos),

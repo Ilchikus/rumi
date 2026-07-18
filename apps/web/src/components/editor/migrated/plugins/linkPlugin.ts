@@ -205,8 +205,7 @@ export function linkPlugin(schema: Schema) {
         const target = e.target as HTMLElement
         const link = target.closest("a") as HTMLElement | null
 
-        // Don't show tooltip for links inside bookmark blocks (they have their own controls)
-        if (link && !link.closest(".bookmark-block")) {
+        if (link) {
           isMouseOverLink = true
           scheduleShow(link)
         }

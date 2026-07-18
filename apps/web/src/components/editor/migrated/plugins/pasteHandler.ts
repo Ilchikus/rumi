@@ -1,5 +1,6 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
-import { Plugin, PluginKey } from "prosemirror-state"
+import { Plugin, PluginKey, TextSelection } from "prosemirror-state"
+import type { EditorState, Transaction } from "prosemirror-state"
 import { Node as ProseMirrorNode, Schema, Slice } from "prosemirror-model"
 import { EditorView } from "prosemirror-view"
 import TurndownService from "turndown"
@@ -106,6 +107,30 @@ function insertBlockAtPosition(view: EditorView, blockNode: ProseMirrorNode, pos
   dispatch(tr)
 }
 
+export function createUrlPasteTransaction(
+  state: EditorState,
+  text: string,
+  schema: Schema = state.schema
+): Transaction | null {
+  const href = text.trim()
+  const link = schema.marks.link
+
+  if (!link || !URL_REGEX.test(href) || state.selection.$from.parent.type === schema.nodes.code_block) {
+    return null
+  }
+
+  if (state.selection instanceof TextSelection && !state.selection.empty) {
+    const transaction = state.tr.addMark(
+      state.selection.from,
+      state.selection.to,
+      link.create({ href })
+    )
+    return transaction.setSelection(TextSelection.create(transaction.doc, state.selection.to))
+  }
+
+  return state.tr.replaceSelectionWith(schema.text(href, [link.create({ href })]), false)
+}
+
 export function pasteHandlerPlugin(schema: Schema) {
   return new Plugin({
     key: pasteHandlerKey,
@@ -146,6 +171,14 @@ export function pasteHandlerPlugin(schema: Schema) {
         const html = clipboard.getData("text/html")
         const text = clipboard.getData("text/plain")
 
+        // A URL is always pasted as a normal inline link. Handle this before
+        // rich HTML so a browser-provided anchor cannot replace selected text.
+        const urlTransaction = createUrlPasteTransaction(view.state, text, schema)
+        if (urlTransaction) {
+          view.dispatch(urlTransaction)
+          return true
+        }
+
         // If we have HTML content (from web/docs), convert it
         if (html && html.trim()) {
           // Convert HTML to Markdown
@@ -167,43 +200,6 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         // Handle plain text / markdown
         if (text && text.trim()) {
-          // Check if it's a single URL on its own line (bookmark case)
-          const trimmedText = text.trim()
-          if (URL_REGEX.test(trimmedText)) {
-            // Check if we're at the start of an empty block or selection spans whole line
-            const { $from, $to } = view.state.selection
-            const isEmptyParagraph = $from.parent.type.name === "paragraph" &&
-                                     $from.parent.content.size === 0
-            const isAtBlockStart = $from.parentOffset === 0 && $to.parentOffset === 0
-
-            // If pasting URL into empty paragraph, make it a bookmark
-            if (isEmptyParagraph || (isAtBlockStart && $from.pos === $to.pos)) {
-              if (schema.nodes.bookmark) {
-                const bookmark = schema.nodes.bookmark.create({ url: trimmedText })
-                const tr = view.state.tr
-
-                if (isEmptyParagraph) {
-                  // Replace the empty paragraph with bookmark
-                  tr.replaceWith($from.before(), $from.after(), bookmark)
-                } else {
-                  tr.replaceSelectionWith(bookmark)
-                }
-
-                view.dispatch(tr)
-                return true
-              }
-            }
-
-            // Otherwise insert as a link
-            const linkMark = schema.marks.link?.create({ href: trimmedText })
-            if (linkMark) {
-              const linkText = schema.text(trimmedText, [linkMark])
-              const tr = view.state.tr.replaceSelectionWith(linkText, false)
-              view.dispatch(tr)
-              return true
-            }
-          }
-
           // Check if text contains URLs that should be auto-linked
           if (INLINE_URL_REGEX.test(text)) {
             // Parse as markdown which will handle link syntax

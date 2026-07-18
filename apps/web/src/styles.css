@@ -403,7 +403,6 @@
     border-radius: 0.5rem;
   }
 
-  .rumi-prosemirror .rumi-bookmark-card,
   .rumi-prosemirror .rumi-file-card,
   .rumi-prosemirror .rumi-database-embed {
     display: flex;
@@ -417,7 +416,6 @@
     text-align: left;
   }
 
-  .rumi-prosemirror .rumi-bookmark-content,
   .rumi-prosemirror .rumi-file-content,
   .rumi-prosemirror .rumi-database-content {
     display: flex;
@@ -428,8 +426,6 @@
     text-align: left;
   }
 
-  .rumi-prosemirror .rumi-bookmark-content > strong,
-  .rumi-prosemirror .rumi-bookmark-content > span,
   .rumi-prosemirror .rumi-file-content strong,
   .rumi-prosemirror .rumi-file-content span,
   .rumi-prosemirror .rumi-database-content > strong,
@@ -440,7 +436,6 @@
     white-space: nowrap;
   }
 
-  .rumi-prosemirror .rumi-bookmark-content > span,
   .rumi-prosemirror .rumi-file-content span,
   .rumi-prosemirror .rumi-database-content > span {
     color: hsl(var(--muted-foreground));

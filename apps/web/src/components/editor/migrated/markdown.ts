@@ -60,29 +60,98 @@ export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode
 
 // Pre-process custom markdown syntax into HTML that can be parsed
 function preprocessCustomSyntax(markdown: string): string {
-  // Protect fenced code blocks from preprocessing
-  const codeBlocks: string[] = []
-  let result = markdown.replace(/^(```[\s\S]*?^```)/gm, (match) => {
-    codeBlocks.push(match)
-    return `\x00CODEBLOCK${codeBlocks.length - 1}\x00`
-  })
+  const lines = markdown.split("\n")
+  let activeFence: { character: "`" | "~"; length: number } | null = null
+
+  return lines.map((line) => {
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})/)
+
+    if (activeFence) {
+      if (fence && fence[1][0] === activeFence.character && fence[1].length >= activeFence.length) {
+        activeFence = null
+      }
+      return line
+    }
+
+    if (fence) {
+      activeFence = {
+        character: fence[1][0] as "`" | "~",
+        length: fence[1].length
+      }
+      return line
+    }
+
+    // Four-space and tab indentation are Markdown code blocks. Nested list
+    // markers remain eligible for Rumi inline formatting.
+    if (/^(?: {4}|\t)(?![-+*]\s|\d+[.)]\s)/.test(line)) return line
+
+    return preprocessOutsideCodeSpans(line)
+  }).join("\n")
+}
+
+function preprocessOutsideCodeSpans(line: string): string {
+  let result = ""
+  let plainTextStart = 0
+  let cursor = 0
+
+  while (cursor < line.length) {
+    if (line[cursor] !== "`") {
+      cursor++
+      continue
+    }
+
+    const openingStart = cursor
+    while (cursor < line.length && line[cursor] === "`") cursor++
+    const openingLength = cursor - openingStart
+    const closingStart = findMatchingBacktickRun(line, cursor, openingLength)
+
+    if (closingStart < 0) {
+      cursor = openingStart + openingLength
+      continue
+    }
+
+    result += preprocessPlainCustomSyntax(line.slice(plainTextStart, openingStart))
+    result += line.slice(openingStart, closingStart + openingLength)
+    cursor = closingStart + openingLength
+    plainTextStart = cursor
+  }
+
+  return result + preprocessPlainCustomSyntax(line.slice(plainTextStart))
+}
+
+function findMatchingBacktickRun(line: string, from: number, expectedLength: number): number {
+  let cursor = from
+
+  while (cursor < line.length) {
+    const runStart = line.indexOf("`", cursor)
+    if (runStart < 0) return -1
+
+    cursor = runStart
+    while (cursor < line.length && line[cursor] === "`") cursor++
+    if (cursor - runStart === expectedLength) return runStart
+  }
+
+  return -1
+}
+
+function preprocessPlainCustomSyntax(markdown: string): string {
+  let result = markdown
 
   // Underline: __text__ -> <u>text</u> (but not at word boundaries for bold)
   // We need to be careful not to match GFM bold which also uses __
   // Our rule: __ at start of word followed by text and __ at end
   result = result.replace(/(?<!\w)__(?!\s)([^_]+?)__(?!\w)/g, '<u>$1</u>')
 
-  // Strikethrough alternative: --text-- -> <s>text</s>
-  result = result.replace(/(?<!\w)--(?!\s)([^-]+?)--(?!\w)/g, '<s>$1</s>')
+  // Strikethrough alternative: --text-- -> <s>text</s>.
+  // Do not treat runs of three or more dashes as markup: those are used by
+  // horizontal rules and GFM table alignment delimiters.
+  result = result.replace(/(?<![\w-])--(?![\s-])([^\n]*?)(?<![\s-])--(?![\w-])/g, '<s>$1</s>')
 
   // Highlight with color: ==color::text== -> <mark data-color="color">text</mark>
   result = result.replace(/==(\w+)::([^=]+)==/g, '<mark data-color="$1">$2</mark>')
 
   // Highlight default: ==text== -> <mark>text</mark>
   result = result.replace(/==([^=:]+)==/g, '<mark>$1</mark>')
-
-  // Restore code blocks
-  result = result.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, i) => codeBlocks[Number(i)])
 
   return result
 }
@@ -125,8 +194,6 @@ function convertHtmlBlock(html: string, schema: Schema): ProseMirrorNode | null 
   return null
 }
 
-// URL regex for detecting standalone URLs
-const URL_ONLY_REGEX = /^https?:\/\/[^\s<>"]+$/i
 const OBSIDIAN_EMBED_REGEX = /^!\[\[([^[\]]+)\]\]$/
 
 function convertParagraph(node: Paragraph, schema: Schema): ProseMirrorNode | ProseMirrorNode[] {
@@ -146,25 +213,6 @@ function convertParagraph(node: Paragraph, schema: Schema): ProseMirrorNode | Pr
       alt: imgNode.alt || "",
       title: imgNode.title || null
     })
-  }
-
-  // Check if paragraph contains only a URL (make it a bookmark)
-  if (schema.nodes.bookmark && node.children.length === 1) {
-    const child = node.children[0]
-    // Plain text that's just a URL
-    if (child.type === "text" && URL_ONLY_REGEX.test((child as Text).value.trim())) {
-      return schema.nodes.bookmark.create({ url: (child as Text).value.trim() })
-    }
-    // Link where the text equals the URL (auto-linked URL)
-    if (child.type === "link") {
-      const linkNode = child as Link
-      const linkText = linkNode.children.length === 1 &&
-                       linkNode.children[0].type === "text" ?
-                       (linkNode.children[0] as Text).value : ""
-      if (linkText === linkNode.url || URL_ONLY_REGEX.test(linkText)) {
-        return schema.nodes.bookmark.create({ url: linkNode.url })
-      }
-    }
   }
 
   const inline = convertInlineContent(node.children, schema)
@@ -265,10 +313,13 @@ function convertTable(node: Table, schema: Schema): ProseMirrorNode | null {
   const rows: ProseMirrorNode[] = []
   node.children.forEach((row, rowIndex) => {
     const cells: ProseMirrorNode[] = []
-    row.children.forEach((cell) => {
+    row.children.forEach((cell, columnIndex) => {
       const cellContent = convertInlineContent(cell.children, schema)
       const cellType = rowIndex === 0 ? schema.nodes.table_header : schema.nodes.table_cell
-      cells.push(cellType.create(null, cellContent.length > 0 ? cellContent : null))
+      cells.push(cellType.create(
+        { alignment: node.align?.[columnIndex] ?? null },
+        cellContent.length > 0 ? cellContent : null
+      ))
     })
     rows.push(schema.nodes.table_row.create(null, cells))
   })
@@ -309,11 +360,29 @@ function convertCodeBlock(node: Code, schema: Schema): ProseMirrorNode | null {
   )
 }
 
-function convertInlineContent(children: MdastPhrasingContent[], schema: Schema): ProseMirrorNode[] {
+function convertInlineContent(
+  children: MdastPhrasingContent[],
+  schema: Schema,
+  inheritedMarks: Array<{ name: MarkName; attrs?: MarkAttrs }> = []
+): ProseMirrorNode[] {
   const result: ProseMirrorNode[] = []
+  let activeMarks = [...inheritedMarks]
 
   for (const child of children) {
-    const nodes = convertInline(child, schema, [])
+    if (child.type === "html") {
+      const customMarkTag = parseCustomMarkTag(child.value)
+      if (customMarkTag) {
+        if (customMarkTag.closing) {
+          const markIndex = activeMarks.map((mark) => mark.name).lastIndexOf(customMarkTag.mark.name)
+          if (markIndex >= 0) activeMarks.splice(markIndex, 1)
+        } else {
+          activeMarks.push(customMarkTag.mark)
+        }
+        continue
+      }
+    }
+
+    const nodes = convertInline(child, schema, activeMarks)
     result.push(...nodes)
   }
 
@@ -323,33 +392,51 @@ function convertInlineContent(children: MdastPhrasingContent[], schema: Schema):
 type MarkName = "bold" | "italic" | "underline" | "strikethrough" | "code" | "link" | "highlight"
 type MarkAttrs = { href?: string; title?: string | null; color?: string }
 
+function parseCustomMarkTag(html: string): {
+  closing: boolean
+  mark: { name: MarkName; attrs?: MarkAttrs }
+} | null {
+  const tag = html.trim()
+
+  if (/^<u>$/i.test(tag)) return { closing: false, mark: { name: "underline" } }
+  if (/^<\/u>$/i.test(tag)) return { closing: true, mark: { name: "underline" } }
+  if (/^<s>$/i.test(tag)) return { closing: false, mark: { name: "strikethrough" } }
+  if (/^<\/s>$/i.test(tag)) return { closing: true, mark: { name: "strikethrough" } }
+  if (/^<\/mark>$/i.test(tag)) return { closing: true, mark: { name: "highlight" } }
+
+  const highlight = tag.match(/^<mark(?:\s+data-color="(\w+)")?>$/i)
+  if (highlight) {
+    return {
+      closing: false,
+      mark: { name: "highlight", attrs: { color: highlight[1]?.toLowerCase() || "yellow" } }
+    }
+  }
+
+  return null
+}
+
 function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<{ name: MarkName; attrs?: MarkAttrs }>): ProseMirrorNode[] {
   switch (node.type) {
     case "text":
       return [createTextWithMarks(node.value, marks, schema)]
 
     case "strong":
-      return flatMap(node.children, (child) =>
-        convertInline(child, schema, [...marks, { name: "bold" }])
-      )
+      return convertInlineContent(node.children, schema, [...marks, { name: "bold" }])
 
     case "emphasis":
-      return flatMap(node.children, (child) =>
-        convertInline(child, schema, [...marks, { name: "italic" }])
-      )
+      return convertInlineContent(node.children, schema, [...marks, { name: "italic" }])
 
     case "delete":
-      return flatMap(node.children, (child) =>
-        convertInline(child, schema, [...marks, { name: "strikethrough" }])
-      )
+      return convertInlineContent(node.children, schema, [...marks, { name: "strikethrough" }])
 
     case "inlineCode":
       return [createTextWithMarks(node.value, [...marks, { name: "code" }], schema)]
 
     case "link":
-      return flatMap(node.children, (child) =>
-        convertInline(child, schema, [...marks, { name: "link", attrs: { href: node.url, title: node.title } }])
-      )
+      return convertInlineContent(node.children, schema, [
+        ...marks,
+        { name: "link", attrs: { href: node.url, title: node.title } }
+      ])
 
     case "html":
       // Handle inline HTML (our custom syntax)
@@ -502,7 +589,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "bullet_item": {
       const itemIndent = node.attrs.indent || 0
-      const indentStr = "  ".repeat(itemIndent)
+      const indentStr = "    ".repeat(itemIndent)
       lines.push(indent + indentStr + "- " + serializeInline(node))
       state.prevNodeType = typeName
       state.prevIndent = itemIndent
@@ -511,16 +598,22 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "numbered_item": {
       const itemIndent = node.attrs.indent || 0
-      // Reset counter for this level if indent decreased or type changed
-      if (itemIndent < state.prevIndent || state.prevNodeType !== "numbered_item") {
-        // Reset counters at this level and deeper
+      if (state.prevNodeType !== "numbered_item") {
+        state.numberedCounters.fill(0)
+      } else if (itemIndent > state.prevIndent) {
         for (let i = itemIndent; i < state.numberedCounters.length; i++) {
+          state.numberedCounters[i] = 0
+        }
+      } else if (itemIndent < state.prevIndent) {
+        // Keep the existing counter at the level we return to, but reset every
+        // deeper level so a later nested list begins at one again.
+        for (let i = itemIndent + 1; i < state.numberedCounters.length; i++) {
           state.numberedCounters[i] = 0
         }
       }
       state.numberedCounters[itemIndent]++
       const num = state.numberedCounters[itemIndent]
-      const indentStr = "  ".repeat(itemIndent)
+      const indentStr = "    ".repeat(itemIndent)
       lines.push(indent + indentStr + `${num}. ` + serializeInline(node))
       state.prevNodeType = typeName
       state.prevIndent = itemIndent
@@ -530,7 +623,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
     case "task_item": {
       const itemIndent = node.attrs.indent || 0
       const checkbox = node.attrs.checked ? "[x]" : "[ ]"
-      const indentStr = "  ".repeat(itemIndent)
+      const indentStr = "    ".repeat(itemIndent)
       lines.push(indent + indentStr + `- ${checkbox} ` + serializeInline(node))
       state.prevNodeType = typeName
       state.prevIndent = itemIndent
@@ -581,11 +674,6 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       serializeTable(node, lines, indent)
       break
 
-    case "bookmark":
-      lines.push(indent + (node.attrs.url || ""))
-      lines.push("")
-      break
-
     case "image":
       const alt = node.attrs.alt || ""
       const src = node.attrs.src || ""
@@ -620,10 +708,12 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
 function serializeTable(node: ProseMirrorNode, lines: string[], indent: string): void {
   const rows: string[][] = []
+  const alignments: Array<string | null> = []
   node.forEach((row) => {
     const cells: string[] = []
-    row.forEach((cell) => {
+    row.forEach((cell, _, columnIndex) => {
       cells.push(serializeInline(cell).replace(/\|/g, "\\|"))
+      if (rows.length === 0) alignments[columnIndex] = cell.attrs.alignment || null
     })
     rows.push(cells)
   })
@@ -643,12 +733,25 @@ function serializeTable(node: ProseMirrorNode, lines: string[], indent: string):
   const header = rows[0]
   lines.push(indent + "| " + widths.map((w, i) => (header[i] || "").padEnd(w)).join(" | ") + " |")
   // Separator
-  lines.push(indent + "| " + widths.map(w => "-".repeat(w)).join(" | ") + " |")
+  lines.push(indent + "| " + widths.map((_, index) => tableAlignmentDelimiter(alignments[index])).join(" | ") + " |")
   // Data rows
   for (let r = 1; r < rows.length; r++) {
     lines.push(indent + "| " + widths.map((w, i) => (rows[r][i] || "").padEnd(w)).join(" | ") + " |")
   }
   lines.push("")
+}
+
+function tableAlignmentDelimiter(alignment: string | null | undefined): string {
+  switch (alignment) {
+    case "left":
+      return ":---"
+    case "center":
+      return ":---:"
+    case "right":
+      return "---:"
+    default:
+      return "---"
+  }
 }
 
 function serializeListItem(node: ProseMirrorNode, lines: string[], indent: string, bullet: string): void {

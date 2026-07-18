@@ -4,7 +4,6 @@ import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
 import { Code } from "@phosphor-icons/react/dist/csr/Code";
 import { FilePdf } from "@phosphor-icons/react/dist/csr/FilePdf";
 import { Image } from "@phosphor-icons/react/dist/csr/Image";
-import { LinkSimple } from "@phosphor-icons/react/dist/csr/LinkSimple";
 import { ListBullets } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { ListNumbers } from "@phosphor-icons/react/dist/csr/ListNumbers";
 import { Minus } from "@phosphor-icons/react/dist/csr/Minus";
@@ -120,19 +119,6 @@ export function slashCommandItems(
       run: insertTable
     }
   ];
-
-  if (schema.nodes.bookmark) {
-    items.push({
-      id: "bookmark",
-      label: "Bookmark",
-      description: "Create a link preview",
-      aliases: ["url", "web", "link"],
-      icon: <LinkSimple size={17} />,
-      run(view) {
-        insertAtomicBlock(view, schema.nodes.bookmark!.create({ url: "" }));
-      }
-    });
-  }
 
   if (schema.nodes.database_embed) {
     items.push({

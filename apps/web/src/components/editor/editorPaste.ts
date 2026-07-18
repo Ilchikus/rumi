@@ -1,7 +1,6 @@
 import { Slice, type Schema } from "prosemirror-model";
 import { Plugin, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import { parseLightMarkdown } from "./lightProseMirrorMarkdown";
-import { createBookmarkTransaction } from "./editorActions";
 
 const WEB_URL = /^(?:https?:\/\/|www\.)[^\s<>]+$/iu;
 const MARKDOWN_SIGNAL = /(?:^|\n)(?:#{1,6}\s|>\s|[-+*]\s|\d+\.\s|```|---\s*$)|\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|\*\*[^*]+\*\*|~~[^~]+~~/mu;
@@ -101,11 +100,6 @@ export function createPlainTextPasteTransaction(
 
   if (link && isWebUrl(trimmed)) {
     const href = normalizeWebUrl(trimmed);
-
-    if (state.selection.empty && state.selection.$from.parent.content.size === 0) {
-      const bookmark = createBookmarkTransaction(state, href);
-      if (bookmark) return bookmark;
-    }
 
     if (!state.selection.empty) {
       const transaction = state.tr.addMark(

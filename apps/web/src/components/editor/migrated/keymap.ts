@@ -15,52 +15,9 @@ import {
 } from "prosemirror-commands"
 import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
+import { moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
-
-// URL regex for detecting standalone URLs
-const URL_ONLY_REGEX = /^https?:\/\/[^\s<>"]+$/i
-
-// Command to convert URL-only paragraph to bookmark
-function convertUrlToBookmark(schema: Schema): Command {
-  return (state, dispatch) => {
-    if (!schema.nodes.bookmark) return false
-
-    const { $from, $to } = state.selection
-    // Must be in a paragraph
-    if ($from.parent.type !== schema.nodes.paragraph) return false
-    // Selection must be at the end of the paragraph (cursor after typing URL)
-    if ($from.pos !== $to.pos) return false
-
-    // Get the paragraph's text content
-    const text = $from.parent.textContent.trim()
-
-    // Check if it's a URL
-    if (!URL_ONLY_REGEX.test(text)) return false
-
-    if (dispatch) {
-      // Get the paragraph's position
-      const paragraphStart = $from.before()
-      const paragraphEnd = $from.after()
-
-      // Create bookmark node
-      const bookmark = schema.nodes.bookmark.create({ url: text })
-      // Create new empty paragraph after
-      const newParagraph = schema.nodes.paragraph.create()
-
-      // Replace paragraph with bookmark + new paragraph
-      const tr = state.tr.replaceWith(paragraphStart, paragraphEnd, [bookmark, newParagraph])
-
-      // Set selection to the new paragraph
-      const newParagraphPos = paragraphStart + bookmark.nodeSize + 1
-      tr.setSelection(TextSelection.create(tr.doc, newParagraphPos))
-
-      dispatch(tr.scrollIntoView())
-    }
-    return true
-  }
-}
-
 
 // When cursor is on a horizontal_rule (NodeSelection), insert a paragraph after it (Enter)
 function exitHorizontalRuleEnter(schema: Schema): Command {
@@ -150,6 +107,12 @@ function buildKeymap(schema: Schema) {
   if (schema.nodes.paragraph) {
     keys["Mod-Alt-0"] = setBlockType(schema.nodes.paragraph)
   }
+
+  // Block-level editing. Movement intentionally uses Control on every
+  // platform rather than Mod so macOS matches Windows and Linux here.
+  keys["Ctrl-Shift-ArrowUp"] = moveBlocks("up")
+  keys["Ctrl-Shift-ArrowDown"] = moveBlocks("down")
+  keys["Mod-a"] = selectAllBlocksInStages
 
   // Flat list item types
   const flatListItemTypes = [
@@ -298,7 +261,6 @@ function buildKeymap(schema: Schema) {
   // Enter key: ordered by priority
   keys["Enter"] = chainCommands(
     exitHorizontalRuleEnter(schema),
-    convertUrlToBookmark(schema),
     newlineInCode,
     liftEmptyFlatListItem,
     splitFlatListItem,

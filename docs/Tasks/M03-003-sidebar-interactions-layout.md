@@ -7,8 +7,8 @@ coverage:
   - runtime
   - ui-smoke
   - docs
-created: "2026-06-23"
-updated: "2026-06-23"
+created: 2026-06-23
+updated: 2026-06-23
 ---
 # M03-003 Sidebar Interactions And Layout
 

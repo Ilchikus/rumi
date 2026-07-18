@@ -17,3 +17,151 @@ describe("markdown file embeds", () => {
     expect(serializeMarkdown(doc)).toContain("![[.assets/spec-sheet.pdf]]")
   })
 })
+
+describe("live editor Markdown round trips", () => {
+  it("keeps standalone URLs as portable inline links", () => {
+    const parsed = parseMarkdown("https://rumi.md\n", schema)
+
+    expect(schema.nodes.bookmark).toBeUndefined()
+    expect(parsed.firstChild?.type.name).toBe("paragraph")
+    expect(parsed.firstChild?.firstChild?.marks.map((mark) => mark.type.name)).toContain("link")
+    expect(serializeMarkdown(parsed)).toBe("[https://rumi.md](https://rumi.md)\n")
+  })
+
+  it("preserves Rumi underline and highlight marks", () => {
+    const markdown = [
+      "Before __underlined__ ==highlighted== ==green::green highlight== and --legacy strike-- after.",
+      ""
+    ].join("\n")
+
+    const parsed = parseMarkdown(markdown, schema)
+    const reparsed = parseMarkdown(serializeMarkdown(parsed), schema)
+    const markedText = reparsed.firstChild?.content.content ?? []
+
+    expect(markedText.map((node) => [node.text, node.marks.map((mark) => mark.type.name)])).toEqual([
+      ["Before ", []],
+      ["underlined", ["underline"]],
+      [" ", []],
+      ["highlighted", ["highlight"]],
+      [" ", []],
+      ["green highlight", ["highlight"]],
+      [" and ", []],
+      ["legacy strike", ["strikethrough"]],
+      [" after.", []]
+    ])
+    expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("does not preprocess custom marks inside code", () => {
+    const markdown = [
+      "`__inline__ ==highlight== --strike--`",
+      "",
+      "~~~~txt",
+      "__fenced__ ==highlight== --strike--",
+      "~~~~",
+      "",
+      "    __indented__ ==highlight== --strike--",
+      ""
+    ].join("\n")
+
+    const parsed = parseMarkdown(markdown, schema)
+    const serialized = serializeMarkdown(parsed)
+    const reparsed = parseMarkdown(serialized, schema)
+
+    expect(parsed.firstChild?.textContent).toBe("__inline__ ==highlight== --strike--")
+    expect(parsed.child(1).textContent).toBe("__fenced__ ==highlight== --strike--")
+    expect(parsed.child(2).textContent).toBe("__indented__ ==highlight== --strike--")
+    expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("preserves nested ordered-list levels and numbering", () => {
+    const markdown = [
+      "1. Parent",
+      "   1. Child",
+      "      1. Grandchild",
+      "2. Sibling",
+      ""
+    ].join("\n")
+
+    const parsed = parseMarkdown(markdown, schema)
+    const serialized = serializeMarkdown(parsed)
+    const reparsed = parseMarkdown(serialized, schema)
+
+    expect(serialized).toBe([
+      "1. Parent",
+      "    1. Child",
+      "        1. Grandchild",
+      "2. Sibling",
+      ""
+    ].join("\n"))
+    expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("keeps aligned GFM tables as tables and preserves column alignment", () => {
+    const markdown = [
+      "| Left | Center | Right |",
+      "| :--- | :---: | ---: |",
+      "| a | b | c |",
+      ""
+    ].join("\n")
+
+    const parsed = parseMarkdown(markdown, schema)
+    const serialized = serializeMarkdown(parsed)
+    const reparsed = parseMarkdown(serialized, schema)
+
+    expect(parsed.firstChild?.type.name).toBe("table")
+    expect(serialized).toContain("| :--- | :---: | ---: |")
+    expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("reopens a representative document with every live block type unchanged", () => {
+    const markdown = [
+      "# Complete document",
+      "",
+      "Plain **bold**, *italic*, __underline__, ~~strike~~, `code`, ==highlight==, and [link](https://example.com).",
+      "",
+      "- Bullet",
+      "    - Nested bullet",
+      "",
+      "1. Numbered",
+      "    1. Nested numbered",
+      "",
+      "- [x] Complete task",
+      "    - [ ] Nested task",
+      "",
+      "> Quote",
+      "",
+      "| Name | State |",
+      "| :--- | ---: |",
+      "| Rumi | Ready |",
+      "",
+      "```ts",
+      "const ready = true",
+      "```",
+      "",
+      "```mermaid",
+      "flowchart LR",
+      "  Client --> Server",
+      "```",
+      "",
+      "```db",
+      "source: Tasks",
+      "filter: status = doing",
+      "```",
+      "",
+      "![Image](.assets/image.png)",
+      "",
+      "![[.assets/document.pdf]]",
+      "",
+      "https://example.com",
+      "",
+      "---",
+      ""
+    ].join("\n")
+
+    const parsed = parseMarkdown(markdown, schema)
+    const reparsed = parseMarkdown(serializeMarkdown(parsed), schema)
+
+    expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+})

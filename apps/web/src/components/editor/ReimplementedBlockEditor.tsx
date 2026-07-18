@@ -64,7 +64,6 @@ import {
   type SlashCommandItem
 } from "./editorCommands";
 import {
-  bookmarkNodeView,
   codeBlockNodeView,
   collapsibleHeadingPlugin,
   databaseEmbedNodeView,
@@ -329,7 +328,6 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         nodeViews: {
           heading: (node, editorView, getPos) => headingNodeView(node, editorView, getPos),
           code_block: (node, editorView, getPos) => codeBlockNodeView(node, editorView, getPos),
-          bookmark: (node, editorView, getPos) => bookmarkNodeView(node, editorView, getPos, openEditorHref),
           file_embed: (node) => fileEmbedNodeView(node),
           image_block: (node) => imageBlockNodeView(node),
           database_embed: (node, editorView, getPos) =>

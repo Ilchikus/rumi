@@ -16,11 +16,11 @@ describe("editor slash commands", () => {
       "mermaid",
       "divider",
       "table",
-      "bookmark",
       "database"
     ]));
     expect(ids).not.toContain("image");
     expect(ids).not.toContain("file");
+    expect(ids).not.toContain("bookmark");
   });
 
   it("matches commands by their user-facing aliases", () => {

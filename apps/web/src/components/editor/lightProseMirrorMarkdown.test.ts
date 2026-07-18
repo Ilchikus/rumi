@@ -128,7 +128,7 @@ describe("light ProseMirror Markdown bridge", () => {
     expect(serializeLightMarkdown(parseLightMarkdown(""))).toBe("");
   });
 
-  it("recognizes old Rumi bookmark, file embed, and database embed syntax as blocks", () => {
+  it("keeps standalone URLs as links while recognizing file and database embeds", () => {
     const source = [
       "https://rumi.md/docs",
       "",
@@ -144,10 +144,11 @@ describe("light ProseMirror Markdown bridge", () => {
     const document = parseLightMarkdown(source);
 
     expect(Array.from({ length: document.childCount }, (_, index) => document.child(index).type.name)).toEqual([
-      "bookmark",
+      "paragraph",
       "file_embed",
       "database_embed"
     ]);
+    expect(document.firstChild?.firstChild?.marks.map((mark) => mark.type.name)).toContain("link");
     const markdown = serializeLightMarkdown(document);
     expect(markdown).toContain("https://rumi.md/docs");
     expect(markdown).toContain("![[.assets/guide.pdf]]");

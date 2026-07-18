@@ -143,10 +143,7 @@ export function buildRumiKeymap(schema: Schema) {
   if (orderedList) keys["Shift-Mod-7"] = wrapInList(orderedList);
   if (schema.nodes.blockquote) keys["Mod-Shift-."] = wrapIn(schema.nodes.blockquote);
 
-  const enterCommands: Command[] = [
-    enterAfterDivider(schema),
-    convertStandaloneUrlToBookmark(schema)
-  ];
+  const enterCommands: Command[] = [enterAfterDivider(schema)];
   if (listItem) enterCommands.push(splitListItem(listItem));
   enterCommands.push(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock);
   keys.Enter = chainCommands(...enterCommands);
@@ -212,36 +209,6 @@ export function createDividerTransaction(state: EditorState): Transaction | null
     blockStart,
     $from.after(),
     [horizontalRule.create(), paragraph.create()]
-  );
-  transaction.setSelection(TextSelection.near(transaction.doc.resolve(blockStart + 2)));
-  return transaction;
-}
-
-export function createBookmarkTransaction(
-  state: EditorState,
-  requestedUrl?: string
-): Transaction | null {
-  const bookmark = state.schema.nodes.bookmark;
-  const paragraph = state.schema.nodes.paragraph;
-  const { $from } = state.selection;
-  const url = (requestedUrl ?? $from.parent.textContent).trim();
-
-  if (
-    !bookmark ||
-    !paragraph ||
-    !state.selection.empty ||
-    $from.depth !== 1 ||
-    $from.parent.type !== paragraph ||
-    !/^https?:\/\/[^\s<>]+$/iu.test(url)
-  ) {
-    return null;
-  }
-
-  const blockStart = $from.before();
-  const transaction = state.tr.replaceWith(
-    blockStart,
-    $from.after(),
-    [bookmark.create({ url }), paragraph.create()]
   );
   transaction.setSelection(TextSelection.near(transaction.doc.resolve(blockStart + 2)));
   return transaction;
@@ -351,16 +318,6 @@ function arrowDownFromDivider(schema: Schema): Command {
       ? NodeSelection.create(state.doc, nextPos)
       : TextSelection.near(state.doc.resolve(nextPos + 1));
     dispatch(state.tr.setSelection(selection).scrollIntoView());
-    return true;
-  };
-}
-
-function convertStandaloneUrlToBookmark(schema: Schema): Command {
-  return (state, dispatch) => {
-    if (!schema.nodes.bookmark) return false;
-    const transaction = createBookmarkTransaction(state);
-    if (!transaction) return false;
-    dispatch?.(transaction.scrollIntoView());
     return true;
   };
 }

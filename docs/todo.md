@@ -1,0 +1,30 @@
+# Rumi to-do
+
+- Remove bookmark blocks from the editor for now.
+- Remove the bookmark slash command, block conversion, NodeView, schema node, styling, and automatic URL-to-bookmark conversion.
+- Convert existing bookmark nodes to portable Markdown links or plain URLs without losing their destinations.
+- Parse standalone URLs as normal paragraph content instead of bookmark blocks.
+- Paste a URL as a normal inline Markdown link with `Command-V` on macOS and `Control-V` on Windows and Linux.
+- When text is selected, use it as the pasted link label; otherwise use the URL as both label and destination.
+- Paste a URL as the same normal inline Markdown link while stripping rich clipboard formatting with `Command-Shift-V` on macOS and `Control-Shift-V` on Windows and Linux.
+- Preserve normal plain-text paste behavior when the clipboard is not a URL.
+- Store internal and external links using the same portable Markdown-link format while allowing different navigation behavior.
+- Move the block containing the cursor up with `Control-Shift-Up` on macOS, Windows, and Linux.
+- Move the block containing the cursor down with `Control-Shift-Down` on macOS, Windows, and Linux.
+- Move a multi-block selection together without changing its internal order.
+- Preserve the cursor or block selection after keyboard movement and scroll the moved content into view.
+- Keep keyboard block movement separate from list indentation and outdentation.
+- Press `Command-A` on macOS or `Control-A` on Windows and Linux once to select the entire block containing the cursor.
+- Show the first `Select All` state as an active highlighted block selection rather than an inline text selection.
+- Press `Command-A` on macOS or `Control-A` on Windows and Linux a second time to select every block in the document.
+- Preserve the two-stage `Select All` behavior for blocks with rich inline formatting, nested lists, embeds, and multi-block selections.
+- Open global workspace search with `Command-K` on macOS and `Control-K` on Windows and Linux.
+- Search global page titles, paths, frontmatter, and Markdown body content and open results through normal client navigation.
+- Open find for the current page with `Command-F` on macOS and `Control-F` on Windows and Linux.
+- Search the current unsaved editor state rather than only the last saved Markdown.
+- Open current-page find and replace with `Command-Shift-F` on macOS and `Control-Shift-F` on Windows and Linux.
+- Use `Enter` and `Shift-Enter` to navigate to the next and previous current-page matches.
+- Use `Escape` to close search and restore focus and selection to the editor.
+- Highlight every current-page match and keep the active result visible.
+- Make replace-one and replace-all undoable editor transactions that preserve surrounding block structure and marks.
+- Add focused transaction tests and real-browser smoke coverage for paste, keyboard movement, global search, page find, and replacement.

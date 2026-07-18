@@ -175,6 +175,42 @@
     text-decoration: line-through;
   }
 
+  .rumi-prosemirror .rumi-multi-block-selected {
+    border-radius: 0.3rem;
+    background: hsl(var(--foreground) / 0.065);
+    box-shadow: 0 0 0 2px hsl(var(--foreground) / 0.08);
+  }
+
+  .rumi-prosemirror li.rumi-multi-block-selected {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .rumi-prosemirror li.rumi-multi-block-selected > .rumi-list-item-content > :first-child {
+    border-radius: 0.3rem;
+    background: hsl(var(--foreground) / 0.065);
+    box-shadow: 0 0 0 2px hsl(var(--foreground) / 0.08);
+  }
+
+  .rumi-prosemirror li.rumi-multi-block-selected::marker {
+    color: hsl(var(--foreground));
+  }
+
+  .rumi-block-drop-indicator {
+    pointer-events: none;
+    height: 2px;
+    border-radius: 9999px;
+    background: hsl(var(--foreground));
+    box-shadow: 0 0 0 1px hsl(var(--background));
+  }
+
+  .rumi-block-area-selection {
+    pointer-events: none;
+    border: 1px solid hsl(var(--foreground) / 0.28);
+    border-radius: 0.25rem;
+    background: hsl(var(--foreground) / 0.055);
+  }
+
   .rumi-prosemirror blockquote {
     margin: 0.9rem 0 0;
     border-left: 3px solid hsl(var(--border));

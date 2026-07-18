@@ -7,6 +7,7 @@ import {
   useState
 } from "react";
 import type { ReactElement } from "react";
+import { createPortal } from "react-dom";
 import { BracketsCurly } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
 import { Code } from "@phosphor-icons/react/dist/csr/Code";
@@ -47,6 +48,19 @@ import { columnResizing, tableEditing } from "prosemirror-tables";
 import { EditorView, type NodeView } from "prosemirror-view";
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-tables/style/tables.css";
+import {
+  blockSelectionPlugin,
+  canMoveSelectedBlocks,
+  collectSelectableBlockPositions,
+  createDeleteSelectedBlocksTransaction,
+  createDuplicateSelectedBlocksTransaction,
+  createMoveSelectedBlocksTransaction,
+  getBlockSelection,
+  isBlockSelected,
+  replaceBlockSelection,
+  selectableBlockPositionAt,
+  setBlockSelection
+} from "./blockSelection";
 import { lightEditorSchema as schema, parseLightMarkdown, serializeLightMarkdown } from "./lightProseMirrorMarkdown";
 
 export interface RumiBlockEditorHandle {
@@ -77,8 +91,10 @@ interface SelectionToolbarState {
 interface ActiveBlockState {
   pos: number;
   left: number;
+  right: number;
   top: number;
   height: number;
+  handleTop: number;
 }
 
 interface BlockMenuState {
@@ -88,9 +104,27 @@ interface BlockMenuState {
 }
 
 interface DraggedBlock {
-  pos: number;
-  node: ProseMirrorNode;
+  positions: number[];
+  primaryPos: number;
+  startX: number;
+  isListItem: boolean;
 }
+
+interface DropIndicatorState {
+  left: number;
+  top: number;
+  width: number;
+}
+
+interface AreaSelectionState {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const LIST_DRAG_INDENT_THRESHOLD = 64;
+const LIST_DRAG_OUTDENT_THRESHOLD = 24;
 
 interface SlashCommandItem {
   id: string;
@@ -113,17 +147,23 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
     const slashIndexRef = useRef(0);
     const activeBlockRef = useRef<ActiveBlockState | null>(null);
     const draggedBlockRef = useRef<DraggedBlock | null>(null);
+    const blockMenuRef = useRef<BlockMenuState | null>(null);
+    const dragStartXRef = useRef(0);
+    const suppressHandleClickRef = useRef(false);
     const hoverAnimationFrameRef = useRef(0);
     const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
     const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
     const [activeBlock, setActiveBlock] = useState<ActiveBlockState | null>(null);
     const [blockMenu, setBlockMenu] = useState<BlockMenuState | null>(null);
+    const [dropIndicator, setDropIndicator] = useState<DropIndicatorState | null>(null);
+    const [areaSelection, setAreaSelection] = useState<AreaSelectionState | null>(null);
 
     onDirtyRef.current = onDirty;
     slashStateRef.current = slashMenu;
     slashIndexRef.current = slashIndex;
     activeBlockRef.current = activeBlock;
+    blockMenuRef.current = blockMenu;
 
     const slashCommands = slashCommandItems();
     const visibleSlashCommands = filterSlashCommands(slashCommands, slashMenu?.query ?? "");
@@ -255,15 +295,120 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           setActiveBlock(block);
         });
       };
-      const handleMouseLeave = () => {
-        if (!blockMenu) {
+      const handleMouseLeave = (event: MouseEvent) => {
+        if (draggedBlockRef.current) {
+          return;
+        }
+
+        const nextTarget = event.relatedTarget;
+
+        if (
+          nextTarget instanceof Node &&
+          (wrapperRef.current?.contains(nextTarget) ||
+            (nextTarget instanceof Element && nextTarget.closest("[data-rumi-editor-overlay]")))
+        ) {
+          return;
+        }
+
+        if (!blockMenuRef.current) {
           setActiveBlock(null);
         }
       };
-      const refreshOnScroll = () => refreshEditorUi(view);
+      let areaStart: { x: number; y: number } | null = null;
+      let lastAreaPositions = "";
+      let areaSelectionFrame = 0;
+      let pendingAreaPoint: { x: number; y: number } | null = null;
+
+      const updateAreaSelection = (clientX: number, clientY: number) => {
+        if (!areaStart) return;
+
+        const left = Math.min(areaStart.x, clientX);
+        const top = Math.min(areaStart.y, clientY);
+        const right = Math.max(areaStart.x, clientX);
+        const bottom = Math.max(areaStart.y, clientY);
+        setAreaSelection({
+          left,
+          top,
+          width: Math.max(2, right - left),
+          height: Math.max(2, bottom - top)
+        });
+
+        const selected = collectSelectableBlockPositions(view.state.doc).filter((pos) => {
+          const block = blockGeometryAtPosition(view, pos);
+          return block !== null && block.top <= bottom && block.top + block.height >= top;
+        });
+        const serialized = selected.join(",");
+
+        if (serialized !== lastAreaPositions) {
+          lastAreaPositions = serialized;
+          replaceBlockSelection(view, selected);
+        }
+      };
+
+      const handleAreaSelectionMove = (event: MouseEvent) => {
+        pendingAreaPoint = { x: event.clientX, y: event.clientY };
+
+        if (areaSelectionFrame) return;
+        areaSelectionFrame = requestAnimationFrame(() => {
+          areaSelectionFrame = 0;
+          const point = pendingAreaPoint;
+          pendingAreaPoint = null;
+          if (point) updateAreaSelection(point.x, point.y);
+        });
+      };
+
+      const handleAreaSelectionEnd = (event: MouseEvent) => {
+        if (!areaStart) return;
+
+        if (areaSelectionFrame) {
+          cancelAnimationFrame(areaSelectionFrame);
+          areaSelectionFrame = 0;
+        }
+
+        pendingAreaPoint = null;
+        updateAreaSelection(event.clientX, event.clientY);
+        areaStart = null;
+        lastAreaPositions = "";
+        setAreaSelection(null);
+        document.removeEventListener("mousemove", handleAreaSelectionMove);
+        document.removeEventListener("mouseup", handleAreaSelectionEnd);
+        view.focus();
+      };
+
+      const handleAreaSelectionStart = (event: MouseEvent) => {
+        if (event.button !== 0) return;
+
+        const target = event.target;
+        if (target instanceof Element && target.closest("[data-rumi-editor-overlay]")) return;
+
+        const editorRect = view.dom.getBoundingClientRect();
+        const inLeftGutter =
+          event.clientX >= editorRect.left - 88 && event.clientX <= editorRect.left - 6;
+        const inEditorHeight =
+          event.clientY >= editorRect.top && event.clientY <= editorRect.bottom;
+
+        if (!inLeftGutter || !inEditorHeight) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        areaStart = { x: event.clientX, y: event.clientY };
+        lastAreaPositions = "";
+        updateAreaSelection(event.clientX, event.clientY);
+        document.addEventListener("mousemove", handleAreaSelectionMove);
+        document.addEventListener("mouseup", handleAreaSelectionEnd);
+      };
+      const refreshOnScroll = () => {
+        refreshEditorUi(view);
+        const current = activeBlockRef.current;
+
+        if (current) {
+          setActiveBlock(blockGeometryAtPosition(view, current.pos));
+        }
+      };
 
       view.dom.addEventListener("mousemove", handleMouseMove);
       view.dom.addEventListener("mouseleave", handleMouseLeave);
+      document.addEventListener("mousedown", handleAreaSelectionStart, true);
       window.addEventListener("scroll", refreshOnScroll, true);
       viewRef.current = view;
       lastDocumentKeyRef.current = documentKey;
@@ -275,8 +420,15 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           cancelAnimationFrame(hoverAnimationFrameRef.current);
         }
 
+        if (areaSelectionFrame) {
+          cancelAnimationFrame(areaSelectionFrame);
+        }
+
         view.dom.removeEventListener("mousemove", handleMouseMove);
         view.dom.removeEventListener("mouseleave", handleMouseLeave);
+        document.removeEventListener("mousedown", handleAreaSelectionStart, true);
+        document.removeEventListener("mousemove", handleAreaSelectionMove);
+        document.removeEventListener("mouseup", handleAreaSelectionEnd);
         window.removeEventListener("scroll", refreshOnScroll, true);
         view.destroy();
         viewRef.current = null;
@@ -302,6 +454,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       lastAppliedMarkdownRef.current = markdown;
       setBlockMenu(null);
       setActiveBlock(null);
+      setDropIndicator(null);
       refreshEditorUi(view);
     }, [documentKey, markdown, refreshEditorUi]);
 
@@ -324,8 +477,17 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return;
       }
 
-      const transaction = view.state.tr.insert(pos, paragraph.create());
-      transaction.setSelection(TextSelection.near(transaction.doc.resolve(pos + 1)));
+      const target = view.state.doc.nodeAt(pos);
+      const listItem = schema.nodes.list_item;
+      const inserted = target && listItem && target.type === listItem
+        ? listItem.create(
+            target.attrs.checked === null ? null : { checked: false },
+            paragraph.create()
+          )
+        : paragraph.create();
+      const transaction = view.state.tr.insert(pos, inserted);
+      const textStart = pos + (inserted.type === listItem ? 2 : 1);
+      transaction.setSelection(TextSelection.near(transaction.doc.resolve(textStart)));
       view.dispatch(transaction);
       view.focus();
     }, []);
@@ -344,20 +506,23 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return;
       }
 
-      if (action === "duplicate") {
-        view.dispatch(view.state.tr.insert(menu.pos + node.nodeSize, node.copy(node.content)));
-      } else if (action === "delete") {
-        if (view.state.doc.childCount === 1) {
-          const paragraph = schema.nodes.paragraph?.create();
+      const selected = getBlockSelection(view.state);
+      const positions = selected.selectedBlocks.includes(menu.pos)
+        ? selected.selectedBlocks
+        : [menu.pos];
 
-          if (paragraph) {
-            view.dispatch(view.state.tr.replaceWith(menu.pos, menu.pos + node.nodeSize, paragraph));
-          }
-        } else {
-          view.dispatch(view.state.tr.delete(menu.pos, menu.pos + node.nodeSize));
-        }
+      if (action === "duplicate") {
+        const transaction = createDuplicateSelectedBlocksTransaction(view.state, positions);
+        if (transaction) view.dispatch(transaction);
+      } else if (action === "delete") {
+        const transaction = createDeleteSelectedBlocksTransaction(view.state, positions);
+        if (transaction) view.dispatch(transaction);
       } else {
-        view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, menu.pos)));
+        const selectionPos = node.type.name === "list_item" ? menu.pos + 2 : menu.pos;
+        const selection = node.type.name === "list_item"
+          ? TextSelection.near(view.state.doc.resolve(selectionPos))
+          : NodeSelection.create(view.state.doc, selectionPos);
+        view.dispatch(view.state.tr.setSelection(selection));
         const type = action === "heading" ? schema.nodes.heading : schema.nodes.paragraph;
 
         if (type) {
@@ -373,7 +538,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       view.focus();
     }, [blockMenu]);
 
-    const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const dropAtCoordinates = useCallback((clientX: number, clientY: number) => {
       const view = viewRef.current;
       const dragged = draggedBlockRef.current;
 
@@ -381,45 +546,175 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return;
       }
 
-      const target = blockAtCoordinates(view, event.clientX, event.clientY);
+      const target = blockAtCoordinates(view, clientX, clientY);
 
-      if (!target || target.pos === dragged.pos) {
+      if (!target) {
         draggedBlockRef.current = null;
+        setDropIndicator(null);
         return;
       }
 
-      event.preventDefault();
-      event.stopPropagation();
-      const targetNode = view.state.doc.nodeAt(target.pos);
-      const insertAfterTarget = event.clientY > target.top + target.height / 2;
-      const originalTarget = target.pos + (insertAfterTarget ? targetNode?.nodeSize ?? 0 : 0);
-      const transaction = view.state.tr.delete(dragged.pos, dragged.pos + dragged.node.nodeSize);
-      const mappedTarget = transaction.mapping.map(originalTarget, 1);
-      transaction.insert(mappedTarget, dragged.node);
-      view.dispatch(transaction);
+      const insertAfterTarget = clientY > target.top + target.height / 2;
+      const transaction = createMoveSelectedBlocksTransaction(
+        view.state,
+        dragged.positions,
+        target.pos,
+        insertAfterTarget
+      );
+      const deltaX = clientX - dragged.startX;
+      const canAdjustIndent =
+        dragged.positions.length === 1 &&
+        dragged.isListItem &&
+        (transaction !== null || target.pos === dragged.primaryPos);
+
+      if (transaction) {
+        view.dispatch(transaction);
+      }
+
+      if (canAdjustIndent) {
+        const listItem = schema.nodes.list_item;
+
+        if (listItem && deltaX > LIST_DRAG_INDENT_THRESHOLD) {
+          sinkListItem(listItem)(view.state, view.dispatch, view);
+        } else if (listItem && deltaX < -LIST_DRAG_OUTDENT_THRESHOLD) {
+          liftListItem(listItem)(view.state, view.dispatch, view);
+        }
+      }
+
       draggedBlockRef.current = null;
+      setDropIndicator(null);
       view.focus();
     }, []);
+
+    const updateDragIndicator = useCallback((clientX: number, clientY: number) => {
+      const dragged = draggedBlockRef.current;
+      const view = viewRef.current;
+
+      if (!dragged || !view) return;
+
+      const target = blockAtCoordinates(view, clientX, clientY);
+
+      const isHorizontalSelfIndent = Boolean(
+        target &&
+        dragged.positions.length === 1 &&
+        dragged.isListItem &&
+        target.pos === dragged.primaryPos &&
+        (clientX - dragged.startX > LIST_DRAG_INDENT_THRESHOLD ||
+          clientX - dragged.startX < -LIST_DRAG_OUTDENT_THRESHOLD)
+      );
+
+      if (
+        !target ||
+        (!isHorizontalSelfIndent &&
+          !canMoveSelectedBlocks(view.state.doc, dragged.positions, target.pos))
+      ) {
+        setDropIndicator(null);
+        return;
+      }
+
+      const insertAfterTarget = clientY > target.top + target.height / 2;
+      const indentationOffset = dragged.isListItem
+        ? clientX - dragged.startX > LIST_DRAG_INDENT_THRESHOLD
+          ? 24
+          : clientX - dragged.startX < -LIST_DRAG_OUTDENT_THRESHOLD
+            ? -24
+            : 0
+        : 0;
+      const nextIndicator = {
+        left: target.left + indentationOffset,
+        top: insertAfterTarget ? target.top + target.height : target.top,
+        width: Math.max(48, target.right - target.left - indentationOffset)
+      };
+      setDropIndicator((current) =>
+        current?.left === nextIndicator.left &&
+        current.top === nextIndicator.top &&
+        current.width === nextIndicator.width
+          ? current
+          : nextIndicator
+      );
+    }, []);
+
+    useEffect(() => {
+      const handleDocumentDragOver = (event: DragEvent) => {
+        if (!draggedBlockRef.current) return;
+        event.preventDefault();
+        updateDragIndicator(event.clientX, event.clientY);
+      };
+      const handleDocumentDrop = (event: DragEvent) => {
+        if (!draggedBlockRef.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dropAtCoordinates(event.clientX, event.clientY);
+      };
+
+      document.addEventListener("dragover", handleDocumentDragOver);
+      document.addEventListener("drop", handleDocumentDrop);
+      return () => {
+        document.removeEventListener("dragover", handleDocumentDragOver);
+        document.removeEventListener("drop", handleDocumentDrop);
+      };
+    }, [dropAtCoordinates, updateDragIndicator]);
+
+    const blockMenuSelection = blockMenu && viewRef.current
+      ? getBlockSelection(viewRef.current.state)
+      : null;
+    const blockMenuSelectionCount =
+      blockMenu && blockMenuSelection?.selectedBlocks.includes(blockMenu.pos)
+        ? blockMenuSelection.selectedBlocks.length
+        : 1;
+    const blockMenuIsBulk = blockMenuSelectionCount > 1;
 
     return (
       <div
         ref={wrapperRef}
         className="relative"
-        onDragOver={(event) => {
-          if (draggedBlockRef.current) {
-            event.preventDefault();
-          }
-        }}
-        onDrop={handleDrop}
       >
         <div ref={hostRef} className="min-h-0" />
 
-        {activeBlock && (
+        {areaSelection && createPortal(
           <div
+            data-rumi-editor-overlay
+            className="rumi-block-area-selection fixed z-10"
+            style={{
+              left: areaSelection.left,
+              top: areaSelection.top,
+              width: areaSelection.width,
+              height: areaSelection.height
+            }}
+          />,
+          document.body
+        )}
+
+        {dropIndicator && createPortal(
+          <div
+            data-rumi-editor-overlay
+            className="rumi-block-drop-indicator fixed z-30"
+            style={{
+              left: dropIndicator.left,
+              top: dropIndicator.top - 1,
+              width: dropIndicator.width
+            }}
+          />,
+          document.body
+        )}
+
+        {activeBlock && createPortal(
+          <div
+            data-rumi-editor-overlay
             className="fixed z-20 flex items-center rounded-md border border-border bg-background p-0.5 shadow-sm"
-            style={{ left: Math.max(8, activeBlock.left - 58), top: activeBlock.top }}
-            onMouseLeave={() => {
-              if (!blockMenu) {
+            style={{ left: Math.max(8, activeBlock.left - 68), top: activeBlock.handleTop }}
+            onMouseLeave={(event) => {
+              if (draggedBlockRef.current) {
+                return;
+              }
+
+              const nextTarget = event.relatedTarget;
+
+              if (nextTarget instanceof Node && wrapperRef.current?.contains(nextTarget)) {
+                return;
+              }
+
+              if (!blockMenuRef.current) {
                 setActiveBlock(null);
               }
             }}
@@ -440,48 +735,104 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
               className="grid h-6 w-6 cursor-grab place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
               title="Drag or open block menu"
               aria-label="Block actions"
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                dragStartXRef.current = event.clientX;
+
+                const view = viewRef.current;
+
+                if (!view || event.button !== 0) return;
+
+                if (event.shiftKey) {
+                  setBlockSelection(view, activeBlock.pos, "range");
+                } else if (event.metaKey || event.ctrlKey) {
+                  setBlockSelection(view, activeBlock.pos, "toggle");
+                } else if (!isBlockSelected(view.state, activeBlock.pos)) {
+                  setBlockSelection(view, activeBlock.pos, "single");
+                }
+              }}
               onDragStart={(event) => {
                 const view = viewRef.current;
                 const node = view?.state.doc.nodeAt(activeBlock.pos);
 
-                if (node) {
-                  draggedBlockRef.current = { pos: activeBlock.pos, node };
+                if (view && node) {
+                  const selected = getBlockSelection(view.state);
+                  const positions = selected.selectedBlocks.includes(activeBlock.pos)
+                    ? selected.selectedBlocks
+                    : [activeBlock.pos];
+                  draggedBlockRef.current = {
+                    positions,
+                    primaryPos: activeBlock.pos,
+                    startX: dragStartXRef.current,
+                    isListItem: node.type.name === "list_item"
+                  };
+                  suppressHandleClickRef.current = true;
                   event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/x-rumi-block", String(activeBlock.pos));
+                  event.dataTransfer.setData("text/x-rumi-block", positions.join(","));
                 }
               }}
+              onMouseUp={() => viewRef.current?.focus()}
               onDragEnd={() => {
                 draggedBlockRef.current = null;
+                setDropIndicator(null);
+                viewRef.current?.focus();
+                window.setTimeout(() => {
+                  suppressHandleClickRef.current = false;
+                }, 0);
               }}
-              onClick={() =>
+              onClick={() => {
+                if (suppressHandleClickRef.current) return;
+
                 setBlockMenu({
                   pos: activeBlock.pos,
-                  left: Math.max(8, activeBlock.left - 22),
-                  top: activeBlock.top + 30
-                })
-              }
+                  left: Math.max(8, activeBlock.left - 68),
+                  top: activeBlock.handleTop + 32
+                });
+              }}
             >
               <DotsSixVertical size={15} weight="bold" />
             </button>
-          </div>
+          </div>,
+          document.body
         )}
 
-        {blockMenu && (
+        {blockMenu && createPortal(
           <div
+            data-rumi-editor-overlay
             className="fixed z-50 w-48 rounded-md border border-border bg-background p-1 text-sm shadow-lg"
             style={{ left: blockMenu.left, top: blockMenu.top }}
           >
-            <BlockMenuButton icon={<Copy size={15} />} label="Duplicate" onClick={() => mutateBlock("duplicate")} />
-            <BlockMenuButton icon={<TextHOne size={15} />} label="Heading 2" onClick={() => mutateBlock("heading")} />
-            <BlockMenuButton icon={<BracketsCurly size={15} />} label="Paragraph" onClick={() => mutateBlock("paragraph")} />
+            <BlockMenuButton
+              icon={<Copy size={15} />}
+              label={blockMenuIsBulk ? `Duplicate ${blockMenuSelectionCount} blocks` : "Duplicate"}
+              onClick={() => mutateBlock("duplicate")}
+            />
+            <BlockMenuButton
+              icon={<TextHOne size={15} />}
+              label="Heading 2"
+              disabled={blockMenuIsBulk}
+              onClick={() => mutateBlock("heading")}
+            />
+            <BlockMenuButton
+              icon={<BracketsCurly size={15} />}
+              label="Paragraph"
+              disabled={blockMenuIsBulk}
+              onClick={() => mutateBlock("paragraph")}
+            />
             <div className="my-1 border-t border-border" />
-            <BlockMenuButton icon={<Trash size={15} />} label="Delete" destructive onClick={() => mutateBlock("delete")} />
-          </div>
+            <BlockMenuButton
+              icon={<Trash size={15} />}
+              label={blockMenuIsBulk ? `Delete ${blockMenuSelectionCount} blocks` : "Delete"}
+              destructive
+              onClick={() => mutateBlock("delete")}
+            />
+          </div>,
+          document.body
         )}
 
-        {selectionToolbar && (
+        {selectionToolbar && createPortal(
           <div
+            data-rumi-editor-overlay
             className="fixed z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-border bg-background p-1 shadow-lg"
             style={{ left: selectionToolbar.left, top: selectionToolbar.top }}
             onMouseDown={(event) => event.preventDefault()}
@@ -492,11 +843,13 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             <ToolbarButton label="Strikethrough" icon={<TextStrikethrough size={15} />} onClick={() => applyMark("strike")} />
             <ToolbarButton label="Inline code" icon={<Code size={15} />} onClick={() => applyMark("code")} />
             <ToolbarButton label="Highlight" icon={<HighlighterCircle size={15} />} onClick={() => applyMark("highlight")} />
-          </div>
+          </div>,
+          document.body
         )}
 
-        {slashMenu && (
+        {slashMenu && createPortal(
           <div
+            data-rumi-editor-overlay
             className="fixed z-50 max-h-80 w-72 overflow-y-auto rounded-md border border-border bg-background p-1 shadow-xl"
             style={{ left: Math.min(slashMenu.left, window.innerWidth - 304), top: slashMenu.top }}
           >
@@ -527,7 +880,8 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             ) : (
               <p className="px-3 py-4 text-sm text-muted-foreground">No matching block type.</p>
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     );
@@ -540,6 +894,7 @@ function createEditorState(markdown: string): EditorState {
     plugins: [
       history(),
       buildInputRules(),
+      blockSelectionPlugin(),
       buildKeymap(),
       keymap(baseKeymap),
       columnResizing(),
@@ -640,14 +995,35 @@ function buildKeymap() {
       liftEmptyBlock,
       splitBlock
     );
-    keys.Tab = sinkListItem(listItem);
-    keys["Shift-Tab"] = liftListItem(listItem);
+    keys.Tab = consumeListIndent(sinkListItem(listItem), listItem.name);
+    keys["Shift-Tab"] = consumeListIndent(liftListItem(listItem), listItem.name);
   } else {
     keys.Enter = chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock);
   }
 
   keys["Mod-Enter"] = exitCode;
   return keymap(keys);
+}
+
+function consumeListIndent(command: Command, listItemName: string): Command {
+  return (state, dispatch, view) => {
+    const { $from } = state.selection;
+    let insideListItem = false;
+
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      if ($from.node(depth).type.name === listItemName) {
+        insideListItem = true;
+        break;
+      }
+    }
+
+    if (!insideListItem) {
+      return false;
+    }
+
+    command(state, dispatch, view);
+    return true;
+  };
 }
 
 function slashCommandItems(): SlashCommandItem[] {
@@ -841,7 +1217,11 @@ function slashMenuState(view: EditorView): SlashMenuState | null {
 function selectionToolbarState(view: EditorView): SelectionToolbarState | null {
   const { selection } = view.state;
 
-  if (selection.empty || selection instanceof NodeSelection) {
+  if (
+    selection.empty ||
+    selection instanceof NodeSelection ||
+    getBlockSelection(view.state).selectedBlocks.length > 0
+  ) {
     return null;
   }
 
@@ -854,31 +1234,71 @@ function selectionToolbarState(view: EditorView): SelectionToolbarState | null {
 }
 
 function blockAtCoordinates(view: EditorView, left: number, top: number): ActiveBlockState | null {
+  const editorRect = view.dom.getBoundingClientRect();
+
+  if (left < editorRect.left || left > editorRect.right) {
+    return blockAtVerticalCoordinate(view, top);
+  }
+
   const found = view.posAtCoords({ left, top });
 
   if (!found) {
+    return blockAtVerticalCoordinate(view, top);
+  }
+
+  const pos = selectableBlockPositionAt(view.state.doc, found.pos);
+
+  if (pos === null) {
     return null;
   }
 
-  const resolved = view.state.doc.resolve(found.pos);
+  return blockGeometryAtPosition(view, pos);
+}
 
-  if (resolved.depth < 1) {
-    return null;
-  }
+function blockAtVerticalCoordinate(view: EditorView, top: number): ActiveBlockState | null {
+  const blocks = collectSelectableBlockPositions(view.state.doc)
+    .map((pos) => blockGeometryAtPosition(view, pos))
+    .filter((block): block is ActiveBlockState => block !== null);
 
-  const pos = resolved.before(1);
+  blocks.sort((left, right) => {
+    const leftDistance = verticalDistance(left, top);
+    const rightDistance = verticalDistance(right, top);
+    return leftDistance - rightDistance || right.left - left.left;
+  });
+
+  return blocks[0] ?? null;
+}
+
+function verticalDistance(block: ActiveBlockState, top: number): number {
+  if (top < block.top) return block.top - top;
+  if (top > block.top + block.height) return top - (block.top + block.height);
+  return 0;
+}
+
+function blockGeometryAtPosition(view: EditorView, pos: number): ActiveBlockState | null {
   const dom = view.nodeDOM(pos);
 
   if (!(dom instanceof HTMLElement)) {
     return null;
   }
 
-  const rect = dom.getBoundingClientRect();
+  const node = view.state.doc.nodeAt(pos);
+  const itemContent = node?.type.name === "list_item"
+    ? dom.querySelector<HTMLElement>(":scope > .rumi-list-item-content")
+    : null;
+  const firstLine = itemContent?.firstElementChild instanceof HTMLElement
+    ? itemContent.firstElementChild
+    : dom;
+  const lineRect = firstLine.getBoundingClientRect();
+  const blockRect = dom.getBoundingClientRect();
+  const anchorLeft = node?.type.name === "list_item" ? blockRect.left : lineRect.left;
   return {
     pos,
-    left: rect.left,
-    top: rect.top,
-    height: rect.height
+    left: anchorLeft,
+    right: Math.max(anchorLeft, lineRect.right),
+    top: lineRect.top,
+    height: lineRect.height,
+    handleTop: lineRect.top + Math.max(0, (lineRect.height - 28) / 2)
   };
 }
 
@@ -969,17 +1389,20 @@ function BlockMenuButton({
   icon,
   label,
   destructive = false,
+  disabled = false,
   onClick
 }: {
   icon: ReactElement;
   label: string;
   destructive?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }): ReactElement {
   return (
     <button
       type="button"
-      className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted ${
+      disabled={disabled}
+      className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${
         destructive ? "text-destructive" : ""
       }`}
       onMouseDown={(event) => event.preventDefault()}

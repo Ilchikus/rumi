@@ -125,6 +125,8 @@ interface AreaSelectionState {
 
 const LIST_DRAG_INDENT_THRESHOLD = 64;
 const LIST_DRAG_OUTDENT_THRESHOLD = 24;
+const BLOCK_HOVER_GUTTER = 72;
+const BLOCK_HOVER_VERTICAL_TOLERANCE = 12;
 
 interface SlashCommandItem {
   id: string;
@@ -276,12 +278,29 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       });
 
       const handleMouseMove = (event: MouseEvent) => {
+        if (draggedBlockRef.current) return;
+
+        const target = event.target;
+        if (target instanceof Element && target.closest("[data-rumi-editor-overlay]")) return;
+
+        const editorRect = view.dom.getBoundingClientRect();
+        const nearEditor =
+          event.clientX >= editorRect.left - BLOCK_HOVER_GUTTER &&
+          event.clientX <= editorRect.right &&
+          event.clientY >= editorRect.top &&
+          event.clientY <= editorRect.bottom;
+
         if (hoverAnimationFrameRef.current) {
           cancelAnimationFrame(hoverAnimationFrameRef.current);
         }
 
         hoverAnimationFrameRef.current = requestAnimationFrame(() => {
-          const block = blockAtCoordinates(view, event.clientX, event.clientY);
+          const candidate = nearEditor
+            ? blockAtCoordinates(view, event.clientX, event.clientY)
+            : null;
+          const block = candidate && isWithinBlockHoverZone(candidate, event.clientX, event.clientY)
+            ? candidate
+            : null;
           const current = activeBlockRef.current;
 
           if (
@@ -292,27 +311,10 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             return;
           }
 
-          setActiveBlock(block);
+          if (!blockMenuRef.current || block) {
+            setActiveBlock(block);
+          }
         });
-      };
-      const handleMouseLeave = (event: MouseEvent) => {
-        if (draggedBlockRef.current) {
-          return;
-        }
-
-        const nextTarget = event.relatedTarget;
-
-        if (
-          nextTarget instanceof Node &&
-          (wrapperRef.current?.contains(nextTarget) ||
-            (nextTarget instanceof Element && nextTarget.closest("[data-rumi-editor-overlay]")))
-        ) {
-          return;
-        }
-
-        if (!blockMenuRef.current) {
-          setActiveBlock(null);
-        }
       };
       let areaStart: { x: number; y: number } | null = null;
       let lastAreaPositions = "";
@@ -406,8 +408,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         }
       };
 
-      view.dom.addEventListener("mousemove", handleMouseMove);
-      view.dom.addEventListener("mouseleave", handleMouseLeave);
+      document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mousedown", handleAreaSelectionStart, true);
       window.addEventListener("scroll", refreshOnScroll, true);
       viewRef.current = view;
@@ -424,8 +425,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           cancelAnimationFrame(areaSelectionFrame);
         }
 
-        view.dom.removeEventListener("mousemove", handleMouseMove);
-        view.dom.removeEventListener("mouseleave", handleMouseLeave);
+        document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mousedown", handleAreaSelectionStart, true);
         document.removeEventListener("mousemove", handleAreaSelectionMove);
         document.removeEventListener("mouseup", handleAreaSelectionEnd);
@@ -705,6 +705,10 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             style={{ left: Math.max(8, activeBlock.left - 68), top: activeBlock.handleTop }}
             onMouseLeave={(event) => {
               if (draggedBlockRef.current) {
+                return;
+              }
+
+              if (isWithinBlockHoverZone(activeBlock, event.clientX, event.clientY)) {
                 return;
               }
 
@@ -1273,6 +1277,14 @@ function verticalDistance(block: ActiveBlockState, top: number): number {
   if (top < block.top) return block.top - top;
   if (top > block.top + block.height) return top - (block.top + block.height);
   return 0;
+}
+
+function isWithinBlockHoverZone(block: ActiveBlockState, left: number, top: number): boolean {
+  return (
+    left >= block.left - BLOCK_HOVER_GUTTER &&
+    left <= block.right &&
+    verticalDistance(block, top) <= BLOCK_HOVER_VERTICAL_TOLERANCE
+  );
 }
 
 function blockGeometryAtPosition(view: EditorView, pos: number): ActiveBlockState | null {

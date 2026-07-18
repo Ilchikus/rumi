@@ -6,7 +6,7 @@ areas:
   - hosting
 impact: high
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-07-18"
 ---
 # Server Runtime With Web Client
 
@@ -28,6 +28,9 @@ A server runtime gives one authority for files, indexes, watchers, commands, API
 - Self-hosting means the same server behind a domain or reverse proxy.
 - Hosted Rumi can reuse the same tenant/workspace structure later.
 - Browser local file APIs are not foundational.
+- A normal server distribution serves the built official client from the same origin.
+- `--api-only` and the typed API keep the server usable with custom clients and separate static
+  hosting.
 
 ## Avoid
 

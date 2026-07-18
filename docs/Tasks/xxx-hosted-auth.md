@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - cli
 created: 2026-06-22
-updated: 2026-07-14
+updated: 2026-07-18
 ---
 # Configurable Instance Authentication
 
@@ -66,12 +66,13 @@ retains direct owner access to workspace and credential maintenance on the host.
 ## Current Development Deployment
 
 - `dev-docs.rumi.md` routes through the locally managed `rumi-dev-docs` Cloudflare Tunnel.
-- The tunnel reaches a built web preview on port `4173`; it does not expose the Vite source
-  development server. That built preview also provides the LAN-safe client.
-- The API and Vite source development server listen only on loopback ports `3001` and `5173`.
+- The tunnel reaches the loopback Rumi server on port `3001`. That process owns the API, event
+  stream, authentication boundary, and built official web client from one origin.
+- The Vite source development server remains loopback-only on port `5173`. A separate built preview
+  on port `4173` remains available for LAN development but is no longer in the public request path.
 - Password login refuses non-loopback HTTP. LAN users must use the Cloudflare HTTPS hostname; plain
   HTTP on port `4173` can load the login shell but cannot transmit credentials.
-- API, LAN web, public preview, and tunnel processes currently run in the `rumi-new-dev` tmux
+- API/official client, LAN preview, source development, and tunnel processes run in the `rumi-new-dev` tmux
   session. This is a development deployment, not yet a boot-persistent service unit.
 - Tailscale remains independent management transport for SSH/Codex access and is not in the public
   browser request path.
@@ -92,3 +93,13 @@ Verified on 2026-07-14:
 Security hardening on 2026-07-14 also verified CSP, HSTS, frame denial, restricted Vite filesystem
 access, per-client login throttling behind the trusted local proxy, and rejection of executable
 Markdown link schemes.
+
+Verified after the branch deployment on 2026-07-18:
+
+- `corepack pnpm check` — typecheck, 67 tests, and the production web build passed;
+- `corepack pnpm audit --prod` — no known vulnerabilities;
+- the Cloudflare Tunnel connects directly to `127.0.0.1:3001` with four healthy edge connections;
+- the public and loopback HTML bodies are identical;
+- fingerprinted assets return `public, max-age=2592000, immutable`;
+- public CSP, HSTS, frame denial, password-mode session boundary, and anonymous API `401` remain;
+- direct-Tunnel login requests are throttled independently by validated Cloudflare client address.

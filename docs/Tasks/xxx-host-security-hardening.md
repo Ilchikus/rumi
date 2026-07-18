@@ -9,7 +9,7 @@ coverage:
   - ui-smoke
   - docs
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-18
 ---
 # Development Host Security Hardening
 
@@ -40,11 +40,13 @@ Tailscale without breaking the active remote development path.
 ## Applied Fixes
 
 - Bound Vite source development to loopback and restricted its filesystem allowlist.
-- Moved LAN browser access to the built preview on port `4173`; the public tunnel continues to use
-  that built output.
+- Moved LAN browser access to the built preview on port `4173`; on 2026-07-18 the public tunnel moved
+  from that preview to the loopback Rumi server on port `3001`, which now serves the same built
+  client with the API.
 - Reject password login over non-loopback HTTP.
 - Overwrite trusted proxy metadata, discard spoofed Cloudflare headers from non-loopback clients,
-  and throttle public login by validated `CF-Connecting-IP`.
+  and throttle public login by validated `CF-Connecting-IP`, including direct loopback Tunnel
+  connections.
 - Added CSP, HSTS, frame denial, MIME sniffing denial, referrer policy, permissions policy, COOP, and
   CORP headers to the built client.
 - Added a regression test proving unsafe `javascript:` and `data:` Markdown URLs do not become links.
@@ -82,3 +84,5 @@ Tailscale without breaking the active remote development path.
 - credential rotation to the operator-selected `ilchik` login invalidated existing sessions; the
   new login, authenticated tree read, and logout were verified through the public HTTPS hostname.
 - public security headers and post-certificate-removal tunnel health: verified.
+- direct server/client deployment, 30-day immutable fingerprinted-asset caching, and four restarted
+  Tunnel edge connections: verified on 2026-07-18.

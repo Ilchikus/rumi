@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 areas:
   - runtime
   - files
@@ -8,7 +8,7 @@ areas:
   - web
 impact: high
 created: "2026-07-02"
-updated: "2026-07-02"
+updated: "2026-07-18"
 ---
 # Rumi-Owned Object Identity And Revision History
 
@@ -21,6 +21,21 @@ Introduce internal Rumi object identity as the layer above revision history. Rev
 Use content-addressed full snapshots for checkpoint contents, deduped by content hash. Compute diffs on read for the revision UI.
 
 Do not checkpoint on every save. Saves update the current canonical file. Revisions capture meaningful restore points.
+
+## Implemented MVP
+
+The accepted page-level slice is implemented in the runtime, API, CLI, and official web client:
+
+- internal object identity and path continuity for Rumi-controlled moves;
+- content-addressed Markdown blobs and append-only JSONL events under `.rumi/`;
+- baseline, idle, manual, pre-delete, pre-restore, and restore checkpoints;
+- deduplication by content hash and pending-checkpoint flush on graceful shutdown;
+- revision list/content/checkpoint/restore API commands;
+- `rumi snapshot` and `rumi history`;
+- a page history dialog with current-versus-snapshot comparison and safe restore.
+
+Deleted-object restore, rich line-level diff highlighting, folder/database restore, retention, and
+binary asset history remain deferred as described below.
 
 ## Why
 

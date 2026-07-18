@@ -47,6 +47,40 @@ describe("Rumi auth CLI", () => {
   });
 });
 
+describe("Rumi workspace CLI", () => {
+  it("reports a missing required workspace argument", async () => {
+    const result = await runCli(["status"], "");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("missing required argument 'workspace'");
+  });
+
+  it("prints human-readable workspace status", async () => {
+    const workspacePath = await createTempWorkspace("rumi-cli-status-");
+    cleanupPaths.push(workspacePath);
+
+    const result = await runCli(["status", workspacePath], "");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain(`Workspace: ${path.basename(workspacePath)}`);
+    expect(result.stdout).toContain(`Root: ${workspacePath}`);
+  });
+
+  it("prints stable JSON status output", async () => {
+    const workspacePath = await createTempWorkspace("rumi-cli-json-");
+    cleanupPaths.push(workspacePath);
+
+    const result = await runCli(["status", workspacePath, "--json"], "");
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      rootPath: workspacePath,
+      name: path.basename(workspacePath)
+    });
+  });
+});
+
 function runCli(
   arguments_: string[],
   stdin: string

@@ -1,5 +1,5 @@
 ---
-status: idea
+status: doing
 order: 7
 areas:
   - assets
@@ -10,7 +10,7 @@ depends_on:
   - M05
   - M06
 created: "2026-06-22"
-updated: "2026-06-23"
+updated: "2026-07-18"
 ---
 # M07 Assets Search Polish
 
@@ -32,3 +32,9 @@ Add the next layer of workspace quality after core runtime, editor, and database
 - Assets are stored predictably.
 - Search is server-side.
 - Search ranking handles exact title and title-prefix matches well.
+
+## Progress
+
+Server-side indexed search, exact/prefix ranking, result filtering, the search dialog, code-split web
+loading, and the first official block-editor preset are implemented. Asset upload/storage commands,
+rich bookmark/file/database embeds, and automated browser smoke coverage remain open.

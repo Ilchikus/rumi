@@ -1,5 +1,5 @@
 ---
-status: idea
+status: verify
 type: feature
 milestone: M07
 owner_layer: editor
@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-06-23"
-updated: "2026-06-23"
+updated: "2026-07-18"
 ---
 # M07-001 Rumi Block Editor Preset
 
@@ -39,3 +39,10 @@ Use the old editor as behavioral reference only. Rebuild the preset around clean
 
 - The light editor can be upgraded to the official block preset without changing runtime/API contracts.
 - Rich block features are covered by Markdown roundtrip tests and UI smoke checks.
+
+## Progress
+
+The official preset now includes slash commands, block handles and drag reorder, a block context
+menu, selection formatting, task checkboxes, GFM tables, code/Mermaid source blocks, images/links,
+and Markdown roundtrip coverage. Rich file/bookmark/database embeds and automated browser smoke
+checks remain before this task can move from `verify` to `done`.

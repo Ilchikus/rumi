@@ -17,12 +17,16 @@ Current bias:
 
 ## References
 
-- Should relations remain path-only initially?
-- Should relations become `{ path, label }` objects later?
+- Should the official editor write Wikilinks or normal Markdown links in body content by default?
+- Should future typed relations require a target database?
 - How aggressive should auto-repair be for external moves?
 
 Current bias:
 
+- Follow proposed Decision 019: ordinary links first, then typed database relations that reuse the
+  same human-readable link values.
+- Store YAML links as quoted Wikilink strings/lists, not `{ path, label }` objects or opaque IDs.
+- Keep future relations one-way on disk; derive backlinks/reverse views from the index.
 - Auto-repair Rumi-controlled moves.
 - Best-effort or prompt for external moves.
 

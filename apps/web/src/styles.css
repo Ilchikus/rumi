@@ -138,6 +138,43 @@
     margin-top: 0.25rem;
   }
 
+  .rumi-prosemirror li.rumi-task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    list-style: none;
+  }
+
+  .rumi-prosemirror .rumi-list-item-content {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .rumi-prosemirror .rumi-task-checkbox {
+    margin-top: 0.38rem;
+    display: grid;
+    height: 1rem;
+    width: 1rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid hsl(var(--input));
+    border-radius: 0.2rem;
+    background: hsl(var(--background));
+    color: hsl(var(--primary-foreground));
+    font-size: 0.68rem;
+    line-height: 1;
+  }
+
+  .rumi-prosemirror li.rumi-task-item[data-checked="true"] > .rumi-task-checkbox {
+    border-color: hsl(var(--primary));
+    background: hsl(var(--primary));
+  }
+
+  .rumi-prosemirror li.rumi-task-item[data-checked="true"] > .rumi-list-item-content {
+    color: hsl(var(--muted-foreground));
+    text-decoration: line-through;
+  }
+
   .rumi-prosemirror blockquote {
     margin: 0.9rem 0 0;
     border-left: 3px solid hsl(var(--border));
@@ -173,5 +210,52 @@
     margin: 1.5rem 0 0;
     border: 0;
     border-top: 1px solid hsl(var(--border));
+  }
+
+  .rumi-prosemirror mark {
+    border-radius: 0.15rem;
+    background: hsl(var(--muted));
+    padding: 0 0.08rem;
+  }
+
+  .rumi-prosemirror img {
+    display: block;
+    max-width: 100%;
+    border-radius: 0.5rem;
+  }
+
+  .rumi-prosemirror .tableWrapper {
+    margin-top: 1rem;
+    overflow-x: auto;
+  }
+
+  .rumi-prosemirror table {
+    width: 100%;
+    min-width: 28rem;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .rumi-prosemirror th,
+  .rumi-prosemirror td {
+    position: relative;
+    min-width: 6rem;
+    border: 1px solid hsl(var(--border));
+    padding: 0.45rem 0.6rem;
+    vertical-align: top;
+  }
+
+  .rumi-prosemirror th {
+    background: hsl(var(--muted));
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .rumi-prosemirror .selectedCell::after {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: hsl(var(--foreground) / 0.06);
   }
 }

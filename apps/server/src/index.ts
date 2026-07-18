@@ -17,6 +17,7 @@ const logLevel = resolveLogLevel({
 const prettyLogs = !process.argv.includes("--json-logs");
 const authMode = resolveAuthMode(optionValue("--auth") ?? "none");
 const authStatePath = optionValue("--auth-state");
+const webRoot = optionValue("--web-root");
 
 const started = await startRumiServer({
   workspacePath,
@@ -24,6 +25,11 @@ const started = await startRumiServer({
   port,
   logLevel,
   prettyLogs,
+  ...(process.argv.includes("--api-only")
+    ? { webRoot: false }
+    : webRoot
+      ? { webRoot }
+      : {}),
   auth:
     authMode === "password"
       ? {

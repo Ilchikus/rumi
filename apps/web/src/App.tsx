@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { SidebarSimple } from "@phosphor-icons/react";
+import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
+import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
+import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
-import type { PageDocument, RumiEvent, SavePageResult, WorkspaceNode } from "@rumi/contracts";
-import { LightProseMirrorEditor, type LightProseMirrorEditorHandle } from "./components/editor/LightProseMirrorEditor";
+import type { PageDocument, RumiEvent, SavePageResult, SearchWorkspaceResultItem, WorkspaceNode } from "@rumi/contracts";
+import type { RumiBlockEditorHandle } from "./components/editor/RumiBlockEditor";
+import { DatabaseView } from "./components/database/DatabaseView";
 import { PageProperties } from "./components/editor/PageProperties";
+import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
 import { pageTitleFromPath } from "./components/editor/pagePresentation";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
+import { SearchDialog } from "./components/search/SearchDialog";
 import {
   clearLastOpenedPage,
   findWorkspaceNode,
@@ -16,6 +21,11 @@ import {
   writeLastOpenedPage
 } from "./lib/lastOpenedPage";
 import { cn } from "./lib/utils";
+
+const RumiBlockEditor = lazy(async () => {
+  const module = await import("./components/editor/RumiBlockEditor");
+  return { default: module.RumiBlockEditor };
+});
 
 type LoadState = "idle" | "loading" | "error";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";
@@ -40,6 +50,9 @@ export function App(): ReactElement {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
   const [editorRevision, setEditorRevision] = useState(0);
+  const [databaseRefreshRevision, setDatabaseRefreshRevision] = useState(0);
+  const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSavedSidebarCollapsed());
   const [sidebarMounted, setSidebarMounted] = useState(() => !sidebarCollapsed);
@@ -49,7 +62,7 @@ export function App(): ReactElement {
   const draftBodyRef = useRef("");
   const saveStateRef = useRef<SaveState>("idle");
   const selectionRef = useRef<SidebarSelection | null>(null);
-  const editorRef = useRef<LightProseMirrorEditorHandle | null>(null);
+  const editorRef = useRef<RumiBlockEditorHandle | null>(null);
   const editorRevisionRef = useRef(0);
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
@@ -84,6 +97,10 @@ export function App(): ReactElement {
   useEffect(() => {
     pageRef.current = page;
   }, [page]);
+
+  useEffect(() => {
+    setRevisionHistoryOpen(false);
+  }, [page?.path]);
 
   useEffect(() => {
     draftBodyRef.current = draftBody;
@@ -162,6 +179,18 @@ export function App(): ReactElement {
     const handleResize = () => setViewportWidth(getViewportWidth());
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && (event.key.toLocaleLowerCase() === "k" || (event.shiftKey && event.key.toLocaleLowerCase() === "f"))) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => window.removeEventListener("keydown", handleSearchShortcut);
   }, []);
 
   useEffect(() => {
@@ -345,6 +374,55 @@ export function App(): ReactElement {
       throw error;
     }
   }, [api, clearPageLoadCache, refreshAfterMutation]);
+
+  const createDatabase = useCallback(async (parentPath: string, name: string) => {
+    try {
+      const result = await api.createDatabase({ parentPath, name });
+      clearPageLoadCache();
+      await loadTree();
+      const nextPage = await loadPage(result.path);
+      setPage(nextPage);
+      setDraftBody(nextPage.markdownBody);
+      setSelection({ nodePath: result.path, openPath: nextPage.path, kind: "database" });
+      setMessage(`Created ${result.path}`);
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setSaveState("error");
+      throw error;
+    }
+  }, [api, clearPageLoadCache, loadPage, loadTree]);
+
+  const openRecordPath = useCallback(async (recordPath: string) => {
+    try {
+      const nextPage = await loadPage(recordPath);
+      setPage(nextPage);
+      setDraftBody(nextPage.markdownBody);
+      setSelection({ nodePath: recordPath, openPath: nextPage.path, kind: "page" });
+      setSaveState("idle");
+      setMessage("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setSaveState("error");
+    }
+  }, [loadPage]);
+
+  const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
+    try {
+      const nextPage = await loadPage(item.path);
+      setPage(nextPage);
+      setDraftBody(nextPage.markdownBody);
+      setSelection({
+        nodePath: item.kind === "page" ? item.path : parentPathForPage(item.path),
+        openPath: nextPage.path,
+        kind: item.kind
+      });
+      setSaveState("idle");
+      setMessage("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setSaveState("error");
+    }
+  }, [loadPage]);
 
   const renameNode = useCallback(
     async (node: WorkspaceNode, nextName: string): Promise<boolean> => {
@@ -551,6 +629,20 @@ export function App(): ReactElement {
     }
   }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, loadTree, page]);
 
+  const refreshOpenPage = useCallback(async () => {
+    const currentPage = pageRef.current;
+
+    if (!currentPage) {
+      return;
+    }
+
+    forgetCachedPage(currentPage.path);
+    const nextPage = await loadPage(currentPage.path);
+    setPage(nextPage);
+    setDraftBody(nextPage.markdownBody);
+    setSaveState("idle");
+  }, [forgetCachedPage, loadPage]);
+
   useEffect(() => {
     if (!page || saveState !== "dirty") {
       return;
@@ -703,6 +795,10 @@ export function App(): ReactElement {
         clearPageLoadCache();
         void loadTree();
       }
+
+      if (event.name === "database.recordsChanged" || event.name === "database.schemaChanged") {
+        setDatabaseRefreshRevision((current) => current + 1);
+      }
     });
   }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree]);
 
@@ -745,6 +841,7 @@ export function App(): ReactElement {
             onOpenNode={(node) => void openNode(node)}
             onCreatePage={createPage}
             onCreateFolder={createFolder}
+            onCreateDatabase={createDatabase}
             onRenameNode={renameNode}
             onMoveNode={moveNode}
             onDeleteNode={deleteNode}
@@ -797,6 +894,28 @@ export function App(): ReactElement {
           <p className="min-w-0 truncate text-sm text-muted-foreground">
             {page ? displayPath(page.path) : "Select a Markdown page"}
           </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto shrink-0"
+            onClick={() => setSearchOpen(true)}
+          >
+            <MagnifyingGlass size={16} />
+            Search
+          </Button>
+          {page && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              onClick={() => setRevisionHistoryOpen(true)}
+            >
+              <ClockCounterClockwise size={16} />
+              History
+            </Button>
+          )}
         </div>
 
         {message && (
@@ -814,25 +933,40 @@ export function App(): ReactElement {
 
         {page ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <article className="mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12">
+            <article className={cn(
+              "mx-auto w-full px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12",
+              page.kind === "database" ? "max-w-[1120px]" : "max-w-[820px]"
+            )}>
               <h1 className="break-words text-4xl font-bold leading-tight tracking-tight sm:text-[2.75rem]">
                 {pageTitle}
               </h1>
 
-              <PageProperties frontmatter={page.frontmatter} />
-
-              <div className={Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
-                <LightProseMirrorEditor
-                  ref={editorRef}
-                  documentKey={page.path}
-                  markdown={draftBody}
-                  onDirty={() => {
-                    editorRevisionRef.current += 1;
-                    setEditorRevision(editorRevisionRef.current);
-                    setSaveState("dirty");
-                    setMessage("");
-                  }}
+              {page.kind === "database" ? (
+                <DatabaseView
+                  api={api}
+                  databasePath={parentPathForPage(page.path)}
+                  refreshRevision={databaseRefreshRevision}
+                  onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
+                  onMessage={setMessage}
                 />
+              ) : (
+                <PageProperties frontmatter={page.frontmatter} />
+              )}
+
+              <div className={page.kind === "database" || Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
+                <Suspense fallback={<p className="py-4 text-sm text-muted-foreground">Loading editor…</p>}>
+                  <RumiBlockEditor
+                    ref={editorRef}
+                    documentKey={page.path}
+                    markdown={draftBody}
+                    onDirty={() => {
+                      editorRevisionRef.current += 1;
+                      setEditorRevision(editorRevisionRef.current);
+                      setSaveState("dirty");
+                      setMessage("");
+                    }}
+                  />
+                </Suspense>
               </div>
             </article>
           </div>
@@ -842,6 +976,26 @@ export function App(): ReactElement {
           </div>
         )}
       </section>
+
+      {page && (
+        <RevisionHistoryDialog
+          api={api}
+          path={page.path}
+          open={revisionHistoryOpen}
+          dirty={saveState === "dirty" || saveState === "saving"}
+          currentMarkdown={getCurrentDraftBody}
+          onOpenChange={setRevisionHistoryOpen}
+          onRestored={refreshOpenPage}
+          onMessage={setMessage}
+        />
+      )}
+      <SearchDialog
+        api={api}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onOpenItem={(item) => void openSearchResult(item)}
+        onMessage={setMessage}
+      />
     </main>
   );
 }
@@ -918,6 +1072,12 @@ function displayPath(path: string): string {
     .split("/")
     .map(stripMarkdownExtension)
     .join(" / ");
+}
+
+function parentPathForPage(pagePath: string): string {
+  const parts = pagePath.split("/");
+  parts.pop();
+  return parts.join("/");
 }
 
 function stripMarkdownExtension(name: string): string {

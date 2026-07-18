@@ -1,5 +1,5 @@
 ---
-status: active
+status: done
 order: 5
 areas:
   - watcher
@@ -9,7 +9,7 @@ depends_on:
   - M01
   - M02
 created: "2026-06-22"
-updated: "2026-06-23"
+updated: "2026-07-18"
 ---
 # M05 Watcher Index Reconciliation
 
@@ -28,7 +28,10 @@ Make external file edits safe and visible.
 
 ## Progress
 
-The first watcher slice is implemented as server-side debounced reconciliation against an in-memory snapshot. It emits normalized events for external edits, creates, deletes, and likely moves. SQLite index updates and persistent reconciliation memory are still pending.
+The server watcher debounces raw file events into normalized Rumi events for external edits, creates,
+deletes, and likely moves. A persistent SQLite index under `.rumi/index.sqlite` is rebuilt on open or
+command and updated before reconciled events are published. Search and database queries read the
+server-owned index; runtime tests cover watcher-to-index synchronization and repeatable rebuilds.
 
 ## Exit Criteria
 

@@ -29,6 +29,118 @@ export interface CreateFolderRequest {
   markdownBody?: string;
 }
 
+export type DatabasePropertyType =
+  | "text"
+  | "number"
+  | "date"
+  | "checkbox"
+  | "select"
+  | "multi-select";
+
+export interface DatabasePropertyOption {
+  name: string;
+  color?: string;
+}
+
+export interface DatabasePropertyDefinition {
+  type: DatabasePropertyType;
+  options?: DatabasePropertyOption[];
+}
+
+export interface DatabaseFilter {
+  property: string;
+  operator:
+    | "equals"
+    | "not-equals"
+    | "contains"
+    | "not-contains"
+    | "is-empty"
+    | "is-not-empty"
+    | "greater-than"
+    | "less-than";
+  value?: unknown;
+}
+
+export interface DatabaseSort {
+  property: string;
+  direction: "asc" | "desc";
+}
+
+export interface DatabaseTableView {
+  name: string;
+  type: "table";
+  columns: string[];
+  filters?: DatabaseFilter[];
+  filterMode?: "and" | "or";
+  sorts?: DatabaseSort[];
+}
+
+export type DatabaseView = DatabaseTableView;
+
+export interface DatabaseSchema {
+  type: "database";
+  properties: Record<string, DatabasePropertyDefinition>;
+  unsupportedProperties: string[];
+  views: DatabaseView[];
+}
+
+export interface DatabaseRecord {
+  path: string;
+  title: string;
+  frontmatter: FrontmatterRecord;
+  version: string;
+}
+
+export interface CreateDatabaseRequest {
+  parentPath: string;
+  name: string;
+  markdownBody?: string;
+}
+
+export interface CreateDatabaseRecordRequest {
+  databasePath: string;
+  name?: string;
+  frontmatter?: FrontmatterRecord;
+  markdownBody?: string;
+}
+
+export interface QueryDatabaseRequest {
+  databasePath: string;
+  filters?: DatabaseFilter[];
+  filterMode?: "and" | "or";
+  sorts?: DatabaseSort[];
+}
+
+export interface QueryDatabaseResult {
+  databasePath: string;
+  configPath: string;
+  schema: DatabaseSchema;
+  schemaVersion: string;
+  records: DatabaseRecord[];
+}
+
+export interface UpdateDatabaseRecordPropertyRequest {
+  databasePath: string;
+  recordPath: string;
+  property: string;
+  value?: unknown;
+  baseVersion?: string;
+}
+
+export interface UpdateDatabaseSchemaRequest {
+  databasePath: string;
+  properties: Record<string, DatabasePropertyDefinition>;
+  views: DatabaseView[];
+  baseVersion?: string;
+}
+
+export interface RenameDatabasePropertyRequest {
+  databasePath: string;
+  property: string;
+  newName: string;
+  baseVersion?: string;
+}
+
 export interface RenameNodeRequest {
   path: string;
   newName: string;
@@ -132,6 +244,65 @@ export interface SavePageConflictResult {
 }
 
 export type SavePageResult = SavePageSavedResult | SavePageConflictResult;
+
+export type RevisionReason =
+  | "baseline"
+  | "idle-checkpoint"
+  | "manual-checkpoint"
+  | "before-delete"
+  | "before-restore"
+  | "restore";
+
+export type RevisionSource = "editor" | "api" | "cli" | "filesystem" | "runtime";
+
+export interface RevisionEntry {
+  revisionId: string;
+  type: "revision.checkpoint" | "revision.restored";
+  objectId: string;
+  objectPath: string;
+  contentPath: string;
+  contentRole: "page" | "folder-index" | "database-config";
+  contentHash: string;
+  previousContentHash?: string;
+  reason: RevisionReason;
+  source: RevisionSource;
+  createdAt: string;
+  restoredFromRevisionId?: string;
+}
+
+export interface RevisionContentResult {
+  revision: RevisionEntry;
+  markdown: string;
+}
+
+export interface CheckpointRequest {
+  path: string;
+  reason?: "manual-checkpoint";
+}
+
+export interface RestoreRevisionRequest {
+  revisionId: string;
+  targetPath?: string;
+}
+
+export interface SearchWorkspaceRequest {
+  query: string;
+  kinds?: WorkspaceNodeKind[];
+  limit?: number;
+}
+
+export interface SearchWorkspaceResultItem {
+  path: string;
+  title: string;
+  kind: PageDocumentKind;
+  snippet: string;
+  score: number;
+}
+
+export interface SearchWorkspaceResult {
+  query: string;
+  items: SearchWorkspaceResultItem[];
+}
 
 export interface ApiErrorResponse {
   error: {

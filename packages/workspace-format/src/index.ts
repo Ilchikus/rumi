@@ -1,5 +1,3 @@
-import path from "node:path";
-
 export type WorkspaceFileKind =
   | "page"
   | "folder-index"
@@ -35,14 +33,29 @@ export function normalizeWorkspacePath(input: string): string {
     throw new Error(`Workspace path must be relative: ${input}`);
   }
 
-  const normalized = path.posix.normalize(raw);
+  const parts: string[] = [];
 
-  if (normalized === "." || normalized === "") {
-    return "";
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+
+    if (part === "..") {
+      if (parts.length === 0) {
+        throw new Error(`Workspace path escapes root: ${input}`);
+      }
+
+      parts.pop();
+      continue;
+    }
+
+    parts.push(part);
   }
 
-  if (normalized === ".." || normalized.startsWith("../")) {
-    throw new Error(`Workspace path escapes root: ${input}`);
+  const normalized = parts.join("/");
+
+  if (normalized === "") {
+    return "";
   }
 
   return normalized;
@@ -105,7 +118,7 @@ export function directoryCompanionBaseName(dirPath: string): string {
   if (normalized === "") {
     return "";
   }
-  return path.posix.basename(normalized);
+  return workspaceBasename(normalized);
 }
 
 export function folderIndexPathForDirectory(dirPath: string): string {
@@ -114,7 +127,7 @@ export function folderIndexPathForDirectory(dirPath: string): string {
   if (base === "") {
     throw new Error("Workspace root does not have a folder index companion");
   }
-  return path.posix.join(normalized, `${base}.index.md`);
+  return joinWorkspacePath(normalized, `${base}.index.md`);
 }
 
 export function databaseConfigPathForDirectory(dirPath: string): string {
@@ -123,21 +136,21 @@ export function databaseConfigPathForDirectory(dirPath: string): string {
   if (base === "") {
     throw new Error("Workspace root does not have a database companion");
   }
-  return path.posix.join(normalized, `${base}.db.md`);
+  return joinWorkspacePath(normalized, `${base}.db.md`);
 }
 
 export function isFolderIndexPath(relPath: string): boolean {
   const normalized = normalizeWorkspacePath(relPath);
-  const parent = path.posix.dirname(normalized);
-  const parentName = path.posix.basename(parent);
-  return parent !== "." && path.posix.basename(normalized) === `${parentName}.index.md`;
+  const parent = workspaceDirname(normalized);
+  const parentName = workspaceBasename(parent);
+  return parent !== "" && workspaceBasename(normalized) === `${parentName}.index.md`;
 }
 
 export function isDatabaseConfigPath(relPath: string): boolean {
   const normalized = normalizeWorkspacePath(relPath);
-  const parent = path.posix.dirname(normalized);
-  const parentName = path.posix.basename(parent);
-  return parent !== "." && path.posix.basename(normalized) === `${parentName}.db.md`;
+  const parent = workspaceDirname(normalized);
+  const parentName = workspaceBasename(parent);
+  return parent !== "" && workspaceBasename(normalized) === `${parentName}.db.md`;
 }
 
 export function classifyFilePath(relPath: string): WorkspaceFileKind {
@@ -164,4 +177,19 @@ export function classifyFilePath(relPath: string): WorkspaceFileKind {
   }
 
   return "file";
+}
+
+function workspaceBasename(relPath: string): string {
+  const parts = normalizeWorkspacePath(relPath).split("/");
+  return parts[parts.length - 1] ?? "";
+}
+
+function workspaceDirname(relPath: string): string {
+  const parts = normalizeWorkspacePath(relPath).split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+function joinWorkspacePath(...parts: string[]): string {
+  return normalizeWorkspacePath(parts.filter(Boolean).join("/"));
 }

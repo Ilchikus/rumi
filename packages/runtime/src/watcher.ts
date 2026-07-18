@@ -13,7 +13,7 @@ import {
 export interface WorkspaceWatcherOptions {
   rootPath: string;
   debounceMs?: number;
-  onEvents?: (events: RumiEvent[]) => void;
+  onEvents?: (events: RumiEvent[]) => void | Promise<void>;
 }
 
 export interface WorkspaceReconcileResult {
@@ -42,7 +42,7 @@ type WorkspaceSnapshot = Map<string, SnapshotEntry>;
 export class WorkspaceWatcher {
   private readonly rootPath: string;
   private readonly debounceMs: number;
-  private readonly onEvents: ((events: RumiEvent[]) => void) | undefined;
+  private readonly onEvents: ((events: RumiEvent[]) => void | Promise<void>) | undefined;
   private snapshot: WorkspaceSnapshot;
   private readonly directoryWatchers = new Map<string, FSWatcher>();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,7 +82,7 @@ export class WorkspaceWatcher {
     const events = await this.reconcileSnapshot();
 
     if (events.length > 0) {
-      this.onEvents?.(events);
+      await this.onEvents?.(events);
     }
 
     return {

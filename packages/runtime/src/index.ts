@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type {
+  CheckpointRequest,
   CreateFolderRequest,
+  CreateDatabaseRecordRequest,
+  CreateDatabaseRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   FrontmatterRecord,
@@ -11,11 +14,21 @@ import type {
   OpenWorkspaceResult,
   PageDocument,
   PageDocumentKind,
+  QueryDatabaseRequest,
+  QueryDatabaseResult,
+  RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreRevisionRequest,
+  RevisionContentResult,
+  RevisionEntry,
   RumiEvent,
   RumiEventEnvelope,
   SavePageRequest,
   SavePageResult,
+  SearchWorkspaceRequest,
+  SearchWorkspaceResult,
+  UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabaseSchemaRequest,
   WorkspaceNode,
   WorkspaceNodeKind,
   WorkspaceMutationResult
@@ -30,6 +43,14 @@ import {
   normalizeWorkspacePath
 } from "@rumi/workspace-format";
 import { WorkspaceWatcher, type WorkspaceReconcileResult } from "./watcher";
+import {
+  databaseFrontmatter,
+  ensureDatabaseRecordPath,
+  loadDatabaseConfig,
+  queryDatabaseRecords
+} from "./database";
+import { RevisionStore } from "./revisions";
+import { WorkspaceIndex } from "./workspace-index";
 
 export interface WorkspaceRuntimeOptions {
   rootPath: string;
@@ -72,11 +93,15 @@ export class WorkspaceRuntime {
   readonly rootPath: string;
   readonly name: string;
   readonly events = new RuntimeEventBus();
+  private readonly revisions: RevisionStore;
+  private readonly workspaceIndex: WorkspaceIndex;
   private workspaceWatcher: WorkspaceWatcher | null = null;
 
-  private constructor(rootPath: string) {
+  private constructor(rootPath: string, workspaceIndex: WorkspaceIndex) {
     this.rootPath = rootPath;
     this.name = path.basename(rootPath);
+    this.revisions = new RevisionStore({ rootPath });
+    this.workspaceIndex = workspaceIndex;
   }
 
   static async open(options: WorkspaceRuntimeOptions): Promise<WorkspaceRuntime> {
@@ -91,7 +116,7 @@ export class WorkspaceRuntime {
       throw new Error(`Workspace root must be a directory: ${rootPath}`);
     }
 
-    return new WorkspaceRuntime(rootPath);
+    return new WorkspaceRuntime(rootPath, await WorkspaceIndex.open(rootPath));
   }
 
   info(): OpenWorkspaceResult {
@@ -142,11 +167,27 @@ export class WorkspaceRuntime {
       };
     }
 
+    if (currentContent !== null) {
+      await this.revisions.captureBaseline(relPath, currentContent, saveSource(request.reason));
+    }
+
     const nextContent = serializeMarkdownFile(request.frontmatter, request.markdownBody);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, nextContent, "utf8");
+    await this.workspaceIndex.indexPath(relPath);
 
     const nextHash = hashText(nextContent);
+
+    if (request.reason === "manual-save") {
+      await this.revisions.checkpoint(
+        relPath,
+        nextContent,
+        "manual-checkpoint",
+        saveSource(request.reason)
+      );
+    } else {
+      this.revisions.noteActivity(relPath, nextContent, saveSource(request.reason));
+    }
 
     const event: RumiEvent = {
       name: "page.changed",
@@ -163,7 +204,7 @@ export class WorkspaceRuntime {
       path: relPath,
       version: nextHash,
       contentHash: nextHash,
-      changedIndexes: [],
+      changedIndexes: ["workspace-content"],
       events: [event]
     };
   }
@@ -181,6 +222,13 @@ export class WorkspaceRuntime {
       serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
       "utf8"
     );
+    await this.revisions.checkpoint(
+      relPath,
+      await fs.readFile(absolutePath, "utf8"),
+      "baseline",
+      "runtime"
+    );
+    await this.workspaceIndex.indexPath(relPath);
 
     const result = mutationResult("page.changed", relPath, ["tree", "body", "frontmatter"]);
     this.publishResultEvents(result);
@@ -198,10 +246,278 @@ export class WorkspaceRuntime {
 
     const indexPath = folderIndexPathForDirectory(relPath);
     await fs.writeFile(this.resolveAbsolutePath(indexPath), request.markdownBody ?? `# ${folderName}\n`, "utf8");
+    await this.revisions.checkpoint(
+      indexPath,
+      await fs.readFile(this.resolveAbsolutePath(indexPath), "utf8"),
+      "baseline",
+      "runtime"
+    );
+    await this.workspaceIndex.indexPath(indexPath);
 
     const result = mutationResult("folder.childrenChanged", relPath, ["tree", "body"]);
     this.publishResultEvents(result);
     return result;
+  }
+
+  async createDatabase(request: CreateDatabaseRequest): Promise<WorkspaceMutationResult> {
+    const parentPath = normalizeWorkspacePath(request.parentPath);
+    const databaseName = cleanWorkspaceName(request.name);
+    const relPath = normalizeWorkspacePath(path.posix.join(parentPath, databaseName));
+    const absolutePath = this.resolveAbsolutePath(relPath);
+
+    await failIfExists(absolutePath);
+    await fs.mkdir(absolutePath, { recursive: false });
+
+    const configPath = databaseConfigPathForDirectory(relPath);
+    await fs.writeFile(
+      this.resolveAbsolutePath(configPath),
+      serializeMarkdownFile(
+        {
+          type: "database",
+          properties: {},
+          views: [{ name: "All", type: "table", columns: [] }]
+        },
+        request.markdownBody ?? ""
+      ),
+      "utf8"
+    );
+    await this.revisions.checkpoint(
+      configPath,
+      await fs.readFile(this.resolveAbsolutePath(configPath), "utf8"),
+      "baseline",
+      "runtime"
+    );
+    await this.workspaceIndex.indexPath(configPath);
+
+    const result: WorkspaceMutationResult = {
+      status: "ok",
+      path: relPath,
+      events: [
+        { name: "database.schemaChanged", path: relPath, affects: ["tree", "schema", "body"] },
+        { name: "workspace.treeChanged", path: relPath, affects: ["tree"] }
+      ]
+    };
+    this.publishResultEvents(result);
+    return result;
+  }
+
+  async queryDatabase(request: QueryDatabaseRequest): Promise<QueryDatabaseResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const records = await this.workspaceIndex.databaseRecords(config.databasePath);
+    return queryDatabaseRecords(config, records, request);
+  }
+
+  async createDatabaseRecord(
+    request: CreateDatabaseRecordRequest
+  ): Promise<WorkspaceMutationResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const requestedName = request.name ? cleanWorkspaceName(request.name) : null;
+    const recordPath = requestedName
+      ? normalizeWorkspacePath(path.posix.join(config.databasePath, ensureMarkdownName(requestedName)))
+      : await this.nextUntitledRecordPath(config.databasePath);
+    const absolutePath = this.resolveAbsolutePath(recordPath);
+
+    await failIfExists(absolutePath);
+    await fs.writeFile(
+      absolutePath,
+      serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
+      "utf8"
+    );
+    await this.revisions.checkpoint(
+      recordPath,
+      await fs.readFile(absolutePath, "utf8"),
+      "baseline",
+      "runtime"
+    );
+    await this.workspaceIndex.indexPath(recordPath);
+
+    const result: WorkspaceMutationResult = {
+      status: "ok",
+      path: recordPath,
+      events: [
+        {
+          name: "page.changed",
+          path: recordPath,
+          changedBy: "database.createRecord",
+          affects: ["tree", "frontmatter", "body"]
+        },
+        { name: "database.recordsChanged", path: config.databasePath, affects: ["records"] },
+        { name: "workspace.treeChanged", path: recordPath, affects: ["tree"] }
+      ]
+    };
+    this.publishResultEvents(result);
+    return result;
+  }
+
+  async updateDatabaseRecordProperty(
+    request: UpdateDatabaseRecordPropertyRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const recordPath = ensureDatabaseRecordPath(config.databasePath, request.recordPath);
+    const page = await this.openPage(recordPath);
+    const frontmatter = { ...page.frontmatter };
+
+    if (request.value === undefined) {
+      delete frontmatter[request.property];
+    } else {
+      frontmatter[request.property] = request.value;
+    }
+
+    const result = await this.savePage({
+      path: recordPath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      frontmatter,
+      markdownBody: page.markdownBody,
+      reason: "property-edit"
+    });
+
+    if (result.status === "conflict") {
+      return result;
+    }
+
+    const databaseEvent: RumiEvent = {
+      name: "database.recordsChanged",
+      path: config.databasePath,
+      affects: ["records", request.property]
+    };
+    this.events.publish(databaseEvent);
+
+    return {
+      ...result,
+      events: [...result.events, databaseEvent]
+    };
+  }
+
+  async updateDatabaseSchema(request: UpdateDatabaseSchemaRequest): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const result = await this.savePage({
+      path: config.configPath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      frontmatter: databaseFrontmatter(config.frontmatter, request.properties, request.views),
+      markdownBody: config.markdownBody,
+      reason: "property-edit"
+    });
+
+    if (result.status === "conflict") {
+      return result;
+    }
+
+    const databaseEvent: RumiEvent = {
+      name: "database.schemaChanged",
+      path: config.databasePath,
+      affects: ["schema", "views"]
+    };
+    this.events.publish(databaseEvent);
+
+    return {
+      ...result,
+      events: [...result.events, databaseEvent]
+    };
+  }
+
+  async renameDatabaseProperty(request: RenameDatabasePropertyRequest): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const property = request.property.trim();
+    const newName = request.newName.trim();
+
+    if (!property || !config.schema.properties[property]) {
+      throw new Error(`Database property does not exist: ${property || request.property}`);
+    }
+
+    if (!newName) {
+      throw new Error("Database property name cannot be empty");
+    }
+
+    const allPropertyNames = new Set([
+      ...Object.keys(config.schema.properties),
+      ...config.schema.unsupportedProperties
+    ]);
+
+    if (property !== newName && allPropertyNames.has(newName)) {
+      throw new Error(`Database property already exists: ${newName}`);
+    }
+
+    if (property === newName) {
+      return this.updateDatabaseSchema({
+        databasePath: config.databasePath,
+        ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+        properties: config.schema.properties,
+        views: config.schema.views
+      });
+    }
+
+    const records = (await this.queryDatabase({ databasePath: config.databasePath })).records;
+
+    for (const record of records) {
+      if (
+        Object.prototype.hasOwnProperty.call(record.frontmatter, property) &&
+        Object.prototype.hasOwnProperty.call(record.frontmatter, newName)
+      ) {
+        throw new Error(`${record.path} already has a ${newName} property`);
+      }
+    }
+
+    const properties = Object.fromEntries(
+      Object.entries(config.schema.properties).map(([name, definition]) => [
+        name === property ? newName : name,
+        definition
+      ])
+    );
+    const views = config.schema.views.map((view) => ({
+      ...view,
+      columns: view.columns.map((column) => (column === property ? newName : column)),
+      ...(view.filters
+        ? {
+            filters: view.filters.map((filter) => ({
+              ...filter,
+              property: filter.property === property ? newName : filter.property
+            }))
+          }
+        : {}),
+      ...(view.sorts
+        ? {
+            sorts: view.sorts.map((sort) => ({
+              ...sort,
+              property: sort.property === property ? newName : sort.property
+            }))
+          }
+        : {})
+    }));
+    const schemaResult = await this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      properties,
+      views
+    });
+
+    if (schemaResult.status === "conflict") {
+      return schemaResult;
+    }
+
+    for (const record of records) {
+      if (!Object.prototype.hasOwnProperty.call(record.frontmatter, property)) {
+        continue;
+      }
+
+      const value = record.frontmatter[property];
+      await this.updateDatabaseRecordProperty({
+        databasePath: config.databasePath,
+        recordPath: record.path,
+        baseVersion: record.version,
+        property,
+        value: undefined
+      });
+      const latest = await this.openPage(record.path);
+      await this.updateDatabaseRecordProperty({
+        databasePath: config.databasePath,
+        recordPath: record.path,
+        baseVersion: latest.version,
+        property: newName,
+        value
+      });
+    }
+
+    return schemaResult;
   }
 
   async renameNode(request: RenameNodeRequest): Promise<WorkspaceMutationResult> {
@@ -220,6 +536,9 @@ export class WorkspaceRuntime {
     if (stat.isDirectory()) {
       await renameDirectoryCompanionAfterDirectoryRename(newPath, path.posix.basename(oldPath), this.resolveAbsolutePath.bind(this));
     }
+
+    await this.revisions.move(oldPath, newPath);
+    await this.workspaceIndex.movePath(oldPath, newPath);
 
     const result = mutationResult("page.moved", newPath, ["tree"], oldPath);
     this.publishResultEvents(result);
@@ -247,6 +566,8 @@ export class WorkspaceRuntime {
     await fs.mkdir(path.dirname(absoluteNewPath), { recursive: true });
     await failIfExists(absoluteNewPath);
     await fs.rename(absoluteOldPath, absoluteNewPath);
+    await this.revisions.move(oldPath, newPath);
+    await this.workspaceIndex.movePath(oldPath, newPath);
 
     const result = mutationResult("page.moved", newPath, ["tree"], oldPath);
     this.publishResultEvents(result);
@@ -258,22 +579,35 @@ export class WorkspaceRuntime {
     const absolutePath = this.resolveAbsolutePath(relPath);
     const stat = await fs.stat(absolutePath);
 
+    await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
+
     if (stat.isDirectory()) {
       await fs.rm(absolutePath, { recursive: request.recursive ?? false });
     } else {
       await fs.unlink(absolutePath);
     }
 
+    await this.revisions.markDeleted(relPath);
+    this.workspaceIndex.removePath(relPath);
+
     const result = mutationResult("page.deleted", relPath, ["tree"]);
     this.publishResultEvents(result);
     return result;
   }
 
-  async rebuildIndex(): Promise<{ status: "ok"; indexedAt: string }> {
+  async rebuildIndex(): Promise<{ status: "ok"; indexedAt: string; documentCount: number }> {
+    const documentCount = await this.workspaceIndex.rebuild();
+    const event: RumiEvent = { name: "index.rebuilt", affects: ["search", "database"] };
+    this.events.publish(event);
     return {
       status: "ok",
-      indexedAt: new Date().toISOString()
+      indexedAt: new Date().toISOString(),
+      documentCount
     };
+  }
+
+  async searchWorkspace(request: SearchWorkspaceRequest): Promise<SearchWorkspaceResult> {
+    return this.workspaceIndex.search(request);
   }
 
   async reconcileWorkspace(): Promise<WorkspaceReconcileResult> {
@@ -288,7 +622,78 @@ export class WorkspaceRuntime {
 
   async stopWatchingWorkspace(): Promise<void> {
     await this.workspaceWatcher?.stop();
+    await this.revisions.flush();
+    this.workspaceIndex.close();
     this.workspaceWatcher = null;
+  }
+
+  async checkpointNow(request: CheckpointRequest): Promise<RevisionEntry> {
+    const target = await this.resolvePageTarget(request.path);
+    const content = await fs.readFile(this.resolveAbsolutePath(target.path), "utf8");
+    return this.revisions.checkpoint(
+      target.path,
+      content,
+      request.reason ?? "manual-checkpoint",
+      "api"
+    );
+  }
+
+  async listRevisions(inputPath: string): Promise<RevisionEntry[]> {
+    const target = await this.resolvePageTarget(inputPath);
+    return this.revisions.list(target.path);
+  }
+
+  async getRevision(revisionId: string): Promise<RevisionContentResult> {
+    return this.revisions.get(revisionId);
+  }
+
+  async restoreRevision(request: RestoreRevisionRequest): Promise<RevisionEntry> {
+    const selected = await this.revisions.get(request.revisionId);
+    const currentObjectPath = await this.revisions.currentPathForObject(selected.revision.objectId);
+    const targetInput = request.targetPath ?? currentObjectPath ?? selected.revision.contentPath;
+    const target = request.targetPath
+      ? await this.resolvePageTarget(request.targetPath).catch(() => ({
+          path: normalizeWorkspacePath(request.targetPath!),
+          kind: "page" as const
+        }))
+      : { path: normalizeWorkspacePath(targetInput), kind: "page" as const };
+    const absolutePath = this.resolveAbsolutePath(target.path);
+    const currentContent = await fs.readFile(absolutePath, "utf8").catch((error: unknown) => {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    });
+
+    if (currentContent !== null) {
+      await this.revisions.checkpoint(
+        target.path,
+        currentContent,
+        "before-restore",
+        "runtime"
+      );
+    }
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, selected.markdown, "utf8");
+    await this.workspaceIndex.indexPath(target.path);
+    const restored = await this.revisions.checkpoint(
+      target.path,
+      selected.markdown,
+      "restore",
+      "runtime",
+      selected.revision.revisionId
+    );
+    const event: RumiEvent = {
+      name: "page.changed",
+      path: target.path,
+      version: restored.contentHash,
+      contentHash: restored.contentHash,
+      changedBy: "revision.restore",
+      affects: ["frontmatter", "body"]
+    };
+    this.events.publish(event);
+    return restored;
   }
 
   private async readDirectoryTree(relPath: string): Promise<WorkspaceNode> {
@@ -401,11 +806,52 @@ export class WorkspaceRuntime {
     }
   }
 
+  private async nextUntitledRecordPath(databasePath: string): Promise<string> {
+    let index = 1;
+
+    while (true) {
+      const name = index === 1 ? "Untitled.md" : `Untitled ${index}.md`;
+      const recordPath = normalizeWorkspacePath(path.posix.join(databasePath, name));
+
+      if (!(await fileExists(this.resolveAbsolutePath(recordPath)))) {
+        return recordPath;
+      }
+
+      index += 1;
+    }
+  }
+
+  private async checkpointNodeBeforeDelete(
+    relPath: string,
+    absolutePath: string,
+    stat: import("node:fs").Stats
+  ): Promise<void> {
+    if (stat.isFile()) {
+      const kind = classifyFilePath(relPath);
+
+      if (kind === "page" || kind === "folder-index" || kind === "database-config") {
+        const content = await fs.readFile(absolutePath, "utf8");
+        await this.revisions.checkpoint(relPath, content, "before-delete", "runtime");
+      }
+
+      return;
+    }
+
+    const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const childPath = normalizeWorkspacePath(path.posix.join(relPath, entry.name));
+      const childAbsolutePath = path.join(absolutePath, entry.name);
+      await this.checkpointNodeBeforeDelete(childPath, childAbsolutePath, await fs.stat(childAbsolutePath));
+    }
+  }
+
   private async getWorkspaceWatcher(): Promise<WorkspaceWatcher> {
     if (!this.workspaceWatcher) {
       this.workspaceWatcher = await WorkspaceWatcher.create({
         rootPath: this.rootPath,
-        onEvents: (events) => {
+        onEvents: async (events) => {
+          await this.syncIndexForEvents(events);
           for (const event of events) {
             this.events.publish(event);
           }
@@ -414,6 +860,18 @@ export class WorkspaceRuntime {
     }
 
     return this.workspaceWatcher;
+  }
+
+  private async syncIndexForEvents(events: RumiEvent[]): Promise<void> {
+    for (const event of events) {
+      if (event.name === "page.changed" && event.path) {
+        await this.workspaceIndex.indexPath(event.path);
+      } else if (event.name === "page.deleted" && event.path) {
+        this.workspaceIndex.removePath(event.path);
+      } else if (event.name === "page.moved" && event.path && event.previousPath) {
+        await this.workspaceIndex.movePath(event.previousPath, event.path);
+      }
+    }
   }
 }
 
@@ -548,4 +1006,12 @@ function sortJson(value: unknown): unknown {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function saveSource(reason: SavePageRequest["reason"]): "editor" | "api" | "cli" | "runtime" {
+  if (reason === "editor-autosave" || reason === "property-edit" || reason === "manual-save") {
+    return "editor";
+  }
+
+  return reason === "cli" ? "cli" : reason === "api" ? "api" : "runtime";
 }

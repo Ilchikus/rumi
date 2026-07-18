@@ -103,6 +103,104 @@ program
 
     console.log(`Index status: ${result.status}`);
     console.log(`Indexed at: ${result.indexedAt}`);
+    console.log(`Documents: ${result.documentCount}`);
+  });
+
+program
+  .command("search")
+  .argument("<workspace>", "Workspace directory")
+  .argument("<query>", "Search query")
+  .option("--limit <limit>", "Maximum results", "50")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, query: string, options: { limit: string; json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const result = await runtime.searchWorkspace({ query, limit: Number(options.limit) });
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    for (const item of result.items) {
+      console.log(`${item.title} (${item.kind})\t${item.path}`);
+    }
+  });
+
+program
+  .command("snapshot")
+  .argument("<workspace>", "Workspace directory")
+  .argument("<path>", "Workspace-relative page path")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, pagePath: string, options: { json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const revision = await runtime.checkpointNow({ path: pagePath, reason: "manual-checkpoint" });
+
+    if (options.json) {
+      console.log(JSON.stringify(revision, null, 2));
+      return;
+    }
+
+    console.log(`Snapshot: ${revision.revisionId}`);
+    console.log(`Path: ${revision.contentPath}`);
+    console.log(`Hash: ${revision.contentHash}`);
+  });
+
+program
+  .command("history")
+  .argument("<workspace>", "Workspace directory")
+  .argument("<path>", "Workspace-relative page path")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, pagePath: string, options: { json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const revisions = await runtime.listRevisions(pagePath);
+
+    if (options.json) {
+      console.log(JSON.stringify(revisions, null, 2));
+      return;
+    }
+
+    for (const revision of revisions) {
+      console.log(`${revision.createdAt}\t${revision.reason}\t${revision.revisionId}`);
+    }
+  });
+
+const databaseCommand = program.command("database").description("Manage folder-backed databases");
+
+databaseCommand
+  .command("create")
+  .argument("<workspace>", "Workspace directory")
+  .argument("<name>", "Database name")
+  .option("--parent <path>", "Parent workspace path", "")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, name: string, options: { parent: string; json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const result = await runtime.createDatabase({ parentPath: options.parent, name });
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(`Database created: ${result.path}`);
+  });
+
+databaseCommand
+  .command("query")
+  .argument("<workspace>", "Workspace directory")
+  .argument("<database>", "Database workspace path")
+  .option("--json", "Print JSON")
+  .action(async (workspace: string, databasePath: string, options: { json?: boolean }) => {
+    const runtime = await WorkspaceRuntime.open({ rootPath: workspace });
+    const result = await runtime.queryDatabase({ databasePath });
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    for (const record of result.records) {
+      console.log(`${record.title}\t${record.path}`);
+    }
   });
 
 program
@@ -134,6 +232,8 @@ program
   .option("--auth <mode>", "Authentication mode: none or password", "none")
   .option("--auth-state <path>", "Override the authentication state file")
   .option("--secure-cookies", "Always mark the session cookie Secure")
+  .option("--web-root <path>", "Serve a built Rumi web client from this directory")
+  .option("--api-only", "Run without serving the official web client")
   .action(async (workspace: string, options: {
     host: string;
     port: string;
@@ -143,6 +243,8 @@ program
     auth: string;
     authState?: string;
     secureCookies?: boolean;
+    webRoot?: string;
+    apiOnly?: boolean;
   }) => {
     const authMode = resolveAuthMode(options.auth);
     const started = await startRumiServer({
@@ -151,6 +253,11 @@ program
       port: Number(options.port),
       logLevel: resolveLogLevel(options.logLevel, options.verbose ?? false),
       prettyLogs: !options.jsonLogs,
+      ...(options.apiOnly
+        ? { webRoot: false }
+        : options.webRoot
+          ? { webRoot: options.webRoot }
+          : {}),
       auth:
         authMode === "password"
           ? {

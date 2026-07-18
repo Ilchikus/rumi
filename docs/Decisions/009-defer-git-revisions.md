@@ -5,7 +5,7 @@ areas:
   - files
 impact: high
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-07-18"
 ---
 # Defer Git And Revisions
 
@@ -33,3 +33,9 @@ Git was useful for revisions and multi-device thinking, but it adds too much com
 - Optional Git integration as export/sync.
 
 Git should not define runtime architecture.
+
+## Follow-Up
+
+The first-runtime deferral is complete. Decision 017 accepts and implements Rumi-owned document
+snapshots. Git remains optional future application-independent backup/export infrastructure and is
+not used for document history or synchronization.

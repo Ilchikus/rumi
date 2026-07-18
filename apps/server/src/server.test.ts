@@ -13,6 +13,39 @@ afterEach(async () => {
 });
 
 describe("Rumi server API", () => {
+  it("serves the official web build with SPA fallback while keeping API errors structured", async () => {
+    const root = await tempWorkspace();
+    const webRoot = await createTempWorkspace("rumi-web-build-");
+    cleanupPaths.push(webRoot);
+    await fs.mkdir(path.join(webRoot, "assets"), { recursive: true });
+    await fs.writeFile(path.join(webRoot, "index.html"), "<!doctype html><main>Rumi client</main>", "utf8");
+    await fs.writeFile(path.join(webRoot, "assets", "app.js"), "globalThis.rumi = true;", "utf8");
+    const { server } = await createRumiServer({ workspacePath: root, webRoot });
+
+    const rootResponse = await server.inject({ method: "GET", url: "/" });
+    expect(rootResponse.statusCode).toBe(200);
+    expect(rootResponse.body).toContain("Rumi client");
+    expect(rootResponse.headers["cache-control"]).toContain("no-cache");
+    expect(rootResponse.headers["content-security-policy"]).toContain("default-src 'self'");
+    expect(rootResponse.headers["x-frame-options"]).toBe("DENY");
+
+    const routeResponse = await server.inject({ method: "GET", url: "/workspace/page" });
+    expect(routeResponse.statusCode).toBe(200);
+    expect(routeResponse.body).toContain("Rumi client");
+
+    const assetResponse = await server.inject({ method: "GET", url: "/assets/app.js" });
+    expect(assetResponse.statusCode).toBe(200);
+    expect(assetResponse.body).toContain("globalThis.rumi");
+
+    const apiResponse = await server.inject({ method: "GET", url: "/api/missing" });
+    expect(apiResponse.statusCode).toBe(404);
+    expect(apiResponse.json()).toEqual({
+      error: { code: "not_found", message: "Route not found" }
+    });
+
+    await server.close();
+  });
+
   it("opens tree and page through HTTP routes", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Idea.md"), "# Idea", "utf8");
@@ -161,6 +194,167 @@ describe("Rumi server API", () => {
     expect(deleteNode.statusCode).toBe(200);
 
     await expect(fs.stat(path.join(root, "Archive", "Moved idea.md"))).rejects.toThrow();
+    await server.close();
+  });
+
+  it("runs database commands through domain API routes", async () => {
+    const root = await tempWorkspace();
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    const createDatabase = await server.inject({
+      method: "POST",
+      url: "/api/databases",
+      payload: { parentPath: "", name: "Tasks" }
+    });
+    expect(createDatabase.statusCode).toBe(200);
+
+    const createRecord = await server.inject({
+      method: "POST",
+      url: "/api/database/records",
+      payload: {
+        databasePath: "Tasks",
+        name: "API record",
+        frontmatter: { status: "ready" }
+      }
+    });
+    expect(createRecord.statusCode).toBe(200);
+
+    const query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(query.statusCode).toBe(200);
+    expect(query.json()).toMatchObject({
+      databasePath: "Tasks",
+      records: [
+        {
+          path: "Tasks/API record.md",
+          frontmatter: { status: "ready" }
+        }
+      ]
+    });
+
+    const record = query.json().records[0] as { path: string; version: string };
+    const update = await server.inject({
+      method: "POST",
+      url: "/api/database/records/property",
+      payload: {
+        databasePath: "Tasks",
+        recordPath: record.path,
+        baseVersion: record.version,
+        property: "status",
+        value: "done"
+      }
+    });
+    expect(update.statusCode).toBe(200);
+
+    const updatedQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(updatedQuery.json().records[0].frontmatter.status).toBe("done");
+
+    const schemaUpdate = await server.inject({
+      method: "POST",
+      url: "/api/database/schema",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: updatedQuery.json().schemaVersion,
+        properties: { status: { type: "text" } },
+        views: [{ name: "All", type: "table", columns: ["status"] }]
+      }
+    });
+    expect(schemaUpdate.statusCode).toBe(200);
+
+    const schemaQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    const renameProperty = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property/rename",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: schemaQuery.json().schemaVersion,
+        property: "status",
+        newName: "state"
+      }
+    });
+    expect(renameProperty.statusCode).toBe(200);
+
+    const renamedQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(renamedQuery.json()).toMatchObject({
+      schema: { properties: { state: { type: "text" } } },
+      records: [{ frontmatter: { state: "done" } }]
+    });
+
+    await server.close();
+  });
+
+  it("creates, reads, and restores Rumi-owned revisions through HTTP", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "History.md"), "# Original", "utf8");
+    const { server, runtime } = await createRumiServer({ workspacePath: root });
+    const original = await runtime.openPage("History.md");
+    await runtime.savePage({
+      path: original.path,
+      baseVersion: original.version,
+      frontmatter: {},
+      markdownBody: "# Updated",
+      reason: "manual-save"
+    });
+
+    const list = await server.inject({
+      method: "GET",
+      url: "/api/revisions?path=History.md"
+    });
+    expect(list.statusCode).toBe(200);
+    const revisions = list.json() as Array<{ revisionId: string; reason: string }>;
+    expect(revisions.map((revision) => revision.reason)).toEqual([
+      "manual-checkpoint",
+      "baseline"
+    ]);
+
+    const content = await server.inject({
+      method: "GET",
+      url: `/api/revisions/${encodeURIComponent(revisions[1]!.revisionId)}`
+    });
+    expect(content.json().markdown).toBe("# Original");
+
+    const restore = await server.inject({
+      method: "POST",
+      url: "/api/revisions/restore",
+      payload: { revisionId: revisions[1]!.revisionId }
+    });
+    expect(restore.statusCode).toBe(200);
+    await expect(fs.readFile(path.join(root, "History.md"), "utf8")).resolves.toBe("# Original");
+
+    await server.close();
+  });
+
+  it("searches the server-owned content index through HTTP", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Roadmap.md"), "Editor performance backlog", "utf8");
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/search",
+      payload: { query: "performance" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      query: "performance",
+      items: [{ path: "Roadmap.md", title: "Roadmap", kind: "page" }]
+    });
     await server.close();
   });
 

@@ -1,6 +1,7 @@
 import type { FrontmatterRecord } from "@rumi/contracts";
 import type { ReactElement } from "react";
-import { CheckSquare, Square } from "@phosphor-icons/react";
+import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
+import { Square } from "@phosphor-icons/react/dist/csr/Square";
 import { formatPropertyValue } from "./pagePresentation";
 
 export interface PagePropertiesProps {

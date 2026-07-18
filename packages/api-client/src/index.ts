@@ -1,16 +1,29 @@
 import type {
   AuthLoginRequest,
   AuthSessionResult,
+  CheckpointRequest,
+  CreateDatabaseRecordRequest,
+  CreateDatabaseRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   MoveNodeRequest,
   OpenWorkspaceResult,
   PageDocument,
+  QueryDatabaseRequest,
+  QueryDatabaseResult,
+  RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreRevisionRequest,
+  RevisionContentResult,
+  RevisionEntry,
   RumiEvent,
   SavePageRequest,
   SavePageResult,
+  SearchWorkspaceRequest,
+  SearchWorkspaceResult,
+  UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabaseSchemaRequest,
   WorkspaceMutationResult,
   WorkspaceNode
 } from "@rumi/contracts";
@@ -76,6 +89,39 @@ export class RumiApiClient {
     });
   }
 
+  async listRevisions(path: string): Promise<RevisionEntry[]> {
+    const search = new URLSearchParams({ path });
+    return this.request<RevisionEntry[]>(`/api/revisions?${search.toString()}`);
+  }
+
+  async getRevision(revisionId: string): Promise<RevisionContentResult> {
+    return this.request<RevisionContentResult>(`/api/revisions/${encodeURIComponent(revisionId)}`);
+  }
+
+  async checkpointNow(request: CheckpointRequest): Promise<RevisionEntry> {
+    return this.request<RevisionEntry>("/api/revisions/checkpoint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async restoreRevision(request: RestoreRevisionRequest): Promise<RevisionEntry> {
+    return this.request<RevisionEntry>("/api/revisions/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async searchWorkspace(request: SearchWorkspaceRequest): Promise<SearchWorkspaceResult> {
+    return this.request<SearchWorkspaceResult>("/api/search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
   async createPage(request: CreatePageRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/pages", {
       method: "POST",
@@ -86,6 +132,58 @@ export class RumiApiClient {
 
   async createFolder(request: CreateFolderRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/folders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async createDatabase(request: CreateDatabaseRequest): Promise<WorkspaceMutationResult> {
+    return this.request<WorkspaceMutationResult>("/api/databases", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async queryDatabase(request: QueryDatabaseRequest): Promise<QueryDatabaseResult> {
+    return this.request<QueryDatabaseResult>("/api/database/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async createDatabaseRecord(
+    request: CreateDatabaseRecordRequest
+  ): Promise<WorkspaceMutationResult> {
+    return this.request<WorkspaceMutationResult>("/api/database/records", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async updateDatabaseRecordProperty(
+    request: UpdateDatabaseRecordPropertyRequest
+  ): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/records/property", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async updateDatabaseSchema(request: UpdateDatabaseSchemaRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async renameDatabaseProperty(request: RenameDatabasePropertyRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property/rename", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

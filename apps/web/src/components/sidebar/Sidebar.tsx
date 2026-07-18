@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
-import {
-  ArrowsClockwise,
-  ArrowRight,
-  CaretDown,
-  CaretRight,
-  DotsThree,
-  FileText,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  NotePencil,
-  PencilSimple,
-  Plus,
-  SidebarSimple,
-  Table,
-  Trash,
-  WarningCircle
-} from "@phosphor-icons/react";
+import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
+import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
+import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { CaretRight } from "@phosphor-icons/react/dist/csr/CaretRight";
+import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
+import { FileText } from "@phosphor-icons/react/dist/csr/FileText";
+import { Folder } from "@phosphor-icons/react/dist/csr/Folder";
+import { FolderOpen } from "@phosphor-icons/react/dist/csr/FolderOpen";
+import { FolderPlus } from "@phosphor-icons/react/dist/csr/FolderPlus";
+import { NotePencil } from "@phosphor-icons/react/dist/csr/NotePencil";
+import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
+import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
+import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
+import { Table } from "@phosphor-icons/react/dist/csr/Table";
+import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
+import { WarningCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { sanitizeWorkspaceName } from "@rumi/workspace-format";
 import {
@@ -67,12 +65,13 @@ interface SidebarProps {
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
+  onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
 }
 
-type CreateKind = "page" | "folder";
+type CreateKind = "page" | "folder" | "database";
 
 const TREE_INDENT_PX = 20;
 const TREE_ROW_PADDING_PX = 6;
@@ -110,6 +109,7 @@ export function Sidebar({
   onOpenNode,
   onCreatePage,
   onCreateFolder,
+  onCreateDatabase,
   onRenameNode,
   onMoveNode,
   onDeleteNode
@@ -278,6 +278,7 @@ export function Sidebar({
               onCancel={() => setCreateTarget(null)}
               onCreatePage={onCreatePage}
               onCreateFolder={onCreateFolder}
+              onCreateDatabase={onCreateDatabase}
             />
             {(tree.children ?? []).map((child) => (
               <TreeNode
@@ -300,6 +301,7 @@ export function Sidebar({
                 onCancelCreate={() => setCreateTarget(null)}
                 onCreatePage={onCreatePage}
                 onCreateFolder={onCreateFolder}
+                onCreateDatabase={onCreateDatabase}
                 onOpenContextMenu={openNodeMenu}
               />
             ))}
@@ -371,6 +373,7 @@ interface TreeNodeProps {
   onCancelCreate: () => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
+  onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onOpenContextMenu: (node: WorkspaceNode, event: MouseEvent<HTMLElement>) => void;
 }
 
@@ -393,6 +396,7 @@ function TreeNode({
   onCancelCreate,
   onCreatePage,
   onCreateFolder,
+  onCreateDatabase,
   onOpenContextMenu
 }: TreeNodeProps): ReactElement {
   const isContainer = isContainerNode(node);
@@ -499,6 +503,7 @@ function TreeNode({
             onCancel={onCancelCreate}
             onCreatePage={onCreatePage}
             onCreateFolder={onCreateFolder}
+            onCreateDatabase={onCreateDatabase}
           />
           {(node.children ?? []).map((child) => (
             <TreeNode
@@ -521,6 +526,7 @@ function TreeNode({
               onCancelCreate={onCancelCreate}
               onCreatePage={onCreatePage}
               onCreateFolder={onCreateFolder}
+              onCreateDatabase={onCreateDatabase}
               onOpenContextMenu={onOpenContextMenu}
             />
           ))}
@@ -587,6 +593,10 @@ function RootCreateMenu({ onCreate }: { onCreate: (parentPath: string, kind: Cre
           <FolderPlus size={16} />
           New Folder
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onCreate("", "database")}>
+          <Table size={16} />
+          New Database
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -637,6 +647,10 @@ function FloatingSidebarMenu({
               <FolderPlus size={16} />
               New Folder
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onCreate("", "database")}>
+              <Table size={16} />
+              New Database
+            </DropdownMenuItem>
           </>
         )}
       </DropdownMenuContent>
@@ -661,7 +675,7 @@ function NodeMenuItems({
 
   return (
     <>
-      {isContainer && (
+      {isContainer && node.kind !== "database" && (
         <>
           <DropdownMenuItem onSelect={() => onCreate(node.path, "page")}>
             <NotePencil size={16} />
@@ -670,6 +684,10 @@ function NodeMenuItems({
           <DropdownMenuItem onSelect={() => onCreate(node.path, "folder")}>
             <FolderPlus size={16} />
             New Folder
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onCreate(node.path, "database")}>
+            <Table size={16} />
+            New Database
           </DropdownMenuItem>
           <DropdownMenuSeparator />
         </>
@@ -860,7 +878,8 @@ function CreateSlot({
   depth,
   onCancel,
   onCreatePage,
-  onCreateFolder
+  onCreateFolder,
+  onCreateDatabase
 }: {
   target: CreateTarget | null;
   parentPath: string;
@@ -868,6 +887,7 @@ function CreateSlot({
   onCancel: () => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
+  onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
 }): ReactElement | null {
   if (!target || target.parentPath !== parentPath) {
     return null;
@@ -881,6 +901,7 @@ function CreateSlot({
       onCancel={onCancel}
       onCreatePage={onCreatePage}
       onCreateFolder={onCreateFolder}
+      onCreateDatabase={onCreateDatabase}
     />
   );
 }
@@ -891,7 +912,8 @@ function CreateInput({
   parentPath,
   onCancel,
   onCreatePage,
-  onCreateFolder
+  onCreateFolder,
+  onCreateDatabase
 }: {
   depth: number;
   kind: CreateKind;
@@ -899,6 +921,7 @@ function CreateInput({
   onCancel: () => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
+  onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
 }): ReactElement {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -933,8 +956,10 @@ function CreateInput({
     try {
       if (kind === "page") {
         await onCreatePage(parentPath, finalName);
-      } else {
+      } else if (kind === "folder") {
         await onCreateFolder(parentPath, finalName);
+      } else {
+        await onCreateDatabase(parentPath, finalName);
       }
 
       close();
@@ -943,7 +968,7 @@ function CreateInput({
       setBusy(false);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [close, kind, name, onCreateFolder, onCreatePage, parentPath]);
+  }, [close, kind, name, onCreateDatabase, onCreateFolder, onCreatePage, parentPath]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -971,13 +996,13 @@ function CreateInput({
       aria-level={depth + 1}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center">
-        <EntityIcon kind={kind === "page" ? "page" : "folder"} />
+        <EntityIcon kind={kind} />
       </span>
       <Input
         ref={inputRef}
         value={name}
         disabled={busy}
-        placeholder={kind === "page" ? "Page name" : "Folder name"}
+        placeholder={kind === "page" ? "Page name" : kind === "folder" ? "Folder name" : "Database name"}
         className="h-7 min-w-0 flex-1 px-2"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}

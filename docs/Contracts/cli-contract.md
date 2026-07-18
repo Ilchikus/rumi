@@ -3,7 +3,7 @@ status: draft
 area: cli
 owner: cli
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-07-18"
 ---
 # CLI Contract
 
@@ -16,6 +16,11 @@ For local maintenance:
 ```text
 rumi index ./workspace
 rumi reconcile ./workspace
+rumi search ./workspace "roadmap"
+rumi snapshot ./workspace Notes/Idea.md
+rumi history ./workspace Notes/Idea.md
+rumi database create ./workspace Tasks
+rumi database query ./workspace Tasks
 ```
 
 The CLI loads the runtime directly, runs the command, prints result, and exits.
@@ -70,6 +75,8 @@ Advanced flags:
 ```text
 rumi serve ./docs --log-level debug
 rumi serve ./docs --json-logs
+rumi serve ./docs --api-only
+rumi serve ./docs --web-root ./apps/web/dist
 ```
 
 Pretty logs are for interactive debugging. JSON logs are for machines and production/self-hosted environments.

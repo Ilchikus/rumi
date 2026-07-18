@@ -244,6 +244,268 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.stat(path.join(root, "Archive", "Note.md"))).rejects.toThrow();
   });
 
+  it("creates a folder-backed database and records through runtime commands", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    const database = await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    const record = await runtime.createDatabaseRecord({
+      databasePath: database.path,
+      name: "Ship editor",
+      frontmatter: { status: "doing", priority: 2 }
+    });
+    const query = await runtime.queryDatabase({ databasePath: database.path });
+
+    expect(database.path).toBe("Tasks");
+    expect(record.path).toBe("Tasks/Ship editor.md");
+    expect(query).toMatchObject({
+      databasePath: "Tasks",
+      configPath: "Tasks/Tasks.db.md",
+      schema: {
+        type: "database",
+        properties: {},
+        unsupportedProperties: [],
+        views: [{ name: "All", type: "table", columns: [] }]
+      },
+      records: [
+        {
+          path: "Tasks/Ship editor.md",
+          title: "Ship editor",
+          frontmatter: { status: "doing", priority: 2 }
+        }
+      ]
+    });
+  });
+
+  it("updates database schema and record properties without client-side file coordination", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    const created = await runtime.createDatabaseRecord({ databasePath: "Tasks", name: "One" });
+    const initial = await runtime.queryDatabase({ databasePath: "Tasks" });
+
+    const schemaResult = await runtime.updateDatabaseSchema({
+      databasePath: "Tasks",
+      baseVersion: initial.schemaVersion,
+      properties: {
+        status: {
+          type: "select",
+          options: [{ name: "todo" }, { name: "done" }]
+        }
+      },
+      views: [{ name: "All", type: "table", columns: ["status"] }]
+    });
+    expect(schemaResult.status).toBe("saved");
+
+    const recordResult = await runtime.updateDatabaseRecordProperty({
+      databasePath: "Tasks",
+      recordPath: created.path,
+      property: "status",
+      value: "done"
+    });
+    expect(recordResult.status).toBe("saved");
+
+    const query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.properties.status).toEqual({
+      type: "select",
+      options: [{ name: "todo" }, { name: "done" }]
+    });
+    expect(query.records[0]?.frontmatter.status).toBe("done");
+  });
+
+  it("renames a supported database property across schema, views, and records", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "One",
+      frontmatter: { status: "doing" }
+    });
+    const initial = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await runtime.updateDatabaseSchema({
+      databasePath: "Tasks",
+      baseVersion: initial.schemaVersion,
+      properties: { status: { type: "text" } },
+      views: [
+        {
+          name: "Doing",
+          type: "table",
+          columns: ["status"],
+          filters: [{ property: "status", operator: "equals", value: "doing" }],
+          sorts: [{ property: "status", direction: "asc" }]
+        }
+      ]
+    });
+    const beforeRename = await runtime.queryDatabase({ databasePath: "Tasks" });
+
+    await runtime.renameDatabaseProperty({
+      databasePath: "Tasks",
+      baseVersion: beforeRename.schemaVersion,
+      property: "status",
+      newName: "state"
+    });
+
+    const renamed = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(renamed.schema.properties).toEqual({ state: { type: "text" } });
+    expect(renamed.schema.views[0]).toMatchObject({
+      columns: ["state"],
+      filters: [{ property: "state" }],
+      sorts: [{ property: "state" }]
+    });
+    expect(renamed.records[0]?.frontmatter).toEqual({ state: "doing" });
+  });
+
+  it("preserves unsupported future database properties during schema updates", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, "Tasks"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "Tasks", "Tasks.db.md"),
+      "---\ntype: database\nproperties:\n  related:\n    type: relation\n    target: Projects\n  status:\n    type: text\nviews: []\n---\n# Tasks\n",
+      "utf8"
+    );
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const initial = await runtime.queryDatabase({ databasePath: "Tasks" });
+
+    expect(initial.schema.unsupportedProperties).toEqual(["related"]);
+    await runtime.updateDatabaseSchema({
+      databasePath: "Tasks",
+      baseVersion: initial.schemaVersion,
+      properties: {
+        related: { type: "text" },
+        status: { type: "text" }
+      },
+      views: [{ name: "All", type: "table", columns: ["status"] }]
+    });
+
+    const config = await fs.readFile(path.join(root, "Tasks", "Tasks.db.md"), "utf8");
+    expect(config).toContain("related:\n    type: relation\n    target: Projects");
+  });
+
+  it("filters and sorts database records on the server", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "Lower",
+      frontmatter: { status: "doing", priority: 1 }
+    });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "Higher",
+      frontmatter: { status: "doing", priority: 3 }
+    });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "Done",
+      frontmatter: { status: "done", priority: 9 }
+    });
+
+    const query = await runtime.queryDatabase({
+      databasePath: "Tasks",
+      filters: [{ property: "status", operator: "equals", value: "doing" }],
+      sorts: [{ property: "priority", direction: "desc" }]
+    });
+
+    expect(query.records.map((record) => record.title)).toEqual(["Higher", "Lower"]);
+  });
+
+  it("stores content-addressed snapshots without Git and restores a selected revision", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createPage({ parentPath: "", name: "History", markdownBody: "# One" });
+    const firstPage = await runtime.openPage("History.md");
+    await runtime.savePage({
+      path: firstPage.path,
+      baseVersion: firstPage.version,
+      frontmatter: {},
+      markdownBody: "# Two",
+      reason: "manual-save"
+    });
+
+    const revisions = await runtime.listRevisions("History.md");
+    expect(revisions).toHaveLength(2);
+    expect(revisions.map((revision) => revision.reason)).toEqual([
+      "manual-checkpoint",
+      "baseline"
+    ]);
+    expect(revisions[0]?.objectId).toBe(revisions[1]?.objectId);
+
+    await runtime.restoreRevision({ revisionId: revisions[1]!.revisionId });
+    await expect(fs.readFile(path.join(root, "History.md"), "utf8")).resolves.toBe("# One");
+
+    const restoredRevisions = await runtime.listRevisions("History.md");
+    expect(restoredRevisions[0]).toMatchObject({
+      type: "revision.restored",
+      reason: "restore",
+      restoredFromRevisionId: revisions[1]!.revisionId
+    });
+    expect(restoredRevisions[1]?.reason).toBe("before-restore");
+
+    const blobPath = path.join(
+      root,
+      ".rumi",
+      "revisions",
+      "blobs",
+      "sha256",
+      revisions[1]!.contentHash.slice(0, 2),
+      `${revisions[1]!.contentHash}.md`
+    );
+    await expect(fs.readFile(blobPath, "utf8")).resolves.toBe("# One");
+  });
+
+  it("keeps revision identity through a Rumi-controlled rename", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createPage({ parentPath: "", name: "Before", markdownBody: "Body" });
+    const before = await runtime.listRevisions("Before.md");
+
+    await runtime.renameNode({ path: "Before.md", newName: "After" });
+    const after = await runtime.listRevisions("After.md");
+
+    expect(before).toHaveLength(1);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.objectId).toBe(before[0]?.objectId);
+  });
+
+  it("rebuilds a persistent search index and ranks exact title prefixes first", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "age.md"), "Exact title", "utf8");
+    await fs.writeFile(path.join(root, "agents.md"), "Prefix title", "utf8");
+    await fs.writeFile(path.join(root, "homepage.md"), "Contains title", "utf8");
+    await fs.writeFile(path.join(root, "body.md"), "The age query only occurs in body", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    const rebuilt = await runtime.rebuildIndex();
+    const result = await runtime.searchWorkspace({ query: "age" });
+
+    expect(rebuilt.documentCount).toBe(4);
+    expect(result.items.map((item) => item.title)).toEqual([
+      "age",
+      "agents",
+      "homepage",
+      "body"
+    ]);
+    expect(result.items.map((item) => item.score)).toEqual([0, 1, 3, 6]);
+    await expect(fs.stat(path.join(root, ".rumi", "index.sqlite"))).resolves.toBeDefined();
+  });
+
+  it("updates the search index before publishing reconciled external edits", async () => {
+    const root = await tempWorkspace();
+    const filePath = path.join(root, "External.md");
+    await fs.writeFile(filePath, "Before", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.rebuildIndex();
+    await runtime.reconcileWorkspace();
+
+    await fs.writeFile(filePath, "Now contains reconciled-search-token", "utf8");
+    await runtime.reconcileWorkspace();
+    const result = await runtime.searchWorkspace({ query: "reconciled-search-token" });
+
+    expect(result.items.map((item) => item.path)).toEqual(["External.md"]);
+  });
+
   it("reconciles external page edits as page.changed events", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Idea.md"), "# Idea", "utf8");

@@ -28,7 +28,8 @@ rumi-new/
 
 `apps/server`
 
-The HTTP server and event stream adapter. It depends on the runtime. It should not own workspace behavior itself.
+The HTTP server, event stream, authentication, and optional official-client static adapter. It
+depends on the runtime and should not own workspace behavior itself.
 
 `apps/cli`
 
@@ -40,7 +41,8 @@ The browser client. It should talk to the server API and event stream. It should
 
 Current dev mode uses Vite with `/api` proxied to the local Rumi server on port `3000`.
 
-The frontend stack is React, Vite, Tailwind, shadcn-style local UI primitives, and lucide icons. ProseMirror will be added when the editor slice begins.
+The frontend stack is React, Vite, Tailwind, shadcn-style local UI primitives, Phosphor icons, and a
+ProseMirror-based official Rumi block-editor preset.
 
 Tailwind config currently uses `tailwind.config.cjs`. Keep it that way unless the dev server is verified after changing it; the TS config variant caused Vite dev/PostCSS to compile base CSS without utilities or throw config-loading errors.
 

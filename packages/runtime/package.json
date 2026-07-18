@@ -9,6 +9,10 @@
   "dependencies": {
     "@rumi/contracts": "workspace:*",
     "@rumi/markdown": "workspace:*",
-    "@rumi/workspace-format": "workspace:*"
+    "@rumi/workspace-format": "workspace:*",
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12"
   }
 }

@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-07-14"
+updated: "2026-07-18"
 ---
 # API Shape
 
@@ -28,6 +28,16 @@ error: returns stable code and message
 ```
 
 API tests should protect shape, not duplicate every runtime behavior test.
+
+Current command groups include workspace/tree/page mutation, database schema/record/query, indexed
+search, Rumi revision checkpoint/list/content/restore, authentication, and normalized events.
+
+## Official Client Serving
+
+The server may serve the built official web client from the same origin. This is a distribution
+adapter only: custom clients can use the API without the web build, and `--api-only` keeps the server
+headless. Non-API browser routes fall back to the client entry point; unknown `/api/*` routes retain
+structured JSON errors.
 
 ## Authentication
 

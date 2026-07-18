@@ -1,15 +1,27 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import fastifyStatic from "@fastify/static";
+import fs from "node:fs/promises";
 import { isIP } from "node:net";
+import path from "node:path";
 import type {
   AuthLoginRequest,
   AuthSessionResult,
+  CheckpointRequest,
+  CreateDatabaseRecordRequest,
+  CreateDatabaseRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   MoveNodeRequest,
+  QueryDatabaseRequest,
+  RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreRevisionRequest,
   RumiEventEnvelope,
-  SavePageRequest
+  SavePageRequest,
+  SearchWorkspaceRequest,
+  UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabaseSchemaRequest
 } from "@rumi/contracts";
 import { WorkspaceRuntime } from "@rumi/runtime";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
@@ -20,12 +32,36 @@ const PUBLIC_AUTH_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/logout"
 ]);
+const WEB_SECURITY_HEADERS = {
+  "content-security-policy": [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "connect-src 'self'",
+    "font-src 'self' data:",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "img-src 'self' data: blob:",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "worker-src 'none'"
+  ].join("; "),
+  "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "strict-transport-security": "max-age=31536000",
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "x-permitted-cross-domain-policies": "none"
+} as const;
 
 export interface CreateRumiServerOptions {
   workspacePath: string;
   logLevel?: RumiLogLevel;
   prettyLogs?: boolean;
   auth?: RumiAuthOptions;
+  webRoot?: string | false;
 }
 
 export interface StartRumiServerOptions extends CreateRumiServerOptions {
@@ -75,6 +111,20 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
           },
     disableRequestLogging: true
   });
+  const webRoot = await resolveWebRoot(options.webRoot);
+
+  if (webRoot) {
+    await server.register(fastifyStatic, {
+      root: webRoot,
+      prefix: "/",
+      maxAge: "30d",
+      immutable: true
+    });
+    server.get("/", (request, reply) => {
+      reply.header("cache-control", "no-cache");
+      return reply.sendFile("index.html", { cacheControl: false });
+    });
+  }
 
   server.setErrorHandler((error: Error, _request, reply) => {
     _request.log.error({ err: error }, "request.error");
@@ -95,6 +145,10 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     if (request.url.startsWith("/api/")) {
       reply.header("cache-control", "private, no-store");
       reply.header("x-content-type-options", "nosniff");
+    } else if (webRoot) {
+      for (const [name, value] of Object.entries(WEB_SECURITY_HEADERS)) {
+        reply.header(name, value);
+      }
     }
 
     return payload;
@@ -130,6 +184,17 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
         }
       });
     }
+  });
+
+  server.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith("/api/") || !webRoot || request.method !== "GET") {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Route not found" }
+      });
+    }
+
+    reply.header("cache-control", "no-cache");
+    return reply.sendFile("index.html", { cacheControl: false });
   });
 
   server.get("/api/auth/session", async (request, reply): Promise<AuthSessionResult> => {
@@ -315,6 +380,33 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     return result;
   });
 
+  server.get<{ Querystring: { path?: string } }>("/api/revisions", async (request, reply) => {
+    if (!request.query.path) {
+      return reply.status(400).send({
+        error: { code: "missing_path", message: "Missing page path" }
+      });
+    }
+
+    return runtime.listRevisions(request.query.path);
+  });
+
+  server.get<{ Params: { revisionId: string } }>(
+    "/api/revisions/:revisionId",
+    async (request) => runtime.getRevision(request.params.revisionId)
+  );
+
+  server.post<{ Body: CheckpointRequest }>("/api/revisions/checkpoint", async (request) =>
+    runtime.checkpointNow(request.body)
+  );
+
+  server.post<{ Body: RestoreRevisionRequest }>("/api/revisions/restore", async (request) =>
+    runtime.restoreRevision(request.body)
+  );
+
+  server.post<{ Body: SearchWorkspaceRequest }>("/api/search", async (request) =>
+    runtime.searchWorkspace(request.body)
+  );
+
   server.post<{ Body: CreatePageRequest }>("/api/pages", async (request) => {
     request.log.info({ parentPath: request.body.parentPath, name: request.body.name }, "page.create");
     const result = await runtime.createPage(request.body);
@@ -328,6 +420,68 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     request.log.info({ path: result.path }, "folder.create.ok");
     return result;
   });
+
+  server.post<{ Body: CreateDatabaseRequest }>("/api/databases", async (request) => {
+    request.log.info(
+      { parentPath: request.body.parentPath, name: request.body.name },
+      "database.create"
+    );
+    const result = await runtime.createDatabase(request.body);
+    request.log.info({ path: result.path }, "database.create.ok");
+    return result;
+  });
+
+  server.post<{ Body: QueryDatabaseRequest }>("/api/database/query", async (request) => {
+    request.log.info({ databasePath: request.body.databasePath }, "database.query");
+    return runtime.queryDatabase(request.body);
+  });
+
+  server.post<{ Body: CreateDatabaseRecordRequest }>("/api/database/records", async (request) => {
+    request.log.info(
+      { databasePath: request.body.databasePath, name: request.body.name },
+      "database.record.create"
+    );
+    return runtime.createDatabaseRecord(request.body);
+  });
+
+  server.post<{ Body: UpdateDatabaseRecordPropertyRequest }>(
+    "/api/database/records/property",
+    async (request, reply) => {
+      const result = await runtime.updateDatabaseRecordProperty(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
+  server.post<{ Body: UpdateDatabaseSchemaRequest }>(
+    "/api/database/schema",
+    async (request, reply) => {
+      const result = await runtime.updateDatabaseSchema(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
+  server.post<{ Body: RenameDatabasePropertyRequest }>(
+    "/api/database/schema/property/rename",
+    async (request, reply) => {
+      const result = await runtime.renameDatabaseProperty(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
 
   server.post<{ Body: RenameNodeRequest }>("/api/nodes/rename", async (request) => {
     request.log.info({ path: request.body.path, newName: request.body.newName }, "node.rename");
@@ -355,6 +509,33 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     runtime,
     url: ""
   };
+}
+
+async function resolveWebRoot(configuredRoot: string | false | undefined): Promise<string | null> {
+  if (configuredRoot === false) {
+    return null;
+  }
+
+  const candidates = [
+    ...(configuredRoot ? [configuredRoot] : []),
+    ...(process.env.RUMI_WEB_ROOT ? [process.env.RUMI_WEB_ROOT] : []),
+    path.resolve(process.cwd(), "apps/web/dist")
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    const indexStat = await fs.stat(path.join(resolved, "index.html")).catch(() => null);
+
+    if (indexStat?.isFile()) {
+      return resolved;
+    }
+  }
+
+  if (configuredRoot) {
+    throw new Error(`Web client build not found at ${path.resolve(configuredRoot)}`);
+  }
+
+  return null;
 }
 
 function formatSseEvent(envelope: RumiEventEnvelope): string {

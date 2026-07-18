@@ -55,6 +55,26 @@ describe("WorkspaceRuntime", () => {
     expect(tree.children?.[0]?.children?.map((child) => child.name)).toEqual(["Idea.md"]);
   });
 
+  it("owns collision-safe asset storage and restricted asset reads", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const events: RumiEventEnvelope[] = [];
+    runtime.events.subscribe((event) => events.push(event));
+    const bytes = Buffer.from([137, 80, 78, 71]);
+
+    const first = await runtime.saveAsset("diagram.png", bytes);
+    const second = await runtime.saveAsset("diagram.png", bytes);
+    const asset = await runtime.readAsset(first.path);
+
+    expect(first.path).toBe(".assets/diagram.png");
+    expect(second.path).toBe(".assets/diagram-2.png");
+    expect(asset).toMatchObject({ fileName: "diagram.png", contentType: "image/png" });
+    expect(asset.data).toEqual(bytes);
+    expect(events.map((entry) => entry.event.name)).toEqual(["asset.changed", "asset.changed"]);
+    await expect(runtime.readAsset("Idea.md")).rejects.toThrow(/not a readable workspace asset/);
+    await expect(runtime.saveAsset("script.svg", Buffer.from("<svg/>"))).rejects.toThrow(/Unsupported asset type/);
+  });
+
   it("opens a page with frontmatter, body, and hashes", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Idea.md"), "---\nstatus: ready\n---\n# Idea", "utf8");

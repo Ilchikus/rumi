@@ -5,7 +5,10 @@ import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass"
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
 import type { PageDocument, RumiEvent, SavePageResult, SearchWorkspaceResultItem, WorkspaceNode } from "@rumi/contracts";
-import type { RumiBlockEditorHandle } from "./components/editor/RumiBlockEditor";
+import type {
+  RumiBlockEditorHandle,
+  RumiDocumentLink
+} from "./components/editor/RumiBlockEditor";
 import { DatabaseView } from "./components/database/DatabaseView";
 import { PageProperties } from "./components/editor/PageProperties";
 import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
@@ -73,6 +76,7 @@ export function App(): ReactElement {
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
   const pageTitle = page ? pageTitleFromPath(page.path, page.kind) : null;
+  const editorDocuments = useMemo(() => collectEditorDocuments(tree), [tree]);
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -292,6 +296,21 @@ export function App(): ReactElement {
     },
     [isNarrow, loadPage]
   );
+
+  const openDocumentLink = useCallback((path: string) => {
+    const linkedNode = findNodeByOpenPath(tree, path);
+    if (!linkedNode) {
+      setMessage(`Document link not found: ${path}`);
+      return;
+    }
+    void openNode(linkedNode);
+  }, [openNode, tree]);
+
+  const uploadEditorAsset = useCallback(async (file: File): Promise<string> => {
+    const result = await api.uploadAsset(file.name, file);
+    setMessage(`Uploaded ${result.fileName}`);
+    return result.path;
+  }, [api]);
 
   useEffect(() => {
     if (!tree || !workspaceRootPath || restoredWorkspaceRef.current === workspaceRootPath) {
@@ -959,6 +978,9 @@ export function App(): ReactElement {
                     ref={editorRef}
                     documentKey={page.path}
                     markdown={draftBody}
+                    documents={editorDocuments}
+                    onOpenDocument={openDocumentLink}
+                    onUploadAsset={uploadEditorAsset}
                     onDirty={() => {
                       editorRevisionRef.current += 1;
                       setEditorRevision(editorRevisionRef.current);
@@ -1065,6 +1087,37 @@ function pageKindToNodeKind(kind: PageDocument["kind"]): WorkspaceNode["kind"] {
 
 function openPathForNode(node: WorkspaceNode): string | null {
   return node.companionPath ?? (node.kind === "page" ? node.path : null);
+}
+
+function collectEditorDocuments(tree: WorkspaceNode | null): RumiDocumentLink[] {
+  if (!tree) return [];
+  const documents: RumiDocumentLink[] = [];
+
+  const visit = (node: WorkspaceNode) => {
+    const path = openPathForNode(node);
+    if (path) {
+      documents.push({
+        path,
+        title: stripMarkdownExtension(node.name)
+      });
+    }
+    node.children?.forEach(visit);
+  };
+
+  visit(tree);
+  return documents.sort((left, right) => left.title.localeCompare(right.title));
+}
+
+function findNodeByOpenPath(tree: WorkspaceNode | null, requestedPath: string): WorkspaceNode | null {
+  if (!tree) return null;
+  const normalized = requestedPath.replace(/^\.\//u, "").split("#", 1)[0] ?? requestedPath;
+  if (openPathForNode(tree) === normalized || tree.path === normalized) return tree;
+
+  for (const child of tree.children ?? []) {
+    const match = findNodeByOpenPath(child, normalized);
+    if (match) return match;
+  }
+  return null;
 }
 
 function displayPath(path: string): string {

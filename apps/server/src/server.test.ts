@@ -68,6 +68,61 @@ describe("Rumi server API", () => {
     await server.close();
   });
 
+  it("serves safe workspace assets without exposing Markdown or hidden state", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".assets"), { recursive: true });
+    await fs.writeFile(path.join(root, ".assets", "pixel.png"), Buffer.from([137, 80, 78, 71]));
+    await fs.writeFile(path.join(root, "Secret.md"), "private", "utf8");
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    const image = await server.inject({ method: "GET", url: "/api/asset?path=.assets%2Fpixel.png" });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toContain("image/png");
+    expect(image.rawPayload).toEqual(Buffer.from([137, 80, 78, 71]));
+
+    const markdown = await server.inject({ method: "GET", url: "/api/asset?path=Secret.md" });
+    expect(markdown.statusCode).toBe(400);
+
+    const traversal = await server.inject({ method: "GET", url: "/api/asset?path=..%2Foutside.png" });
+    expect(traversal.statusCode).toBe(400);
+
+    await server.close();
+  });
+
+  it("stores uploaded editor assets in the workspace with collision-safe names", async () => {
+    const root = await tempWorkspace();
+    const { server } = await createRumiServer({ workspacePath: root });
+    const payload = Buffer.from([137, 80, 78, 71]);
+
+    const first = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=diagram.png",
+      headers: { "content-type": "application/octet-stream" },
+      payload
+    });
+    const second = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=diagram.png",
+      headers: { "content-type": "application/octet-stream" },
+      payload
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({ status: "saved", path: ".assets/diagram.png" });
+    expect(second.json()).toMatchObject({ status: "saved", path: ".assets/diagram-2.png" });
+    expect(await fs.readFile(path.join(root, ".assets", "diagram.png"))).toEqual(payload);
+
+    const unsafe = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=script.svg",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.from("<svg/>")
+    });
+    expect(unsafe.statusCode).toBe(400);
+
+    await server.close();
+  });
+
   it("returns 409 for stale save conflicts", async () => {
     const root = await tempWorkspace();
     const filePath = path.join(root, "Idea.md");

@@ -30,7 +30,12 @@ error: returns stable code and message
 API tests should protect shape, not duplicate every runtime behavior test.
 
 Current command groups include workspace/tree/page mutation, database schema/record/query, indexed
-search, Rumi revision checkpoint/list/content/restore, authentication, and normalized events.
+search, Rumi revision checkpoint/list/content/restore, workspace asset upload/read, authentication,
+and normalized events.
+
+`POST /api/assets?fileName=...` accepts bounded raw asset bytes and returns the runtime-selected
+relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted image/PDF formats from
+safe workspace paths. The client never receives a raw workspace filesystem path.
 
 ## Official Client Serving
 

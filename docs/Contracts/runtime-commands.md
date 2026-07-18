@@ -14,6 +14,8 @@ Initial commands:
 ```text
 openWorkspace
 getTree
+readAsset
+saveAsset
 openPage
 savePage
 createPage
@@ -45,6 +47,7 @@ Commands own side effects:
 - Event emission.
 - Conflict detection.
 - Snapshot checkpoints for canonical Markdown content.
+- Collision-safe `.assets/` names and asset events.
 
 ## Event Bus
 

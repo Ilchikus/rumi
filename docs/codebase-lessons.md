@@ -10,7 +10,7 @@ These lessons come from the existing Electron implementation and should guide th
 - Databases as folders via `{database}.db.md`.
 - Database records as Markdown files.
 - Database description/body can be rich content, unlike Notion's limited database description.
-- Flat block model for editor list items.
+- Per-item block interactions for lists, backed by standard nested Markdown list structure.
 - ProseMirror as a strong editor foundation.
 
 ## Current Pressure Points

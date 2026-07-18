@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -42,7 +42,13 @@ Use the old editor as behavioral reference only. Rebuild the preset around clean
 
 ## Progress
 
-The official preset now includes slash commands, block handles and drag reorder, a block context
-menu, selection formatting, task checkboxes, GFM tables, code/Mermaid source blocks, images/links,
-and Markdown roundtrip coverage. Rich file/bookmark/database embeds and automated browser smoke
-checks remain before this task can move from `verify` to `done`.
+The old editor's behavior has now been inventoried into `Contracts/editor-interactions.md` and
+rebuilt behind smaller action, paste, NodeView, and Markdown modules. The preset includes Markdown
+and slash creation, per-item block handles, bulk selection, drag/indent, full block conversion,
+selection formatting with named highlights and link editing, `@` document links, collapsible
+headings, code language/copy controls, lazy Mermaid preview, table row/column controls, bookmark,
+file, image, and database-reference NodeViews, plus server-owned image/PDF upload and delivery.
+
+The old flat-list model was intentionally replaced by standard nested lists. Database relations
+remain out of scope pending Decision 019. The editor preset has passed unit/roundtrip coverage, the
+full repository check, a production build, and an authenticated real-browser interaction smoke.

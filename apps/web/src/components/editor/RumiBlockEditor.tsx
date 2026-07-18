@@ -8,43 +8,34 @@ import {
 } from "react";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { BracketsCurly } from "@phosphor-icons/react/dist/csr/BracketsCurly";
-import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
 import { Code } from "@phosphor-icons/react/dist/csr/Code";
 import { Copy } from "@phosphor-icons/react/dist/csr/Copy";
 import { DotsSixVertical } from "@phosphor-icons/react/dist/csr/DotsSixVertical";
 import { HighlighterCircle } from "@phosphor-icons/react/dist/csr/HighlighterCircle";
-import { ListBullets } from "@phosphor-icons/react/dist/csr/ListBullets";
-import { ListNumbers } from "@phosphor-icons/react/dist/csr/ListNumbers";
-import { Minus } from "@phosphor-icons/react/dist/csr/Minus";
+import { LinkSimple } from "@phosphor-icons/react/dist/csr/LinkSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
-import { Quotes } from "@phosphor-icons/react/dist/csr/Quotes";
-import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { TextB } from "@phosphor-icons/react/dist/csr/TextB";
-import { TextHOne } from "@phosphor-icons/react/dist/csr/TextHOne";
 import { TextItalic } from "@phosphor-icons/react/dist/csr/TextItalic";
 import { TextStrikethrough } from "@phosphor-icons/react/dist/csr/TextStrikethrough";
 import { TextUnderline } from "@phosphor-icons/react/dist/csr/TextUnderline";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
-import {
-  baseKeymap,
-  chainCommands,
-  createParagraphNear,
-  exitCode,
-  liftEmptyBlock,
-  newlineInCode,
-  setBlockType,
-  splitBlock,
-  toggleMark,
-  wrapIn
-} from "prosemirror-commands";
-import { history, redo, undo } from "prosemirror-history";
-import { inputRules, textblockTypeInputRule, wrappingInputRule, type InputRule } from "prosemirror-inputrules";
+import { baseKeymap, toggleMark } from "prosemirror-commands";
+import { history } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
-import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
+import { type Mark, type Node as ProseMirrorNode } from "prosemirror-model";
 import { EditorState, NodeSelection, TextSelection, type Command } from "prosemirror-state";
-import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
-import { columnResizing, tableEditing } from "prosemirror-tables";
+import { liftListItem, sinkListItem } from "prosemirror-schema-list";
+import {
+  addColumnAfter,
+  addColumnBefore,
+  addRowAfter,
+  addRowBefore,
+  columnResizing,
+  deleteColumn,
+  deleteRow,
+  isInTable,
+  tableEditing
+} from "prosemirror-tables";
 import { EditorView, type NodeView } from "prosemirror-view";
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-tables/style/tables.css";
@@ -61,6 +52,25 @@ import {
   selectableBlockPositionAt,
   setBlockSelection
 } from "./blockSelection";
+import { buildRumiInputRules, buildRumiKeymap } from "./editorActions";
+import {
+  BLOCK_CONVERSION_OPTIONS,
+  changeBlockType,
+  filterSlashCommands,
+  slashCommandItems,
+  type BlockConversionType,
+  type SlashCommandItem
+} from "./editorCommands";
+import {
+  bookmarkNodeView,
+  codeBlockNodeView,
+  collapsibleHeadingPlugin,
+  databaseEmbedNodeView,
+  fileEmbedNodeView,
+  headingNodeView,
+  imageBlockNodeView
+} from "./editorNodeViews";
+import { rumiPastePlugin } from "./editorPaste";
 import { lightEditorSchema as schema, parseLightMarkdown, serializeLightMarkdown } from "./lightProseMirrorMarkdown";
 
 export interface RumiBlockEditorHandle {
@@ -72,7 +82,15 @@ export interface RumiBlockEditorHandle {
 export interface RumiBlockEditorProps {
   documentKey: string;
   markdown: string;
+  documents?: readonly RumiDocumentLink[];
+  onOpenDocument?: (path: string) => void;
+  onUploadAsset?: (file: File) => Promise<string>;
   onDirty: () => void;
+}
+
+export interface RumiDocumentLink {
+  path: string;
+  title: string;
 }
 
 interface SlashMenuState {
@@ -83,7 +101,23 @@ interface SlashMenuState {
   top: number;
 }
 
+interface MentionMenuState extends SlashMenuState {}
+
+interface LinkEditorState {
+  from: number;
+  to: number;
+  text: string;
+  href: string;
+  left: number;
+  top: number;
+}
+
 interface SelectionToolbarState {
+  left: number;
+  top: number;
+}
+
+interface TableToolbarState {
   left: number;
   top: number;
 }
@@ -128,17 +162,22 @@ const LIST_DRAG_OUTDENT_THRESHOLD = 24;
 const BLOCK_HOVER_GUTTER = 72;
 const BLOCK_HOVER_VERTICAL_TOLERANCE = 12;
 
-interface SlashCommandItem {
-  id: string;
-  label: string;
-  description: string;
-  aliases: string[];
-  icon: ReactElement;
-  run: (view: EditorView) => void;
-}
+const HIGHLIGHT_COLORS = [
+  ["yellow", "#fef08a"],
+  ["green", "#bbf7d0"],
+  ["blue", "#bfdbfe"],
+  ["purple", "#ddd6fe"],
+  ["pink", "#fbcfe8"],
+  ["red", "#fecaca"],
+  ["orange", "#fed7aa"],
+  ["gray", "#e5e7eb"]
+] as const;
 
 export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditorProps>(
-  function RumiBlockEditor({ documentKey, markdown, onDirty }, ref): ReactElement {
+  function RumiBlockEditor(
+    { documentKey, markdown, documents = [], onOpenDocument, onUploadAsset, onDirty },
+    ref
+  ): ReactElement {
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const hostRef = useRef<HTMLDivElement | null>(null);
     const viewRef = useRef<EditorView | null>(null);
@@ -147,6 +186,11 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
     const lastAppliedMarkdownRef = useRef(markdown);
     const slashStateRef = useRef<SlashMenuState | null>(null);
     const slashIndexRef = useRef(0);
+    const mentionStateRef = useRef<MentionMenuState | null>(null);
+    const mentionIndexRef = useRef(0);
+    const documentsRef = useRef(documents);
+    const onOpenDocumentRef = useRef(onOpenDocument);
+    const onUploadAssetRef = useRef(onUploadAsset);
     const activeBlockRef = useRef<ActiveBlockState | null>(null);
     const draggedBlockRef = useRef<DraggedBlock | null>(null);
     const blockMenuRef = useRef<BlockMenuState | null>(null);
@@ -155,7 +199,12 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
     const hoverAnimationFrameRef = useRef(0);
     const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
+    const [mentionMenu, setMentionMenu] = useState<MentionMenuState | null>(null);
+    const [mentionIndex, setMentionIndex] = useState(0);
+    const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null);
+    const [highlightPaletteOpen, setHighlightPaletteOpen] = useState(false);
     const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
+    const [tableToolbar, setTableToolbar] = useState<TableToolbarState | null>(null);
     const [activeBlock, setActiveBlock] = useState<ActiveBlockState | null>(null);
     const [blockMenu, setBlockMenu] = useState<BlockMenuState | null>(null);
     const [dropIndicator, setDropIndicator] = useState<DropIndicatorState | null>(null);
@@ -164,11 +213,17 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
     onDirtyRef.current = onDirty;
     slashStateRef.current = slashMenu;
     slashIndexRef.current = slashIndex;
+    mentionStateRef.current = mentionMenu;
+    mentionIndexRef.current = mentionIndex;
+    documentsRef.current = documents;
+    onOpenDocumentRef.current = onOpenDocument;
+    onUploadAssetRef.current = onUploadAsset;
     activeBlockRef.current = activeBlock;
     blockMenuRef.current = blockMenu;
 
-    const slashCommands = slashCommandItems();
+    const slashCommands = slashCommandItems(onUploadAssetRef.current);
     const visibleSlashCommands = filterSlashCommands(slashCommands, slashMenu?.query ?? "");
+    const visibleMentionDocuments = filterMentionDocuments(documents, mentionMenu?.query ?? "");
 
     const refreshEditorUi = useCallback((view: EditorView) => {
       const nextSlash = slashMenuState(view);
@@ -181,6 +236,15 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return nextSlash;
       });
       setSelectionToolbar(selectionToolbarState(view));
+      setTableToolbar(tableToolbarState(view));
+      const nextMention = mentionMenuState(view);
+      setMentionMenu((current) => {
+        if (!nextMention || !current || nextMention.query !== current.query) {
+          mentionIndexRef.current = 0;
+          setMentionIndex(0);
+        }
+        return nextMention;
+      });
     }, []);
 
     const runSlashCommand = useCallback((item: SlashCommandItem) => {
@@ -195,6 +259,30 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       item.run(view);
       view.focus();
       setSlashMenu(null);
+    }, []);
+
+    const runMention = useCallback((document: RumiDocumentLink) => {
+      const view = viewRef.current;
+      const menu = mentionStateRef.current;
+      const link = schema.marks.link;
+      if (!view || !menu || !link) return;
+
+      const transaction = view.state.tr
+        .delete(menu.from, menu.to)
+        .insert(menu.from, schema.text(document.title, [link.create({ href: document.path })]));
+      view.dispatch(transaction.scrollIntoView());
+      view.focus();
+      setMentionMenu(null);
+    }, []);
+
+    const openEditorHref = useCallback((href: string) => {
+      const normalized = normalizeEditorHref(href);
+      if (!normalized) return;
+      if (isExternalHref(normalized)) {
+        window.open(normalized, "_blank", "noopener,noreferrer");
+      } else {
+        onOpenDocumentRef.current?.(normalized);
+      }
     }, []);
 
     useImperativeHandle(
@@ -219,7 +307,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       }
 
       const view = new EditorView(hostRef.current, {
-        state: createEditorState(markdown),
+        state: createEditorState(markdown, onUploadAssetRef.current),
         dispatchTransaction(transaction) {
           const nextState = view.state.apply(transaction);
           view.updateState(nextState);
@@ -234,42 +322,84 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           class: "rumi-prosemirror rumi-block-editor"
         },
         nodeViews: {
+          heading: (node, editorView, getPos) => headingNodeView(node, editorView, getPos),
+          code_block: (node, editorView, getPos) => codeBlockNodeView(node, editorView, getPos),
+          bookmark: (node, editorView, getPos) => bookmarkNodeView(node, editorView, getPos, openEditorHref),
+          file_embed: (node) => fileEmbedNodeView(node),
+          image_block: (node) => imageBlockNodeView(node),
+          database_embed: (node, editorView, getPos) =>
+            databaseEmbedNodeView(node, editorView, getPos, openEditorHref),
           list_item: (node, editorView, getPos) => taskListItemNodeView(node, editorView, getPos)
         },
+        handleClick(editorView, pos, event) {
+          const target = event.target;
+          const anchor = target instanceof Element ? target.closest("a[href]") : null;
+          if (!(anchor instanceof HTMLAnchorElement)) return false;
+
+          const range = linkRangeAt(editorView.state, pos);
+          if (!range) return false;
+          event.preventDefault();
+          const rect = anchor.getBoundingClientRect();
+          setLinkEditor({
+            ...range,
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - 320)),
+            top: rect.bottom + 8
+          });
+          return true;
+        },
         handleKeyDown(editorView, event) {
-          const menu = slashStateRef.current;
+          const slash = slashStateRef.current;
+          if (slash) {
+            const items = filterSlashCommands(slashCommandItems(onUploadAssetRef.current), slash.query);
 
-          if (!menu) {
-            return false;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              const delta = event.key === "ArrowDown" ? 1 : -1;
+              const next = items.length > 0
+                ? (slashIndexRef.current + delta + items.length) % items.length
+                : 0;
+              slashIndexRef.current = next;
+              setSlashIndex(next);
+              return true;
+            }
+
+            if ((event.key === "Enter" || event.key === "Tab") && items[slashIndexRef.current]) {
+              event.preventDefault();
+              runSlashCommand(items[slashIndexRef.current]!);
+              return true;
+            }
+
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setSlashMenu(null);
+              return true;
+            }
           }
 
-          const items = filterSlashCommands(slashCommandItems(), menu.query);
+          const mention = mentionStateRef.current;
+          if (!mention) return false;
+          const matches = filterMentionDocuments(documentsRef.current, mention.query);
 
-          if (event.key === "ArrowDown") {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            const next = items.length > 0 ? (slashIndexRef.current + 1) % items.length : 0;
-            slashIndexRef.current = next;
-            setSlashIndex(next);
+            const delta = event.key === "ArrowDown" ? 1 : -1;
+            const next = matches.length > 0
+              ? (mentionIndexRef.current + delta + matches.length) % matches.length
+              : 0;
+            mentionIndexRef.current = next;
+            setMentionIndex(next);
             return true;
           }
 
-          if (event.key === "ArrowUp") {
+          if ((event.key === "Enter" || event.key === "Tab") && matches[mentionIndexRef.current]) {
             event.preventDefault();
-            const next = items.length > 0 ? (slashIndexRef.current - 1 + items.length) % items.length : 0;
-            slashIndexRef.current = next;
-            setSlashIndex(next);
-            return true;
-          }
-
-          if (event.key === "Enter" && items[slashIndexRef.current]) {
-            event.preventDefault();
-            runSlashCommand(items[slashIndexRef.current]!);
+            runMention(matches[mentionIndexRef.current]!);
             return true;
           }
 
           if (event.key === "Escape") {
             event.preventDefault();
-            setSlashMenu(null);
+            setMentionMenu(null);
             return true;
           }
 
@@ -407,9 +537,17 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           setActiveBlock(blockGeometryAtPosition(view, current.pos));
         }
       };
+      const closeEditorOverlays = (event: MouseEvent) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest("[data-rumi-editor-overlay]")) return;
+        setBlockMenu(null);
+        setLinkEditor(null);
+        setHighlightPaletteOpen(false);
+      };
 
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mousedown", handleAreaSelectionStart, true);
+      document.addEventListener("mousedown", closeEditorOverlays);
       window.addEventListener("scroll", refreshOnScroll, true);
       viewRef.current = view;
       lastDocumentKeyRef.current = documentKey;
@@ -427,6 +565,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
 
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mousedown", handleAreaSelectionStart, true);
+        document.removeEventListener("mousedown", closeEditorOverlays);
         document.removeEventListener("mousemove", handleAreaSelectionMove);
         document.removeEventListener("mouseup", handleAreaSelectionEnd);
         window.removeEventListener("scroll", refreshOnScroll, true);
@@ -449,7 +588,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         return;
       }
 
-      view.updateState(createEditorState(markdown));
+      view.updateState(createEditorState(markdown, onUploadAssetRef.current));
       lastDocumentKeyRef.current = documentKey;
       lastAppliedMarkdownRef.current = markdown;
       setBlockMenu(null);
@@ -458,18 +597,83 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       refreshEditorUi(view);
     }, [documentKey, markdown, refreshEditorUi]);
 
-    const applyMark = useCallback((markName: string) => {
+    const applyMark = useCallback((markName: string, attrs?: Record<string, unknown>) => {
       const view = viewRef.current;
       const mark = schema.marks[markName];
 
       if (view && mark) {
-        toggleMark(mark)(view.state, view.dispatch, view);
+        toggleMark(mark, attrs)(view.state, view.dispatch, view);
         view.focus();
         refreshEditorUi(view);
       }
     }, [refreshEditorUi]);
 
-    const addBlockBefore = useCallback((pos: number) => {
+    const clearHighlight = useCallback(() => {
+      const view = viewRef.current;
+      const highlight = schema.marks.highlight;
+      if (!view || !highlight || view.state.selection.empty) return;
+      view.dispatch(view.state.tr.removeMark(view.state.selection.from, view.state.selection.to, highlight));
+      setHighlightPaletteOpen(false);
+      view.focus();
+    }, []);
+
+    const runTableCommand = useCallback((command: Command) => {
+      const view = viewRef.current;
+      if (!view) return;
+      command(view.state, view.dispatch, view);
+      view.focus();
+      refreshEditorUi(view);
+    }, [refreshEditorUi]);
+
+    const startSelectionLinkEditor = useCallback(() => {
+      const view = viewRef.current;
+      if (!view || view.state.selection.empty) return;
+
+      const { from, to } = view.state.selection;
+      const start = view.coordsAtPos(from);
+      const end = view.coordsAtPos(to);
+      const existing = linkMarkInRange(view.state, from, to);
+      setLinkEditor({
+        from,
+        to,
+        text: view.state.doc.textBetween(from, to),
+        href: existing?.attrs.href ? String(existing.attrs.href) : "",
+        left: Math.max(8, Math.min((start.left + end.right) / 2 - 150, window.innerWidth - 320)),
+        top: Math.max(8, Math.min(start.top, end.top) - 116)
+      });
+    }, []);
+
+    const applyLinkEditor = useCallback((nextText: string, nextHref: string) => {
+      const view = viewRef.current;
+      const current = linkEditor;
+      const link = schema.marks.link;
+      const href = normalizeEditorHref(nextHref);
+      if (!view || !current || !link || !nextText.trim() || !href) return;
+
+      const transaction = view.state.tr
+        .delete(current.from, current.to)
+        .insert(current.from, schema.text(nextText.trim(), [link.create({ href })]));
+      view.dispatch(transaction.scrollIntoView());
+      setLinkEditor(null);
+      view.focus();
+    }, [linkEditor]);
+
+    const removeLink = useCallback(() => {
+      const view = viewRef.current;
+      const current = linkEditor;
+      const link = schema.marks.link;
+      if (!view || !current || !link) return;
+      view.dispatch(view.state.tr.removeMark(current.from, current.to, link));
+      setLinkEditor(null);
+      view.focus();
+    }, [linkEditor]);
+
+    const openLink = useCallback((href: string) => {
+      openEditorHref(href);
+      setLinkEditor(null);
+    }, [openEditorHref]);
+
+    const addBlock = useCallback((pos: number, after: boolean) => {
       const view = viewRef.current;
       const paragraph = schema.nodes.paragraph;
 
@@ -485,14 +689,15 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             paragraph.create()
           )
         : paragraph.create();
-      const transaction = view.state.tr.insert(pos, inserted);
-      const textStart = pos + (inserted.type === listItem ? 2 : 1);
+      const insertPos = after && target ? pos + target.nodeSize : pos;
+      const transaction = view.state.tr.insert(insertPos, inserted);
+      const textStart = insertPos + (inserted.type === listItem ? 2 : 1);
       transaction.setSelection(TextSelection.near(transaction.doc.resolve(textStart)));
       view.dispatch(transaction);
       view.focus();
     }, []);
 
-    const mutateBlock = useCallback((action: "duplicate" | "delete" | "paragraph" | "heading") => {
+    const mutateBlock = useCallback((action: "duplicate" | "delete") => {
       const view = viewRef.current;
       const menu = blockMenu;
 
@@ -517,23 +722,16 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       } else if (action === "delete") {
         const transaction = createDeleteSelectedBlocksTransaction(view.state, positions);
         if (transaction) view.dispatch(transaction);
-      } else {
-        const selectionPos = node.type.name === "list_item" ? menu.pos + 2 : menu.pos;
-        const selection = node.type.name === "list_item"
-          ? TextSelection.near(view.state.doc.resolve(selectionPos))
-          : NodeSelection.create(view.state.doc, selectionPos);
-        view.dispatch(view.state.tr.setSelection(selection));
-        const type = action === "heading" ? schema.nodes.heading : schema.nodes.paragraph;
-
-        if (type) {
-          setBlockType(type, action === "heading" ? { level: 2 } : undefined)(
-            view.state,
-            view.dispatch,
-            view
-          );
-        }
       }
 
+      setBlockMenu(null);
+      view.focus();
+    }, [blockMenu]);
+
+    const convertBlock = useCallback((type: BlockConversionType) => {
+      const view = viewRef.current;
+      if (!view || !blockMenu) return;
+      changeBlockType(view, blockMenu.pos, type);
       setBlockMenu(null);
       view.focus();
     }, [blockMenu]);
@@ -729,7 +927,7 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
               title="Add block above"
               aria-label="Add block above"
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => addBlockBefore(activeBlock.pos)}
+              onClick={() => addBlock(activeBlock.pos, false)}
             >
               <Plus size={14} />
             </button>
@@ -803,26 +1001,43 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         {blockMenu && createPortal(
           <div
             data-rumi-editor-overlay
-            className="fixed z-50 w-48 rounded-md border border-border bg-background p-1 text-sm shadow-lg"
+            className="fixed z-50 max-h-[min(34rem,calc(100vh-1rem))] w-52 overflow-y-auto rounded-md border border-border bg-background p-1 text-sm shadow-lg"
             style={{ left: blockMenu.left, top: blockMenu.top }}
           >
+            <BlockMenuButton
+              icon={<Plus size={15} />}
+              label="Add above"
+              disabled={blockMenuIsBulk}
+              onClick={() => {
+                addBlock(blockMenu.pos, false);
+                setBlockMenu(null);
+              }}
+            />
+            <BlockMenuButton
+              icon={<Plus size={15} />}
+              label="Add below"
+              disabled={blockMenuIsBulk}
+              onClick={() => {
+                addBlock(blockMenu.pos, true);
+                setBlockMenu(null);
+              }}
+            />
             <BlockMenuButton
               icon={<Copy size={15} />}
               label={blockMenuIsBulk ? `Duplicate ${blockMenuSelectionCount} blocks` : "Duplicate"}
               onClick={() => mutateBlock("duplicate")}
             />
-            <BlockMenuButton
-              icon={<TextHOne size={15} />}
-              label="Heading 2"
-              disabled={blockMenuIsBulk}
-              onClick={() => mutateBlock("heading")}
-            />
-            <BlockMenuButton
-              icon={<BracketsCurly size={15} />}
-              label="Paragraph"
-              disabled={blockMenuIsBulk}
-              onClick={() => mutateBlock("paragraph")}
-            />
+            <div className="my-1 border-t border-border" />
+            <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Change type</p>
+            {BLOCK_CONVERSION_OPTIONS.map((option) => (
+              <BlockMenuButton
+                key={option.type}
+                icon={option.icon}
+                label={option.label}
+                disabled={blockMenuIsBulk}
+                onClick={() => convertBlock(option.type)}
+              />
+            ))}
             <div className="my-1 border-t border-border" />
             <BlockMenuButton
               icon={<Trash size={15} />}
@@ -846,7 +1061,70 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             <ToolbarButton label="Underline" icon={<TextUnderline size={15} />} onClick={() => applyMark("underline")} />
             <ToolbarButton label="Strikethrough" icon={<TextStrikethrough size={15} />} onClick={() => applyMark("strike")} />
             <ToolbarButton label="Inline code" icon={<Code size={15} />} onClick={() => applyMark("code")} />
-            <ToolbarButton label="Highlight" icon={<HighlighterCircle size={15} />} onClick={() => applyMark("highlight")} />
+            <span className="relative">
+              <ToolbarButton
+                label="Highlight color"
+                icon={<HighlighterCircle size={15} />}
+                onClick={() => setHighlightPaletteOpen((open) => !open)}
+              />
+              {highlightPaletteOpen && (
+                <span className="absolute left-1/2 top-9 z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-background p-1.5 shadow-lg">
+                  {HIGHLIGHT_COLORS.map(([color, value]) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className="h-5 w-5 rounded-full border border-black/10"
+                      style={{ backgroundColor: value }}
+                      title={`${color} highlight`}
+                      aria-label={`${color} highlight`}
+                      onClick={() => {
+                        applyMark("highlight", { color });
+                        setHighlightPaletteOpen(false);
+                      }}
+                    />
+                  ))}
+                  <button type="button" className="h-5 rounded px-1 text-[10px] text-muted-foreground hover:bg-muted" onClick={clearHighlight}>
+                    Clear
+                  </button>
+                </span>
+              )}
+            </span>
+            <ToolbarButton label="Add or edit link" icon={<LinkSimple size={15} />} onClick={startSelectionLinkEditor} />
+          </div>,
+          document.body
+        )}
+
+        {linkEditor && createPortal(
+          <LinkEditorPopover
+            key={`${linkEditor.from}:${linkEditor.to}:${linkEditor.href}`}
+            state={linkEditor}
+            onApply={applyLinkEditor}
+            onRemove={removeLink}
+            onOpen={openLink}
+            onClose={() => {
+              setLinkEditor(null);
+              viewRef.current?.focus();
+            }}
+          />,
+          document.body
+        )}
+
+        {tableToolbar && createPortal(
+          <div
+            data-rumi-editor-overlay
+            className="fixed z-40 flex items-center gap-1 rounded-md border border-border bg-background p-1 text-xs shadow-lg"
+            style={{ left: tableToolbar.left, top: tableToolbar.top }}
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            <span className="px-1 text-muted-foreground">Row</span>
+            <TableToolbarButton label="Add row above" onClick={() => runTableCommand(addRowBefore)}>+↑</TableToolbarButton>
+            <TableToolbarButton label="Add row below" onClick={() => runTableCommand(addRowAfter)}>+↓</TableToolbarButton>
+            <TableToolbarButton label="Delete row" destructive onClick={() => runTableCommand(deleteRow)}>−</TableToolbarButton>
+            <span className="mx-1 h-5 border-l border-border" />
+            <span className="px-1 text-muted-foreground">Column</span>
+            <TableToolbarButton label="Add column left" onClick={() => runTableCommand(addColumnBefore)}>+←</TableToolbarButton>
+            <TableToolbarButton label="Add column right" onClick={() => runTableCommand(addColumnAfter)}>+→</TableToolbarButton>
+            <TableToolbarButton label="Delete column" destructive onClick={() => runTableCommand(deleteColumn)}>−</TableToolbarButton>
           </div>,
           document.body
         )}
@@ -887,308 +1165,58 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
           </div>,
           document.body
         )}
+
+        {mentionMenu && createPortal(
+          <div
+            data-rumi-editor-overlay
+            className="fixed z-50 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-background p-1 shadow-xl"
+            style={{ left: Math.min(mentionMenu.left, window.innerWidth - 304), top: mentionMenu.top }}
+          >
+            <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Link to a Rumi document</p>
+            {visibleMentionDocuments.length > 0 ? visibleMentionDocuments.slice(0, 20).map((document, index) => (
+              <button
+                key={document.path}
+                type="button"
+                className={`block w-full rounded-md px-2 py-2 text-left ${index === mentionIndex ? "bg-muted" : "hover:bg-muted/70"}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => {
+                  mentionIndexRef.current = index;
+                  setMentionIndex(index);
+                }}
+                onClick={() => runMention(document)}
+              >
+                <span className="block truncate text-sm font-medium">{document.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">{document.path}</span>
+              </button>
+            )) : (
+              <p className="px-2 py-3 text-sm text-muted-foreground">No matching document.</p>
+            )}
+          </div>,
+          document.body
+        )}
       </div>
     );
   }
 );
 
-function createEditorState(markdown: string): EditorState {
+function createEditorState(
+  markdown: string,
+  uploadAsset?: (file: File) => Promise<string>
+): EditorState {
   return EditorState.create({
     doc: parseLightMarkdown(markdown),
     plugins: [
       history(),
-      buildInputRules(),
+      collapsibleHeadingPlugin(),
+      buildRumiInputRules(schema),
+      rumiPastePlugin(schema, uploadAsset),
       blockSelectionPlugin(),
-      buildKeymap(),
+      buildRumiKeymap(schema),
       keymap(baseKeymap),
       columnResizing(),
       tableEditing()
     ]
   });
-}
-
-function buildInputRules() {
-  const rules: InputRule[] = [];
-  const heading = schema.nodes.heading;
-  const blockquote = schema.nodes.blockquote;
-  const codeBlock = schema.nodes.code_block;
-  const bulletList = schema.nodes.bullet_list;
-  const orderedList = schema.nodes.ordered_list;
-
-  if (heading) {
-    rules.push(
-      textblockTypeInputRule(/^(#{1,6})\s$/, heading, (match) => ({
-        level: match[1]?.length ?? 1
-      }))
-    );
-  }
-
-  if (blockquote) {
-    rules.push(wrappingInputRule(/^\s*>\s$/, blockquote));
-  }
-
-  if (codeBlock) {
-    rules.push(textblockTypeInputRule(/^```$/, codeBlock));
-  }
-
-  if (bulletList) {
-    rules.push(wrappingInputRule(/^\s*([-+*])\s$/, bulletList));
-  }
-
-  if (orderedList) {
-    rules.push(
-      wrappingInputRule(/^(\d+)\.\s$/, orderedList, (match) => ({
-        order: Number(match[1] ?? 1)
-      }))
-    );
-  }
-
-  return inputRules({ rules });
-}
-
-function buildKeymap() {
-  const keys: Record<string, Command> = {};
-  const paragraph = schema.nodes.paragraph;
-  const heading = schema.nodes.heading;
-  const bulletList = schema.nodes.bullet_list;
-  const orderedList = schema.nodes.ordered_list;
-  const listItem = schema.nodes.list_item;
-
-  keys["Mod-z"] = undo;
-  keys["Shift-Mod-z"] = redo;
-  keys["Mod-y"] = redo;
-
-  for (const [shortcut, markName] of [
-    ["Mod-b", "strong"],
-    ["Mod-i", "em"],
-    ["Mod-e", "code"],
-    ["Mod-u", "underline"],
-    ["Shift-Mod-s", "strike"],
-    ["Shift-Mod-h", "highlight"]
-  ] as const) {
-    const mark = schema.marks[markName];
-
-    if (mark) {
-      keys[shortcut] = toggleMark(mark);
-    }
-  }
-
-  if (paragraph) {
-    keys["Mod-Alt-0"] = setBlockType(paragraph);
-  }
-
-  if (heading) {
-    keys["Mod-Alt-1"] = setBlockType(heading, { level: 1 });
-    keys["Mod-Alt-2"] = setBlockType(heading, { level: 2 });
-    keys["Mod-Alt-3"] = setBlockType(heading, { level: 3 });
-  }
-
-  if (bulletList) {
-    keys["Shift-Mod-8"] = wrapInList(bulletList);
-  }
-
-  if (orderedList) {
-    keys["Shift-Mod-7"] = wrapInList(orderedList);
-  }
-
-  if (listItem) {
-    keys.Enter = chainCommands(
-      splitListItem(listItem),
-      newlineInCode,
-      createParagraphNear,
-      liftEmptyBlock,
-      splitBlock
-    );
-    keys.Tab = consumeListIndent(sinkListItem(listItem), listItem.name);
-    keys["Shift-Tab"] = consumeListIndent(liftListItem(listItem), listItem.name);
-  } else {
-    keys.Enter = chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock);
-  }
-
-  keys["Mod-Enter"] = exitCode;
-  return keymap(keys);
-}
-
-function consumeListIndent(command: Command, listItemName: string): Command {
-  return (state, dispatch, view) => {
-    const { $from } = state.selection;
-    let insideListItem = false;
-
-    for (let depth = $from.depth; depth > 0; depth -= 1) {
-      if ($from.node(depth).type.name === listItemName) {
-        insideListItem = true;
-        break;
-      }
-    }
-
-    if (!insideListItem) {
-      return false;
-    }
-
-    command(state, dispatch, view);
-    return true;
-  };
-}
-
-function slashCommandItems(): SlashCommandItem[] {
-  return [
-    blockTypeCommand("paragraph", "Text", "Plain paragraph", ["p", "text"], <BracketsCurly size={17} />, "paragraph"),
-    blockTypeCommand("heading-1", "Heading 1", "Large section heading", ["h1", "title"], <TextHOne size={17} />, "heading", { level: 1 }),
-    blockTypeCommand("heading-2", "Heading 2", "Medium section heading", ["h2", "subtitle"], <TextHOne size={17} />, "heading", { level: 2 }),
-    blockTypeCommand("heading-3", "Heading 3", "Small section heading", ["h3"], <TextHOne size={17} />, "heading", { level: 3 }),
-    listCommand("bullet", "Bullet list", "Create an unordered list", ["ul", "list"], <ListBullets size={17} />, false),
-    listCommand("numbered", "Numbered list", "Create an ordered list", ["ol", "ordered"], <ListNumbers size={17} />, true),
-    {
-      id: "task",
-      label: "Task list",
-      description: "Create a checkbox item",
-      aliases: ["todo", "checkbox", "check"],
-      icon: <CheckSquare size={17} />,
-      run(view) {
-        const list = schema.nodes.bullet_list;
-        const listItem = schema.nodes.list_item;
-
-        if (!list || !listItem || !wrapInList(list)(view.state, view.dispatch, view)) {
-          return;
-        }
-
-        const { $from } = view.state.selection;
-
-        for (let depth = $from.depth; depth > 0; depth -= 1) {
-          if ($from.node(depth).type === listItem) {
-            const pos = $from.before(depth);
-            view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...$from.node(depth).attrs, checked: false }));
-            break;
-          }
-        }
-      }
-    },
-    {
-      id: "quote",
-      label: "Quote",
-      description: "Create a block quote",
-      aliases: ["blockquote"],
-      icon: <Quotes size={17} />,
-      run(view) {
-        const type = schema.nodes.blockquote;
-        if (type) wrapIn(type)(view.state, view.dispatch, view);
-      }
-    },
-    blockTypeCommand("code", "Code block", "Fenced source code", ["pre", "codeblock"], <Code size={17} />, "code_block", { params: "" }),
-    blockTypeCommand("mermaid", "Mermaid", "Diagram source block", ["diagram", "graph"], <BracketsCurly size={17} />, "code_block", { params: "mermaid" }),
-    {
-      id: "divider",
-      label: "Divider",
-      description: "Horizontal separator",
-      aliases: ["hr", "line"],
-      icon: <Minus size={17} />,
-      run: insertDivider
-    },
-    {
-      id: "table",
-      label: "Table",
-      description: "Insert a 3 × 3 table",
-      aliases: ["grid"],
-      icon: <Table size={17} />,
-      run: insertTable
-    }
-  ];
-}
-
-function blockTypeCommand(
-  id: string,
-  label: string,
-  description: string,
-  aliases: string[],
-  icon: ReactElement,
-  nodeName: string,
-  attrs?: Record<string, unknown>
-): SlashCommandItem {
-  return {
-    id,
-    label,
-    description,
-    aliases,
-    icon,
-    run(view) {
-      const type = schema.nodes[nodeName];
-      if (type) setBlockType(type, attrs)(view.state, view.dispatch, view);
-    }
-  };
-}
-
-function listCommand(
-  id: string,
-  label: string,
-  description: string,
-  aliases: string[],
-  icon: ReactElement,
-  ordered: boolean
-): SlashCommandItem {
-  return {
-    id,
-    label,
-    description,
-    aliases,
-    icon,
-    run(view) {
-      const type = ordered ? schema.nodes.ordered_list : schema.nodes.bullet_list;
-      if (type) wrapInList(type)(view.state, view.dispatch, view);
-    }
-  };
-}
-
-function insertDivider(view: EditorView): void {
-  const horizontalRule = schema.nodes.horizontal_rule;
-  const paragraph = schema.nodes.paragraph;
-  const { $from } = view.state.selection;
-
-  if (!horizontalRule || !paragraph || $from.depth < 1) {
-    return;
-  }
-
-  const from = $from.before(1);
-  const to = from + $from.node(1).nodeSize;
-  const transaction = view.state.tr.replaceWith(
-    from,
-    to,
-    Fragment.fromArray([horizontalRule.create(), paragraph.create()])
-  );
-  transaction.setSelection(TextSelection.near(transaction.doc.resolve(from + 2)));
-  view.dispatch(transaction);
-}
-
-function insertTable(view: EditorView): void {
-  const table = schema.nodes.table;
-  const row = schema.nodes.table_row;
-  const header = schema.nodes.table_header;
-  const cell = schema.nodes.table_cell;
-
-  if (!table || !row || !header || !cell) {
-    return;
-  }
-
-  const rows = Array.from({ length: 3 }, (_, rowIndex) =>
-    row.create(
-      null,
-      Array.from({ length: 3 }, () => (rowIndex === 0 ? header : cell).create())
-    )
-  );
-  view.dispatch(view.state.tr.replaceSelectionWith(table.create(null, rows)).scrollIntoView());
-}
-
-function filterSlashCommands(items: SlashCommandItem[], query: string): SlashCommandItem[] {
-  const normalized = query.trim().toLocaleLowerCase();
-
-  if (!normalized) {
-    return items;
-  }
-
-  return items.filter((item) =>
-    [item.label, item.id, ...item.aliases].some((value) =>
-      value.toLocaleLowerCase().includes(normalized)
-    )
-  );
 }
 
 function slashMenuState(view: EditorView): SlashMenuState | null {
@@ -1218,6 +1246,122 @@ function slashMenuState(view: EditorView): SlashMenuState | null {
   };
 }
 
+function mentionMenuState(view: EditorView): MentionMenuState | null {
+  const { selection } = view.state;
+  if (!selection.empty || !selection.$from.parent.isTextblock) return null;
+
+  const textBefore = selection.$from.parent.textBetween(
+    0,
+    selection.$from.parentOffset,
+    "\0",
+    "\0"
+  );
+  const match = /(?:^|\s)@([^@\n]*)$/.exec(textBefore);
+  if (!match) return null;
+
+  const query = match[1] ?? "";
+  const coords = view.coordsAtPos(selection.from);
+  return {
+    from: selection.from - query.length - 1,
+    to: selection.from,
+    query,
+    left: coords.left,
+    top: coords.bottom + 6
+  };
+}
+
+export function filterMentionDocuments(
+  documents: readonly RumiDocumentLink[],
+  query: string
+): RumiDocumentLink[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return [...documents];
+
+  return documents
+    .filter((document) =>
+      document.title.toLocaleLowerCase().includes(normalized) ||
+      document.path.toLocaleLowerCase().includes(normalized)
+    )
+    .sort((left, right) => {
+      const leftStarts = left.title.toLocaleLowerCase().startsWith(normalized) ? 0 : 1;
+      const rightStarts = right.title.toLocaleLowerCase().startsWith(normalized) ? 0 : 1;
+      return leftStarts - rightStarts || left.title.localeCompare(right.title);
+    });
+}
+
+function linkRangeAt(state: EditorState, pos: number): LinkEditorState | null {
+  const linkType = state.schema.marks.link;
+  if (!linkType) return null;
+  const $pos = state.doc.resolve(Math.max(0, Math.min(pos, state.doc.content.size)));
+  const parent = $pos.parent;
+  const parentStart = $pos.start();
+  const segments: Array<{ from: number; to: number; node: ProseMirrorNode; mark: Mark }> = [];
+
+  parent.forEach((node, offset) => {
+    const mark = linkType.isInSet(node.marks);
+    if (node.isText && mark) {
+      segments.push({
+        from: parentStart + offset,
+        to: parentStart + offset + node.nodeSize,
+        node,
+        mark
+      });
+    }
+  });
+
+  const selectedIndex = segments.findIndex((segment) => pos >= segment.from && pos <= segment.to);
+  if (selectedIndex < 0) return null;
+  const href = String(segments[selectedIndex]!.mark.attrs.href ?? "");
+  let first = selectedIndex;
+  let last = selectedIndex;
+
+  while (
+    first > 0 &&
+    segments[first - 1]!.to === segments[first]!.from &&
+    String(segments[first - 1]!.mark.attrs.href ?? "") === href
+  ) first -= 1;
+  while (
+    last + 1 < segments.length &&
+    segments[last]!.to === segments[last + 1]!.from &&
+    String(segments[last + 1]!.mark.attrs.href ?? "") === href
+  ) last += 1;
+
+  const from = segments[first]!.from;
+  const to = segments[last]!.to;
+  return {
+    from,
+    to,
+    text: state.doc.textBetween(from, to),
+    href,
+    left: 0,
+    top: 0
+  };
+}
+
+function linkMarkInRange(state: EditorState, from: number, to: number): Mark | null {
+  const link = state.schema.marks.link;
+  if (!link) return null;
+  let found: Mark | null = null;
+  state.doc.nodesBetween(from, to, (node) => {
+    found ??= link.isInSet(node.marks) ?? null;
+    return found === null;
+  });
+  return found;
+}
+
+export function normalizeEditorHref(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLocaleLowerCase().startsWith("www.")) return `https://${trimmed}`;
+  if (/^https?:\/\//iu.test(trimmed)) return trimmed;
+  if (/^[a-z][a-z\d+.-]*:/iu.test(trimmed)) return null;
+  return trimmed.replace(/^\.\//u, "");
+}
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//iu.test(href);
+}
+
 function selectionToolbarState(view: EditorView): SelectionToolbarState | null {
   const { selection } = view.state;
 
@@ -1237,6 +1381,26 @@ function selectionToolbarState(view: EditorView): SelectionToolbarState | null {
   };
 }
 
+function tableToolbarState(view: EditorView): TableToolbarState | null {
+  if (!isInTable(view.state)) return null;
+
+  const { $anchor } = view.state.selection;
+  for (let depth = $anchor.depth; depth > 0; depth -= 1) {
+    if ($anchor.node(depth).type.name !== "table") continue;
+
+    const pos = $anchor.before(depth);
+    const dom = view.nodeDOM(pos);
+    if (!(dom instanceof HTMLElement)) return null;
+    const rect = dom.getBoundingClientRect();
+    return {
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 390)),
+      top: rect.top > 54 ? rect.top - 42 : rect.bottom + 8
+    };
+  }
+
+  return null;
+}
+
 function blockAtCoordinates(view: EditorView, left: number, top: number): ActiveBlockState | null {
   const editorRect = view.dom.getBoundingClientRect();
 
@@ -1253,7 +1417,7 @@ function blockAtCoordinates(view: EditorView, left: number, top: number): Active
   const pos = selectableBlockPositionAt(view.state.doc, found.pos);
 
   if (pos === null) {
-    return null;
+    return blockAtVerticalCoordinate(view, top);
   }
 
   return blockGeometryAtPosition(view, pos);
@@ -1375,6 +1539,88 @@ function taskListItemNodeView(
   };
 }
 
+function LinkEditorPopover({
+  state,
+  onApply,
+  onRemove,
+  onOpen,
+  onClose
+}: {
+  state: LinkEditorState;
+  onApply: (text: string, href: string) => void;
+  onRemove: () => void;
+  onOpen: (href: string) => void;
+  onClose: () => void;
+}): ReactElement {
+  const [text, setText] = useState(state.text);
+  const [href, setHref] = useState(state.href);
+
+  return (
+    <form
+      data-rumi-editor-overlay
+      className="fixed z-50 w-[300px] rounded-md border border-border bg-background p-2 shadow-xl"
+      style={{ left: state.left, top: state.top }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onApply(text, href);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="flex items-center gap-1.5">
+        <input
+          autoFocus
+          className="h-8 min-w-0 flex-1 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+          aria-label="Link text"
+          placeholder="Link text"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <button type="submit" className="h-8 rounded bg-primary px-2.5 text-xs text-primary-foreground">
+          Apply
+        </button>
+      </div>
+      <input
+        className="mt-1.5 h-8 w-full rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+        aria-label="Link destination"
+        placeholder="URL or document path"
+        value={href}
+        onChange={(event) => setHref(event.target.value)}
+      />
+      <div className="mt-1.5 flex items-center justify-between">
+        <button type="button" className="rounded px-2 py-1 text-xs text-destructive hover:bg-muted" onClick={onRemove}>
+          Remove link
+        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => void navigator.clipboard?.writeText(href)}
+          >
+            Copy
+          </button>
+          {state.href && (
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => onOpen(href)}
+            >
+              Open
+            </button>
+          )}
+          <button type="button" className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 function ToolbarButton({
   label,
   icon,
@@ -1393,6 +1639,30 @@ function ToolbarButton({
       onClick={onClick}
     >
       {icon}
+    </button>
+  );
+}
+
+function TableToolbarButton({
+  label,
+  destructive = false,
+  onClick,
+  children
+}: {
+  label: string;
+  destructive?: boolean;
+  onClick: () => void;
+  children: string;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      className={`h-7 min-w-7 rounded px-1.5 hover:bg-muted ${destructive ? "text-destructive" : ""}`}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      {children}
     </button>
   );
 }

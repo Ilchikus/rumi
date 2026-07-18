@@ -25,6 +25,7 @@ import type {
   RumiEventEnvelope,
   SavePageRequest,
   SavePageResult,
+  SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   UpdateDatabaseRecordPropertyRequest,
@@ -54,6 +55,13 @@ import { WorkspaceIndex } from "./workspace-index";
 
 export interface WorkspaceRuntimeOptions {
   rootPath: string;
+}
+
+export interface WorkspaceAsset {
+  path: string;
+  fileName: string;
+  contentType: string;
+  data: Buffer;
 }
 
 export type RumiEventSubscriber = (envelope: RumiEventEnvelope) => void;
@@ -128,6 +136,63 @@ export class WorkspaceRuntime {
 
   async getTree(): Promise<WorkspaceNode> {
     return this.readDirectoryTree("");
+  }
+
+  async readAsset(inputPath: string): Promise<WorkspaceAsset> {
+    const relPath = normalizeWorkspacePath(inputPath);
+    const segments = relPath.split("/");
+    const extension = path.posix.extname(relPath).toLocaleLowerCase();
+
+    if (
+      !SAFE_ASSET_CONTENT_TYPES[extension] ||
+      segments.some((segment) => segment.startsWith(".") && segment !== ".assets")
+    ) {
+      throw new Error(`Path is not a readable workspace asset: ${inputPath}`);
+    }
+
+    const absolutePath = this.resolveAbsolutePath(relPath);
+    const stat = await fs.stat(absolutePath);
+    if (!stat.isFile()) throw new Error(`Workspace asset is not a file: ${inputPath}`);
+
+    return {
+      path: relPath,
+      fileName: path.basename(relPath),
+      contentType: SAFE_ASSET_CONTENT_TYPES[extension]!,
+      data: await fs.readFile(absolutePath)
+    };
+  }
+
+  async saveAsset(fileName: string, data: Uint8Array): Promise<SaveAssetResult> {
+    const cleanedName = sanitizeAssetFileName(fileName);
+    const extension = path.posix.extname(cleanedName).toLocaleLowerCase();
+    const contentType = SAFE_ASSET_CONTENT_TYPES[extension];
+    if (!contentType) throw new Error(`Unsupported asset type: ${extension || "unknown"}`);
+
+    await fs.mkdir(this.resolveAbsolutePath(".assets"), { recursive: true });
+    const stem = path.posix.basename(cleanedName, extension);
+    let index = 1;
+    let relPath = path.posix.join(".assets", `${stem}${extension}`);
+
+    while (await fileExists(this.resolveAbsolutePath(relPath))) {
+      index += 1;
+      relPath = path.posix.join(".assets", `${stem}-${index}${extension}`);
+    }
+
+    await fs.writeFile(this.resolveAbsolutePath(relPath), data, { flag: "wx" });
+    const event: RumiEvent = {
+      name: "asset.changed",
+      path: relPath,
+      changedBy: "editor",
+      affects: ["asset", "workspace-tree"]
+    };
+    this.events.publish(event);
+    return {
+      status: "saved",
+      path: relPath,
+      fileName: path.posix.basename(relPath),
+      contentType,
+      events: [event]
+    };
   }
 
   async openPage(inputPath: string): Promise<PageDocument> {
@@ -873,6 +938,29 @@ export class WorkspaceRuntime {
       }
     }
   }
+}
+
+const SAFE_ASSET_CONTENT_TYPES: Record<string, string> = {
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".webp": "image/webp"
+};
+
+function sanitizeAssetFileName(fileName: string): string {
+  const base = path.posix.basename(fileName.replace(/\\/gu, "/"));
+  const cleaned = base
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 180);
+  if (!cleaned || cleaned.startsWith(".")) throw new Error("Asset file name is invalid");
+  return cleaned;
 }
 
 export async function createTempWorkspace(prefix = "rumi-runtime-"): Promise<string> {

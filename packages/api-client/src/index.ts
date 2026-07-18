@@ -20,6 +20,7 @@ import type {
   RumiEvent,
   SavePageRequest,
   SavePageResult,
+  SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   UpdateDatabaseRecordPropertyRequest,
@@ -86,6 +87,15 @@ export class RumiApiClient {
         "content-type": "application/json"
       },
       body: JSON.stringify(request)
+    });
+  }
+
+  async uploadAsset(fileName: string, data: BodyInit): Promise<SaveAssetResult> {
+    const search = new URLSearchParams({ fileName });
+    return this.request<SaveAssetResult>(`/api/assets?${search.toString()}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: data
     });
   }
 

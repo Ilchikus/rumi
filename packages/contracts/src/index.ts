@@ -163,6 +163,14 @@ export interface WorkspaceMutationResult {
   events: RumiEvent[];
 }
 
+export interface SaveAssetResult {
+  status: "saved";
+  path: string;
+  fileName: string;
+  contentType: string;
+  events: RumiEvent[];
+}
+
 export interface OpenWorkspaceResult {
   rootPath: string;
   name: string;

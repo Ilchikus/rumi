@@ -19,6 +19,7 @@ import type {
   RestoreRevisionRequest,
   RumiEventEnvelope,
   SavePageRequest,
+  SaveAssetResult,
   SearchWorkspaceRequest,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabaseSchemaRequest
@@ -111,6 +112,11 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
           },
     disableRequestLogging: true
   });
+  server.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer", bodyLimit: 50 * 1024 * 1024 },
+    (_request, body, done) => done(null, body)
+  );
   const webRoot = await resolveWebRoot(options.webRoot);
 
   if (webRoot) {
@@ -318,6 +324,47 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
   server.get("/api/tree", async (request) => {
     request.log.info({ workspace: runtime.rootPath }, "tree.read");
     return runtime.getTree();
+  });
+
+  server.get<{ Querystring: { path?: string } }>("/api/asset", async (request, reply) => {
+    if (!request.query.path) {
+      return reply.status(400).send({
+        error: { code: "missing_path", message: "Missing asset path" }
+      });
+    }
+
+    try {
+      const asset = await runtime.readAsset(request.query.path);
+      reply.header("content-type", asset.contentType);
+      reply.header("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(asset.fileName)}`);
+      return reply.send(asset.data);
+    } catch {
+      return reply.status(400).send({
+        error: { code: "invalid_asset_path", message: "Asset path is not readable" }
+      });
+    }
+  });
+
+  server.post<{
+    Querystring: { fileName?: string };
+    Body: Buffer;
+  }>("/api/assets", async (request, reply): Promise<SaveAssetResult | unknown> => {
+    if (!request.query.fileName || !Buffer.isBuffer(request.body) || request.body.length === 0) {
+      return reply.status(400).send({
+        error: { code: "invalid_asset_upload", message: "Asset name and content are required" }
+      });
+    }
+
+    try {
+      return await runtime.saveAsset(request.query.fileName, request.body);
+    } catch (error) {
+      return reply.status(400).send({
+        error: {
+          code: "invalid_asset_upload",
+          message: error instanceof Error ? error.message : "Asset could not be saved"
+        }
+      });
+    }
   });
 
   server.get("/api/events", async (request, reply) => {

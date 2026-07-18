@@ -96,6 +96,14 @@ describe("light ProseMirror Markdown bridge", () => {
     expect(markdown).toContain("<mark>highlighted</mark>");
   });
 
+  it("preserves named highlight colors from the old editor syntax", () => {
+    const document = parseLightMarkdown("==blue::important==");
+    const text = document.firstChild?.firstChild;
+
+    expect(text?.marks.find((mark) => mark.type.name === "highlight")?.attrs.color).toBe("blue");
+    expect(serializeLightMarkdown(document)).toBe('<mark data-color="blue">important</mark>');
+  });
+
   it("preserves fenced code language, images, links, dividers, and blank documents", () => {
     const source = [
       "```mermaid",
@@ -118,5 +126,44 @@ describe("light ProseMirror Markdown bridge", () => {
     expect(markdown).toContain("[Internal](Projects/Idea.md)");
     expect(markdown).toContain("---");
     expect(serializeLightMarkdown(parseLightMarkdown(""))).toBe("");
+  });
+
+  it("recognizes old Rumi bookmark, file embed, and database embed syntax as blocks", () => {
+    const source = [
+      "https://rumi.md/docs",
+      "",
+      "![[.assets/guide.pdf]]",
+      "",
+      "```db",
+      "source: Projects.db.md",
+      "view: board",
+      "filter: status=open",
+      "```",
+      ""
+    ].join("\n");
+    const document = parseLightMarkdown(source);
+
+    expect(Array.from({ length: document.childCount }, (_, index) => document.child(index).type.name)).toEqual([
+      "bookmark",
+      "file_embed",
+      "database_embed"
+    ]);
+    const markdown = serializeLightMarkdown(document);
+    expect(markdown).toContain("https://rumi.md/docs");
+    expect(markdown).toContain("![[.assets/guide.pdf]]");
+    expect(markdown).toContain("source: Projects.db.md");
+    expect(markdown).toContain("view: board");
+  });
+
+  it("turns a standalone image into a selectable image block", () => {
+    const document = parseLightMarkdown('![Map](.assets/map.png "Architecture")');
+
+    expect(document.firstChild?.type.name).toBe("image_block");
+    expect(document.firstChild?.attrs).toMatchObject({
+      src: ".assets/map.png",
+      alt: "Map",
+      title: "Architecture"
+    });
+    expect(serializeLightMarkdown(document)).toBe('![Map](.assets/map.png "Architecture")');
   });
 });

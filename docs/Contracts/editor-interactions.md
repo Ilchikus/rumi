@@ -7,9 +7,10 @@ updated: "2026-07-18"
 ---
 # Editor Interactions
 
-The old Rumi editor is a behavioral reference, not an implementation dependency. The official
-editor keeps the user problem and expected result while using standard ProseMirror structures,
-Markdown as the durable representation, and server-owned workspace operations.
+The proven Rumi editor is the functional baseline for the official editor. Its ProseMirror schema,
+commands, plugins, NodeViews, and interaction styling are migrated together so the editing model is
+preserved. Browser/platform adapters replace its Electron and direct-filesystem calls; Markdown
+remains the durable representation and workspace operations remain server-owned.
 
 ## Behavior Map
 
@@ -27,10 +28,13 @@ Markdown as the durable representation, and server-owned workspace operations.
 | Reuse workspace assets | Insert, paste, or drop an image/PDF | The client uploads bytes through the API; the runtime chooses a collision-safe `.assets/` path and emits `asset.changed`; Markdown stores only the relative path. |
 | See linked resources at block level | Use standalone URLs, `![[file]]`, images, or `db` fences | The editor renders bookmark, file, image, and database-reference NodeViews while round-tripping the original Markdown syntax. |
 
-## Intentional Improvements Over The Old Editor
+## Migration Boundaries
 
-- Lists use standard nested list containers. The old flat `indent` attribute model lost structure
-  and made list behavior special-case heavy.
+- List items temporarily retain the proven editor's flat `indent` attribute model. This preserves
+  per-item handles and the established drag behavior: vertical position chooses a block gap, while
+  moving right chooses an allowed indent. Serialization still produces nested Markdown lists.
+- Handles use one fixed editor-gutter X-axis even when list content is indented. The editor and the
+  gutter to its left both activate the corresponding block handle.
 - Heading collapse mode and Mermaid view mode are presentation state, not document data.
 - The editor does not call filesystem or Electron APIs. Workspace assets go through runtime/API
   commands, so other clients can implement the same behavior.
@@ -40,6 +44,7 @@ Markdown as the durable representation, and server-owned workspace operations.
 
 ## Persistence Boundary
 
-Every document-changing action updates ProseMirror first. Serialization happens when the client
-requests the current draft for autosave. Markdown/frontmatter remain canonical, while selection,
-open menus, collapsed headings, and Mermaid display mode remain client state.
+Every document-changing action updates ProseMirror first. Serialization is deferred from the
+keystroke path and the client requests the current draft for autosave. Markdown/frontmatter remain
+canonical, while selection, open menus, collapsed headings, and Mermaid display mode remain client
+state.

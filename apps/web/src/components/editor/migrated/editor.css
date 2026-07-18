@@ -1,0 +1,1260 @@
+/* ProseMirror Editor Styles */
+.prosemirror-editor-wrapper {
+  min-height: 100%;
+  padding-bottom: 90vh;
+  cursor: text;
+}
+
+.prosemirror-editor {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.prosemirror-editor .ProseMirror {
+  outline: none;
+  min-height: 100%;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 8px content padding on all top-level blocks for visual spacing */
+.prosemirror-editor .ProseMirror > p,
+.prosemirror-editor .ProseMirror > h1,
+.prosemirror-editor .ProseMirror > h2,
+.prosemirror-editor .ProseMirror > h3,
+.prosemirror-editor .ProseMirror > blockquote,
+.prosemirror-editor .ProseMirror > pre,
+.prosemirror-editor .ProseMirror > table,
+.prosemirror-editor .ProseMirror > figure,
+.prosemirror-editor .ProseMirror > hr,
+.prosemirror-editor .ProseMirror > .heading-block,
+.prosemirror-editor .ProseMirror > .bookmark-block,
+.prosemirror-editor .ProseMirror > .mermaid-block,
+.prosemirror-editor .ProseMirror > .bullet-item,
+.prosemirror-editor .ProseMirror > .numbered-item,
+.prosemirror-editor .ProseMirror > .task-item {
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  box-sizing: content-box;
+}
+
+
+.prosemirror-editor .ProseMirror h1 {
+  font-size: 2em;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.prosemirror-editor .ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.prosemirror-editor .ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Heading block spacing by level */
+.prosemirror-editor .ProseMirror > .heading-block.heading-level-1 {
+  margin-top: 32px;
+  margin-bottom: 8px;
+}
+
+.prosemirror-editor .ProseMirror > .heading-block.heading-level-2 {
+  margin-top: 24px;
+  margin-bottom: 6px;
+}
+
+.prosemirror-editor .ProseMirror > .heading-block.heading-level-3 {
+  margin-top: 16px;
+  margin-bottom: 4px;
+}
+
+.prosemirror-editor .ProseMirror > .heading-block:first-child {
+  margin-top: 0;
+}
+
+/* Collapsible Headings */
+.heading-block {
+  display: flex;
+  align-items: center;
+}
+
+.heading-caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  margin-left: 8px;
+  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  opacity: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s, background-color 0.1s;
+}
+
+.heading-caret svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  transform: rotate(0deg);
+}
+
+.heading-block.is-collapsed .heading-caret svg {
+  transform: rotate(-90deg);
+}
+
+/* Always visible when collapsed */
+.heading-block.is-collapsed .heading-caret {
+  opacity: 1;
+}
+
+/* Visible on hover when expanded */
+.heading-block:hover .heading-caret {
+  opacity: 1;
+}
+
+.heading-caret:hover {
+  background: hsl(var(--muted));
+}
+
+/* Section collapse animation.
+   max-height must be numeric in the base state so CSS can transition
+   in both directions (collapse and expand). 300px covers typical
+   paragraph/list/heading blocks; for taller content the animation
+   clips earlier but is still smooth for common cases. */
+.prosemirror-editor .ProseMirror > * {
+  overflow: hidden;
+  max-height: 300px;
+  transition: max-height 0.15s ease, margin-top 0.15s ease, margin-bottom 0.15s ease;
+}
+
+/* Override for heading blocks — they need more height room */
+.prosemirror-editor .ProseMirror > .heading-block,
+.prosemirror-editor .ProseMirror > .mermaid-block,
+.prosemirror-editor .ProseMirror > figure,
+.prosemirror-editor .ProseMirror > .code-block-wrapper,
+.prosemirror-editor .ProseMirror > table {
+  max-height: 2000px;
+}
+
+.pm-section-collapsed {
+  max-height: 0 !important;
+  overflow: hidden !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.prosemirror-editor .ProseMirror strong {
+  font-weight: 600;
+}
+
+.prosemirror-editor .ProseMirror em {
+  font-style: italic;
+}
+
+.prosemirror-editor .ProseMirror u {
+  text-decoration: underline;
+}
+
+.prosemirror-editor .ProseMirror s {
+  text-decoration: line-through;
+}
+
+.prosemirror-editor .ProseMirror code {
+  background-color: hsl(var(--muted));
+  padding: 0.2em 0.4em;
+  border-radius: 0.25em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.prosemirror-editor .ProseMirror-focused {
+  outline: none;
+}
+
+/* Lists */
+.prosemirror-editor .ProseMirror ul,
+.prosemirror-editor .ProseMirror ol {
+  margin: 0 0 0.75em 0;
+  padding-left: 1.5em;
+}
+
+.prosemirror-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.prosemirror-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.prosemirror-editor .ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.prosemirror-editor .ProseMirror li p {
+  margin: 0;
+}
+
+/* Nested lists */
+.prosemirror-editor .ProseMirror ul ul,
+.prosemirror-editor .ProseMirror ol ol,
+.prosemirror-editor .ProseMirror ul ol,
+.prosemirror-editor .ProseMirror ol ul {
+  margin: 0.25em 0;
+}
+
+/* Nested unordered list markers: disc → circle → square */
+.prosemirror-editor .ProseMirror ul ul {
+  list-style-type: circle;
+}
+
+.prosemirror-editor .ProseMirror ul ul ul {
+  list-style-type: square;
+}
+
+.prosemirror-editor .ProseMirror ul ul ul ul {
+  list-style-type: disc;
+}
+
+/* Nested ordered list markers: decimal → lower-alpha → lower-roman */
+.prosemirror-editor .ProseMirror ol ol {
+  list-style-type: lower-alpha;
+}
+
+.prosemirror-editor .ProseMirror ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.prosemirror-editor .ProseMirror ol ol ol ol {
+  list-style-type: decimal;
+}
+
+/* Blockquote */
+.prosemirror-editor .ProseMirror blockquote {
+  margin: 0 0 0.75em 0;
+  padding-left: 1em;
+  border-left: 3px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.prosemirror-editor .ProseMirror blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Code block */
+.prosemirror-editor .ProseMirror pre {
+  background-color: hsl(var(--muted));
+  padding: 1em;
+  border-radius: 0.5em;
+  margin: 0 0 0.75em 0;
+  overflow-x: auto;
+}
+
+.prosemirror-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875em;
+}
+
+/* Tables */
+.prosemirror-editor .ProseMirror table {
+  border-collapse: collapse;
+  margin: 0 0 0.75em 0;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.prosemirror-editor .ProseMirror th,
+.prosemirror-editor .ProseMirror td {
+  border: 1px solid hsl(var(--border));
+  padding: 8px 12px;
+  vertical-align: top;
+  position: relative;
+}
+
+.prosemirror-editor .ProseMirror th {
+  font-weight: 600;
+  background: hsl(var(--muted));
+  text-align: left;
+}
+
+.prosemirror-editor .ProseMirror .selectedCell {
+  background: hsl(213, 94%, 95%);
+}
+
+.prosemirror-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: hsl(222.2, 47.4%, 41.2%);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.prosemirror-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Code block toolbar */
+.prosemirror-editor .ProseMirror pre.code-block-wrapper {
+  position: relative;
+}
+
+.code-block-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 150ms;
+  z-index: 10;
+}
+
+.prosemirror-editor .ProseMirror pre.code-block-wrapper:hover .code-block-toolbar {
+  opacity: 1;
+}
+
+.code-block-lang-select {
+  appearance: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  outline: none;
+}
+
+.code-block-lang-select:focus {
+  border-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.code-block-copy-btn {
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+.code-block-copy-btn:hover {
+  background: hsl(var(--accent));
+}
+
+/* highlight.js syntax theme (minimal) */
+.prosemirror-editor .ProseMirror pre code .hljs-keyword,
+.prosemirror-editor .ProseMirror pre code .hljs-selector-tag,
+.prosemirror-editor .ProseMirror pre code .hljs-built_in {
+  color: #8959a8;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-string,
+.prosemirror-editor .ProseMirror pre code .hljs-addition {
+  color: #718c00;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-number,
+.prosemirror-editor .ProseMirror pre code .hljs-literal {
+  color: #f5871f;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-comment,
+.prosemirror-editor .ProseMirror pre code .hljs-quote {
+  color: #8e908c;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-title,
+.prosemirror-editor .ProseMirror pre code .hljs-section {
+  color: #4271ae;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-attr,
+.prosemirror-editor .ProseMirror pre code .hljs-attribute {
+  color: #c82829;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-type,
+.prosemirror-editor .ProseMirror pre code .hljs-name,
+.prosemirror-editor .ProseMirror pre code .hljs-tag {
+  color: #c82829;
+}
+
+.prosemirror-editor .ProseMirror pre code .hljs-deletion {
+  color: #c82829;
+}
+
+/* Bookmark */
+.prosemirror-editor .ProseMirror .bookmark-block {
+  margin: 0 0 0.75em 0;
+}
+
+.bookmark-card {
+  display: flex;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 150ms;
+}
+
+.bookmark-card:hover {
+  border-color: hsl(var(--muted-foreground));
+}
+
+.bookmark-text {
+  flex: 1;
+  padding: 12px 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bookmark-title {
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--foreground));
+}
+
+.bookmark-description {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.bookmark-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.bookmark-favicon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.bookmark-empty {
+  padding: 12px 14px;
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+}
+
+/* Bookmark wrapper for toolbar positioning */
+.prosemirror-editor .ProseMirror .bookmark-block .bookmark-wrapper {
+  position: relative;
+}
+
+/* Bookmark toolbar */
+.bookmark-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  background: hsl(var(--background) / 0.9);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 150ms;
+  z-index: 10;
+}
+
+.prosemirror-editor .ProseMirror .bookmark-block:hover .bookmark-toolbar,
+.prosemirror-editor .ProseMirror .bookmark-block.ProseMirror-selectednode .bookmark-toolbar {
+  opacity: 1;
+}
+
+.bookmark-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  transition: background 150ms, color 150ms;
+}
+
+.bookmark-toolbar-btn:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+/* Bookmark URL input */
+.bookmark-input-container {
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: hsl(var(--muted) / 0.5);
+}
+
+.bookmark-url-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  color: hsl(var(--foreground));
+  outline: none;
+}
+
+.bookmark-url-input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Horizontal rule — 1 line-height tall, border centered via ::after */
+.prosemirror-editor .ProseMirror hr {
+  border: none;
+  height: 1.5em;
+  position: relative;
+  margin: 0 1.5em 0 0;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.prosemirror-editor .ProseMirror hr::after {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: hsl(var(--border));
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.prosemirror-editor .ProseMirror hr.ProseMirror-selectednode {
+  background: hsl(213, 94%, 95%);
+  outline: none;
+}
+
+.prosemirror-editor .ProseMirror hr.ProseMirror-selectednode::after {
+  background: hsl(213, 70%, 72%);
+}
+
+/* Links */
+.prosemirror-editor .ProseMirror a {
+  color: hsl(222.2 47.4% 41.2%);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.prosemirror-editor .ProseMirror a:hover {
+  color: hsl(222.2 47.4% 31.2%);
+}
+
+/* Task lists */
+.prosemirror-editor .ProseMirror ul.task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+  margin: 0.25em 0;
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item > label {
+  display: flex;
+  align-items: center;
+  margin-top: 0.2em;
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item .task-content {
+  flex: 1;
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item .task-content p {
+  margin: 0;
+}
+
+/* Flat list items */
+.prosemirror-editor .ProseMirror .bullet-item,
+.prosemirror-editor .ProseMirror .numbered-item,
+.prosemirror-editor .ProseMirror .task-item {
+  margin: 0.25em 0;
+  padding-left: 1.5em;
+  position: relative;
+}
+
+/* Indentation levels for flat list items */
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="1"],
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"],
+.prosemirror-editor .ProseMirror .task-item[data-indent="1"] {
+  margin-left: 1.5em;
+}
+
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="2"],
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="2"],
+.prosemirror-editor .ProseMirror .task-item[data-indent="2"] {
+  margin-left: 3em;
+}
+
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="3"],
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"],
+.prosemirror-editor .ProseMirror .task-item[data-indent="3"] {
+  margin-left: 4.5em;
+}
+
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="4"],
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="4"],
+.prosemirror-editor .ProseMirror .task-item[data-indent="4"] {
+  margin-left: 6em;
+}
+
+/* Bullet item markers */
+.prosemirror-editor .ProseMirror .bullet-item::before {
+  content: "•";
+  position: absolute;
+  left: 0.25em;
+  color: hsl(var(--foreground));
+}
+
+/* Alternating bullet styles by indent level */
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="1"]::before {
+  content: "◦";
+}
+
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="2"]::before {
+  content: "▪";
+}
+
+.prosemirror-editor .ProseMirror .bullet-item[data-indent="3"]::before {
+  content: "•";
+}
+
+/* Numbered item - CSS counters for auto-numbering */
+.prosemirror-editor .ProseMirror {
+  counter-reset: numbered-item-0 numbered-item-1 numbered-item-2 numbered-item-3;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="0"] {
+  counter-increment: numbered-item-0;
+  counter-reset: numbered-item-1 numbered-item-2 numbered-item-3;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"] {
+  counter-increment: numbered-item-1;
+  counter-reset: numbered-item-2 numbered-item-3;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="2"] {
+  counter-increment: numbered-item-2;
+  counter-reset: numbered-item-3;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"] {
+  counter-increment: numbered-item-3;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item::before {
+  position: absolute;
+  left: 0;
+  color: hsl(var(--foreground));
+  min-width: 1.25em;
+  text-align: right;
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="0"]::before {
+  content: counter(numbered-item-0) ".";
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"]::before {
+  content: counter(numbered-item-1, lower-alpha) ".";
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="2"]::before {
+  content: counter(numbered-item-2, lower-roman) ".";
+}
+
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"]::before {
+  content: counter(numbered-item-3) ".";
+}
+
+/* Reset counters when a non-numbered-item block appears */
+.prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"] {
+  counter-reset: numbered-item-0;
+  counter-increment: numbered-item-0;
+}
+
+/* Task item styling */
+.prosemirror-editor .ProseMirror .task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+  padding-left: 0;
+}
+
+.prosemirror-editor .ProseMirror .task-item .task-checkbox {
+  display: flex;
+  align-items: center;
+  margin-top: 0.15em;
+  flex-shrink: 0;
+}
+
+.prosemirror-editor .ProseMirror .task-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.prosemirror-editor .ProseMirror .task-item .task-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Highlight mark */
+.prosemirror-editor .ProseMirror mark {
+  border-radius: 0.2em;
+  padding: 0.1em 0.2em;
+}
+
+/* Slash commands menu */
+.slash-commands-menu {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+.slash-command-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.slash-command-item:hover,
+.slash-command-item.selected {
+  background-color: hsl(210, 40%, 96.1%);
+}
+
+.slash-command-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(210, 40%, 96.1%);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.slash-command-content {
+  flex: 1;
+}
+
+.slash-command-name {
+  font-weight: 500;
+  color: hsl(222.2, 84%, 4.9%);
+}
+
+.slash-command-description {
+  font-size: 12px;
+  color: hsl(215.4, 16.3%, 46.9%);
+}
+
+/* Selection toolbar */
+.selection-toolbar {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.toolbar-button:hover {
+  background-color: hsl(210, 40%, 96.1%) !important;
+}
+
+.highlight-btn:hover,
+.chevron-btn:hover {
+  background-color: hsl(210, 40%, 96.1%) !important;
+}
+
+.color-option:hover {
+  border-color: hsl(214.3, 31.8%, 81.4%) !important;
+}
+
+/* Placeholder when editor is empty */
+.prosemirror-editor .ProseMirror p.is-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  position: absolute;
+}
+
+/* Link popover */
+.link-popover {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.link-popover input:focus {
+  border-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.link-popover button:hover {
+  opacity: 0.9;
+}
+
+/* Link input in toolbar */
+.link-input-popup {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.link-input-popup input:focus {
+  border-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.link-btn:hover {
+  background-color: hsl(210, 40%, 96.1%) !important;
+}
+
+/* Link hover tooltip */
+.link-hover-tooltip button:hover {
+  background-color: hsl(210, 40%, 96.1%);
+}
+
+.link-edit-popover input:focus {
+  border-color: hsl(222.2, 47.4%, 41.2%);
+}
+
+.link-edit-popover button:hover {
+  opacity: 0.9;
+}
+
+/* @ mention menu */
+.at-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.at-mention-item:hover,
+.at-mention-item.selected {
+  background-color: hsl(210, 40%, 96.1%);
+}
+
+.at-mention-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.at-mention-item-name {
+  font-weight: 500;
+  color: hsl(222.2, 84%, 4.9%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.at-mention-item-path {
+  font-size: 12px;
+  color: hsl(215.4, 16.3%, 46.9%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Images */
+.prosemirror-editor .ProseMirror figure.image-block {
+  margin: 0 0 0.75em 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block[data-alignment="left"] {
+  align-items: flex-start;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block[data-alignment="center"] {
+  align-items: center;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block[data-alignment="full"] {
+  align-items: stretch;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block[data-alignment="full"] .image-wrapper {
+  display: block;
+  width: 100%;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block[data-alignment="full"] img {
+  width: 100%;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  background: hsl(var(--background) / 0.9);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block:hover .image-toolbar,
+.prosemirror-editor .ProseMirror figure.image-block.ProseMirror-selectednode .image-toolbar {
+  opacity: 1;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-align-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-align-btn:hover {
+  background: hsl(var(--accent));
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-align-btn.active {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-caption {
+  margin-top: 8px;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+  outline: none;
+  min-height: 1.4em;
+  max-width: 100%;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-caption:empty::before {
+  content: attr(placeholder);
+  color: hsl(var(--muted-foreground) / 0.5);
+  pointer-events: none;
+}
+
+.prosemirror-editor .ProseMirror figure.image-block .image-caption:focus {
+  color: hsl(var(--foreground));
+}
+
+/* File embeds */
+.prosemirror-editor .ProseMirror figure.file-block {
+  margin: 0 0 0.75em 0;
+}
+
+.prosemirror-editor .ProseMirror .file-card {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.prosemirror-editor .ProseMirror .file-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.prosemirror-editor .ProseMirror .file-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.prosemirror-editor .ProseMirror .file-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prosemirror-editor .ProseMirror .file-card-icon {
+  display: inline-flex;
+  color: hsl(var(--muted-foreground));
+  flex: 0 0 auto;
+}
+
+.prosemirror-editor .ProseMirror .file-card-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prosemirror-editor .ProseMirror .file-card-meta {
+  margin-top: 4px;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
+.prosemirror-editor .ProseMirror .file-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.prosemirror-editor .ProseMirror .file-open-btn:hover:not(:disabled) {
+  background: hsl(var(--accent));
+}
+
+.prosemirror-editor .ProseMirror .file-open-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.prosemirror-editor .ProseMirror .file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, hsl(var(--muted) / 0.55), hsl(var(--background)));
+}
+
+.prosemirror-editor .ProseMirror .file-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px hsl(0 0% 0% / 0.12);
+  background: white;
+}
+
+.prosemirror-editor .ProseMirror .file-preview-empty {
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+  padding: 28px 16px;
+}
+
+/* Mermaid Diagrams */
+.prosemirror-editor .ProseMirror .mermaid-block {
+  margin: 0 0 0.75em 0;
+}
+
+.mermaid-block-wrapper {
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: hsl(var(--muted) / 0.5);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.mermaid-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.mermaid-mode-buttons {
+  display: flex;
+  gap: 2px;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mermaid-mode-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  transition: background 150ms, color 150ms;
+}
+
+.mermaid-mode-btn:hover {
+  background: hsl(var(--accent));
+}
+
+.mermaid-mode-btn.active {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+.mermaid-content {
+  display: flex;
+  min-height: 200px;
+}
+
+.mermaid-editor {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.3);
+}
+
+.mermaid-textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: transparent;
+  color: hsl(var(--foreground));
+}
+
+.mermaid-textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.mermaid-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+}
+
+.mermaid-diagram {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-placeholder {
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+  text-align: center;
+}
+
+.mermaid-error {
+  color: hsl(var(--destructive));
+  font-size: 13px;
+  padding: 8px 12px;
+  background: hsl(var(--destructive) / 0.1);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Multi-block selection */
+.prosemirror-editor .ProseMirror .multi-block-selected {
+  background: hsl(213, 94%, 95%);
+  border-radius: 4px;
+}

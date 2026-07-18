@@ -29,11 +29,12 @@ Assemble the official Rumi block editor preset on top of the ProseMirror foundat
 
 - Replacing ProseMirror as the editor foundation.
 - Changing Markdown/frontmatter as the canonical file contract without a separate decision.
-- Copying the old editor implementation directly.
+- Refactoring the migrated editor internals before functional parity is established.
 
 ## Notes
 
-Use the old editor as behavioral reference only. Rebuild the preset around clean editor-core, editor-kit, and web adapter boundaries.
+Migrate the proven editor as one functional subsystem. Keep its editing behavior intact and isolate
+browser/backend differences behind adapters; refactor only after parity is established.
 
 ## Done When
 
@@ -42,13 +43,15 @@ Use the old editor as behavioral reference only. Rebuild the preset around clean
 
 ## Progress
 
-The old editor's behavior has now been inventoried into `Contracts/editor-interactions.md` and
-rebuilt behind smaller action, paste, NodeView, and Markdown modules. The preset includes Markdown
-and slash creation, per-item block handles, bulk selection, drag/indent, full block conversion,
-selection formatting with named highlights and link editing, `@` document links, collapsible
-headings, code language/copy controls, lazy Mermaid preview, table row/column controls, bookmark,
-file, image, and database-reference NodeViews, plus server-owned image/PDF upload and delivery.
+The proven editor's schema, Markdown pipeline, key bindings, input rules, interaction plugins,
+NodeViews, and styling now run inside the new web client. The preset includes Markdown and slash
+creation, per-item block handles, bulk and area selection, block-gap drag/reorder with optional
+rightward list indentation, block conversion, selection formatting, link editing, `@` document
+links, collapsible headings, code and Mermaid controls, table controls, and bookmark, file, image,
+and database NodeViews.
 
-The old flat-list model was intentionally replaced by standard nested lists. Database relations
-remain out of scope pending Decision 019. The editor preset has passed unit/roundtrip coverage, the
-full repository check, a production build, and an authenticated real-browser interaction smoke.
+Electron and direct-filesystem dependencies were replaced with client adapters for internal
+navigation, asset URLs/uploads, messages, and the new database API. The flat-list indent model is
+kept during this parity phase and still serializes to nested Markdown. Database relations remain out
+of scope pending Decision 019. Unit/roundtrip tests, production build, and real-browser drag,
+indent, gutter-handle, slash-menu, and autosave checks cover the migrated integration.

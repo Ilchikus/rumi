@@ -976,11 +976,13 @@ export function App(): ReactElement {
                 <Suspense fallback={<p className="py-4 text-sm text-muted-foreground">Loading editor…</p>}>
                   <RumiBlockEditor
                     ref={editorRef}
+                    api={api}
                     documentKey={page.path}
                     markdown={draftBody}
                     documents={editorDocuments}
                     onOpenDocument={openDocumentLink}
                     onUploadAsset={uploadEditorAsset}
+                    onMessage={setMessage}
                     onDirty={() => {
                       editorRevisionRef.current += 1;
                       setEditorRevision(editorRevisionRef.current);

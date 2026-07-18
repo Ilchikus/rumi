@@ -675,18 +675,19 @@ function isLoopbackProxyRequest(request: FastifyRequest): boolean {
 
 function loginThrottleKey(request: FastifyRequest): string {
   const proxyAddress = firstHeaderValue(request.headers["x-rumi-client-address"]);
+  const trustedProxyAddress = proxyAddress ?? request.ip;
   const cloudflareAddress = firstHeaderValue(request.headers["cf-connecting-ip"]);
 
   if (
     isSecureRequest(request) &&
-    isLoopbackAddress(proxyAddress) &&
+    isLoopbackAddress(trustedProxyAddress) &&
     cloudflareAddress &&
     isIP(normalizeAddress(cloudflareAddress)) !== 0
   ) {
     return `cloudflare:${normalizeAddress(cloudflareAddress)}`;
   }
 
-  return `client:${normalizeAddress(proxyAddress ?? request.ip)}`;
+  return `client:${normalizeAddress(trustedProxyAddress)}`;
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {

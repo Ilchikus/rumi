@@ -186,6 +186,41 @@ describe("Rumi instance authentication", () => {
     await server.close();
   });
 
+  it("throttles direct Cloudflare Tunnel clients independently behind loopback", async () => {
+    const root = await tempWorkspace();
+    const statePath = await tempAuthStatePath(root);
+    await setLocalPassword({ workspacePath: root, statePath, username: USERNAME, password: PASSWORD });
+    const { server } = await createRumiServer({
+      workspacePath: root,
+      auth: { mode: "password", statePath }
+    });
+    const tunnelHeaders = {
+      origin: "https://dev-docs.rumi.md",
+      "x-forwarded-host": "dev-docs.rumi.md",
+      "x-forwarded-proto": "https"
+    };
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await server.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        headers: { ...tunnelHeaders, "cf-connecting-ip": "198.51.100.10" },
+        payload: { username: "someone-else", password: PASSWORD }
+      });
+      expect(response.statusCode).toBe(401);
+    }
+
+    const otherClient = await server.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { ...tunnelHeaders, "cf-connecting-ip": "198.51.100.11" },
+      payload: { username: USERNAME, password: PASSWORD }
+    });
+    expect(otherClient.statusCode).toBe(200);
+
+    await server.close();
+  });
+
   it("refuses to send a password over non-loopback HTTP", async () => {
     const root = await tempWorkspace();
     const statePath = await tempAuthStatePath(root);

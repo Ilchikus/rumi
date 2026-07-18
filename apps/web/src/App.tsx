@@ -187,7 +187,7 @@ export function App(): ReactElement {
 
   useEffect(() => {
     const handleSearchShortcut = (event: globalThis.KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && (event.key.toLocaleLowerCase() === "k" || (event.shiftKey && event.key.toLocaleLowerCase() === "f"))) {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLocaleLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
       }

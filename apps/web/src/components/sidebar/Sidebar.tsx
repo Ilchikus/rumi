@@ -268,7 +268,7 @@ export function Sidebar({
         </div>
       </header>
 
-      <div className="min-h-0 overflow-auto p-2" onContextMenu={openRootMenu}>
+      <div className="min-h-0 overflow-y-auto overscroll-contain p-2" onContextMenu={openRootMenu}>
         {tree ? (
           <div className="space-y-0.5 pb-8">
             <CreateSlot

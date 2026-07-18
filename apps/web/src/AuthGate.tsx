@@ -16,7 +16,6 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
 
   const loadSession = async () => {
     setState({ status: "loading" });
@@ -62,19 +61,6 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
       setLoginError(errorMessage(error));
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const logout = async () => {
-    setLoggingOut(true);
-
-    try {
-      const session = await api.logout();
-      setState({ status: "ready", session });
-    } catch (error) {
-      setState({ status: "error", message: errorMessage(error) });
-    } finally {
-      setLoggingOut(false);
     }
   };
 
@@ -152,24 +138,7 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
     );
   }
 
-  return (
-    <>
-      {children}
-      {state.session.mode === "password" && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="fixed bottom-3 right-3 z-50 bg-background/95 shadow-sm"
-          disabled={loggingOut}
-          onClick={() => void logout()}
-          title={`Signed in as ${state.session.user?.username ?? "user"}`}
-        >
-          {loggingOut ? "Signing out…" : "Sign out"}
-        </Button>
-      )}
-    </>
-  );
+  return <>{children}</>;
 }
 
 function errorMessage(error: unknown): string {

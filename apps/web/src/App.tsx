@@ -4,9 +4,17 @@ import { SidebarSimple } from "@phosphor-icons/react";
 import { RumiApiClient } from "@rumi/api-client";
 import type { PageDocument, RumiEvent, SavePageResult, WorkspaceNode } from "@rumi/contracts";
 import { LightProseMirrorEditor, type LightProseMirrorEditorHandle } from "./components/editor/LightProseMirrorEditor";
+import { PageProperties } from "./components/editor/PageProperties";
+import { pageTitleFromPath } from "./components/editor/pagePresentation";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
+import {
+  clearLastOpenedPage,
+  findWorkspaceNode,
+  readLastOpenedPage,
+  writeLastOpenedPage
+} from "./lib/lastOpenedPage";
 import { cn } from "./lib/utils";
 
 type LoadState = "idle" | "loading" | "error";
@@ -18,10 +26,12 @@ const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 520;
 const MOBILE_SIDEBAR_TRANSITION_MS = 200;
+const AUTOSAVE_DELAY_MS = 800;
 
 export function App(): ReactElement {
   const api = useMemo(() => new RumiApiClient(), []);
   const [workspaceName, setWorkspaceName] = useState("Rumi");
+  const [workspaceRootPath, setWorkspaceRootPath] = useState("");
   const [tree, setTree] = useState<WorkspaceNode | null>(null);
   const [selection, setSelection] = useState<SidebarSelection | null>(null);
   const [page, setPage] = useState<PageDocument | null>(null);
@@ -29,6 +39,7 @@ export function App(): ReactElement {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
+  const [editorRevision, setEditorRevision] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSavedSidebarCollapsed());
   const [sidebarMounted, setSidebarMounted] = useState(() => !sidebarCollapsed);
@@ -39,13 +50,16 @@ export function App(): ReactElement {
   const saveStateRef = useRef<SaveState>("idle");
   const selectionRef = useRef<SidebarSelection | null>(null);
   const editorRef = useRef<LightProseMirrorEditorHandle | null>(null);
+  const editorRevisionRef = useRef(0);
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
   const openRequestIdRef = useRef(0);
+  const restoredWorkspaceRef = useRef<string | null>(null);
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
+  const pageTitle = page ? pageTitleFromPath(page.path, page.kind) : null;
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -54,6 +68,7 @@ export function App(): ReactElement {
     try {
       const [workspace, nextTree] = await Promise.all([api.getWorkspace(), api.getTree()]);
       setWorkspaceName(workspace.name);
+      setWorkspaceRootPath(workspace.rootPath);
       setTree(nextTree);
       setLoadState("idle");
     } catch (error) {
@@ -249,6 +264,40 @@ export function App(): ReactElement {
     [isNarrow, loadPage]
   );
 
+  useEffect(() => {
+    if (!tree || !workspaceRootPath || restoredWorkspaceRef.current === workspaceRootPath) {
+      return;
+    }
+
+    restoredWorkspaceRef.current = workspaceRootPath;
+    const savedPage = readLastOpenedPage(window.localStorage, workspaceRootPath);
+
+    if (!savedPage) {
+      return;
+    }
+
+    const node = findWorkspaceNode(tree, savedPage.nodePath);
+
+    if (!node || openPathForNode(node) !== savedPage.openPath) {
+      clearLastOpenedPage(window.localStorage, workspaceRootPath);
+      return;
+    }
+
+    void openNode(node);
+  }, [openNode, tree, workspaceRootPath]);
+
+  useEffect(() => {
+    if (!workspaceRootPath || !page || !selection || selection.openPath !== page.path) {
+      return;
+    }
+
+    writeLastOpenedPage(window.localStorage, workspaceRootPath, {
+      nodePath: selection.nodePath,
+      openPath: page.path,
+      kind: selection.kind
+    });
+  }, [page, selection, workspaceRootPath]);
+
   const refreshAfterMutation = useCallback(
     async (openPath?: string | null) => {
       await loadTree();
@@ -257,7 +306,11 @@ export function App(): ReactElement {
         const nextPage = await loadPage(openPath);
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
-        setSelection({ nodePath: openPath, openPath, kind: "page" });
+        setSelection({
+          nodePath: openPath,
+          openPath: nextPage.path,
+          kind: pageKindToNodeKind(nextPage.kind)
+        });
       }
     },
     [loadPage, loadTree]
@@ -359,6 +412,7 @@ export function App(): ReactElement {
           setPage(null);
           setDraftBody("");
           setSelection(null);
+          clearLastOpenedPage(window.localStorage, workspaceRootPath);
         }
 
         setMessage(`Deleted ${node.path}`);
@@ -369,7 +423,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, clearPageLoadCache, loadTree]
+    [api, clearPageLoadCache, loadTree, workspaceRootPath]
   );
 
   const moveNode = useCallback(
@@ -446,6 +500,7 @@ export function App(): ReactElement {
     setMessage("");
 
     const markdownBody = getCurrentDraftBody();
+    const savingRevision = editorRevisionRef.current;
 
     try {
       const result: SavePageResult = await api.savePage({
@@ -453,13 +508,17 @@ export function App(): ReactElement {
         baseVersion: page.version,
         frontmatter: page.frontmatter,
         markdownBody,
-        reason: "manual-save"
+        reason: "editor-autosave"
       });
+
+      if (pageRef.current?.path !== page.path) {
+        return;
+      }
 
       if (result.status === "conflict") {
         forgetCachedPage(page.path);
         setSaveState("conflict");
-        setMessage("This page changed on disk. Reload it before saving again.");
+        setMessage("This page changed on disk. Reopen it from the sidebar before editing again.");
         return;
       }
 
@@ -472,27 +531,37 @@ export function App(): ReactElement {
 
       setPage(savedPage);
       cacheResolvedPage(savedPage);
-      editorRef.current?.markClean(markdownBody);
-      setDraftBody(markdownBody);
-      setSaveState("saved");
-      setMessage("Saved");
+
+      if (editorRevisionRef.current === savingRevision) {
+        editorRef.current?.markClean(markdownBody);
+        setDraftBody(markdownBody);
+        setSaveState("saved");
+      } else {
+        setSaveState("dirty");
+      }
+
       await loadTree();
     } catch (error) {
+      if (pageRef.current?.path !== page.path) {
+        return;
+      }
+
       setSaveState("error");
       setMessage(errorMessage(error));
     }
   }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, loadTree, page]);
 
-  const reloadPage = useCallback(async () => {
-    if (page) {
-      forgetCachedPage(page.path);
-      await openNode({
-        path: page.path,
-        name: page.path.split("/").at(-1) ?? page.path,
-        kind: "page"
-      });
+  useEffect(() => {
+    if (!page || saveState !== "dirty") {
+      return;
     }
-  }, [forgetCachedPage, openNode, page]);
+
+    const timeout = window.setTimeout(() => {
+      void savePage();
+    }, AUTOSAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [editorRevision, page, savePage, saveState]);
 
   const handlePageChangedEvent = useCallback(
     async (event: RumiEvent) => {
@@ -515,7 +584,7 @@ export function App(): ReactElement {
 
       if (saveStateRef.current === "dirty") {
         setSaveState("conflict");
-        setMessage("This page changed elsewhere. Reload it before saving again.");
+        setMessage("This page changed elsewhere. Reopen it from the sidebar before editing again.");
         return;
       }
 
@@ -608,11 +677,12 @@ export function App(): ReactElement {
         setPage(null);
         setDraftBody("");
         setSelection(null);
+        clearLastOpenedPage(window.localStorage, workspaceRootPath);
         setSaveState("idle");
         setMessage("The open item was deleted.");
       }
     },
-    [clearPageLoadCache, loadTree]
+    [clearPageLoadCache, loadTree, workspaceRootPath]
   );
 
   useEffect(() => {
@@ -637,7 +707,7 @@ export function App(): ReactElement {
   }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree]);
 
   return (
-    <main className="relative flex min-h-screen overflow-hidden bg-background text-foreground">
+    <main className="relative flex h-screen max-h-screen min-h-0 overflow-hidden bg-background text-foreground">
       {isNarrow && renderSidebar && (
         <button
           type="button"
@@ -653,11 +723,13 @@ export function App(): ReactElement {
       {renderSidebar ? (
         <div
           className={cn(
-            "relative z-40 h-screen min-h-0 shrink-0 bg-background",
-            isNarrow && [
-              "fixed inset-y-0 left-0 transform-gpu shadow-xl transition-transform duration-200 ease-out",
-              sidebarCollapsed ? "pointer-events-none -translate-x-full" : "translate-x-0"
-            ]
+            "z-40 h-screen min-h-0 shrink-0 bg-background",
+            isNarrow
+              ? [
+                  "fixed inset-y-0 left-0 transform-gpu shadow-xl transition-transform duration-200 ease-out",
+                  sidebarCollapsed ? "pointer-events-none -translate-x-full" : "translate-x-0"
+                ]
+              : "sticky top-0"
           )}
           style={{ width: visibleSidebarWidth }}
         >
@@ -717,33 +789,20 @@ export function App(): ReactElement {
 
       <section
         className={cn(
-          "grid min-h-screen min-w-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)] transition-[filter] duration-200 ease-out",
+          "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[filter] duration-200 ease-out",
           blurContent ? "blur-sm" : "blur-0"
         )}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Page</p>
-            <h2 className="truncate text-lg font-semibold">{page ? displayPath(page.path) : "Select a Markdown page"}</h2>
-          </div>
-          <div className="flex gap-2">
-            {page && (
-              <>
-                <Button type="button" variant="outline" onClick={reloadPage}>
-                  Reload
-                </Button>
-                <Button type="button" disabled={saveState === "saving"} onClick={savePage}>
-                  {saveState === "saving" ? "Saving" : "Save"}
-                </Button>
-              </>
-            )}
-          </div>
+        <div className="flex min-h-14 items-center gap-3 border-b border-border px-4 py-2.5">
+          <p className="min-w-0 truncate text-sm text-muted-foreground">
+            {page ? displayPath(page.path) : "Select a Markdown page"}
+          </p>
         </div>
 
         {message && (
           <div
             className={cn(
-              "mx-4 mt-3 rounded-md border px-3 py-2 text-sm",
+              "mx-4 mt-3 shrink-0 rounded-md border px-3 py-2 text-sm",
               saveState === "conflict" || saveState === "error" || loadState === "error"
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : "border-border bg-muted"
@@ -754,30 +813,31 @@ export function App(): ReactElement {
         )}
 
         {page ? (
-          <div className="grid min-h-0 gap-3 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <section className="min-h-0 overflow-auto rounded-md border border-border bg-muted/30 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Frontmatter</p>
-              <pre className="overflow-auto text-xs leading-5">{JSON.stringify(page.frontmatter, null, 2)}</pre>
-              <p className="mt-3 text-xs text-muted-foreground">version {page.version.slice(0, 10)}</p>
-            </section>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <article className="mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12">
+              <h1 className="break-words text-4xl font-bold leading-tight tracking-tight sm:text-[2.75rem]">
+                {pageTitle}
+              </h1>
 
-            <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
-              <span className="text-xs font-semibold uppercase text-muted-foreground">Markdown body</span>
-              <div className="min-h-[55vh] overflow-auto rounded-md border border-input bg-background">
+              <PageProperties frontmatter={page.frontmatter} />
+
+              <div className={Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
                 <LightProseMirrorEditor
                   ref={editorRef}
                   documentKey={page.path}
                   markdown={draftBody}
                   onDirty={() => {
-                  setSaveState("dirty");
-                  setMessage("");
-                }}
+                    editorRevisionRef.current += 1;
+                    setEditorRevision(editorRevisionRef.current);
+                    setSaveState("dirty");
+                    setMessage("");
+                  }}
                 />
               </div>
-            </section>
+            </article>
           </div>
         ) : (
-          <div className="grid place-items-center p-8 text-muted-foreground">
+          <div className="grid min-h-0 flex-1 place-items-center p-8 text-muted-foreground">
             <p>Open a page from the sidebar.</p>
           </div>
         )}

@@ -40,4 +40,21 @@ describe("light ProseMirror Markdown bridge", () => {
 
     expect(linkTargets).toEqual(["https://example.com"]);
   });
+
+  it("keeps nested ordered lists numbered through serialization", () => {
+    const source = [
+      "1. First",
+      "   1. Nested first",
+      "   2. Nested second",
+      "2. Second",
+      ""
+    ].join("\n");
+
+    const markdown = serializeLightMarkdown(parseLightMarkdown(source));
+
+    expect(markdown).toMatch(/1\. First/);
+    expect(markdown).toMatch(/\s+1\. Nested first/);
+    expect(markdown).toMatch(/\s+2\. Nested second/);
+    expect(markdown).toMatch(/2\. Second/);
+  });
 });

@@ -57,18 +57,18 @@
 
   .rumi-prosemirror {
     min-height: 55vh;
-    padding: 1.5rem;
+    padding: 0 0 8rem;
     outline: none;
     color: hsl(var(--foreground));
     line-height: 1.7;
   }
 
-  .rumi-prosemirror:focus {
-    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.16) inset;
-  }
-
   .rumi-prosemirror > * + * {
     margin-top: 0.75rem;
+  }
+
+  .rumi-prosemirror > :first-child {
+    margin-top: 0;
   }
 
   .rumi-prosemirror p {
@@ -102,6 +102,36 @@
   .rumi-prosemirror ol {
     margin: 0.75rem 0 0;
     padding-left: 1.5rem;
+    list-style-position: outside;
+  }
+
+  .rumi-prosemirror ul {
+    list-style-type: disc;
+  }
+
+  .rumi-prosemirror ul ul {
+    list-style-type: circle;
+  }
+
+  .rumi-prosemirror ul ul ul {
+    list-style-type: square;
+  }
+
+  .rumi-prosemirror ul ul ul ul {
+    list-style-type: disc;
+  }
+
+  .rumi-prosemirror ol {
+    list-style-type: decimal;
+  }
+
+  .rumi-prosemirror li::marker {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .rumi-prosemirror li > ul,
+  .rumi-prosemirror li > ol {
+    margin-top: 0.25rem;
   }
 
   .rumi-prosemirror li + li {

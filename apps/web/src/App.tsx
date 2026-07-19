@@ -4,7 +4,14 @@ import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCount
 import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
-import type { PageDocument, RumiEvent, SavePageResult, SearchWorkspaceResultItem, WorkspaceNode } from "@rumi/contracts";
+import type {
+  PageDocument,
+  RumiEvent,
+  SavePageReason,
+  SavePageResult,
+  SearchWorkspaceResultItem,
+  WorkspaceNode
+} from "@rumi/contracts";
 import type {
   RumiBlockEditorHandle,
   RumiDocumentLink
@@ -67,6 +74,7 @@ export function App(): ReactElement {
   const selectionRef = useRef<SidebarSelection | null>(null);
   const editorRef = useRef<RumiBlockEditorHandle | null>(null);
   const editorRevisionRef = useRef(0);
+  const saveReasonRef = useRef<SavePageReason>("editor-autosave");
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
   const openRequestIdRef = useRef(0);
@@ -119,6 +127,30 @@ export function App(): ReactElement {
   }, [selection]);
 
   const getCurrentDraftBody = useCallback(() => editorRef.current?.getMarkdown() ?? draftBodyRef.current, []);
+
+  const markPageDirty = useCallback((reason: SavePageReason) => {
+    saveReasonRef.current = reason;
+    editorRevisionRef.current += 1;
+    setEditorRevision(editorRevisionRef.current);
+    setSaveState("dirty");
+    setMessage("");
+  }, []);
+
+  const updatePageFrontmatter = useCallback(
+    (frontmatter: PageDocument["frontmatter"]) => {
+      const currentPage = pageRef.current;
+
+      if (!currentPage || currentPage.kind === "database") {
+        return;
+      }
+
+      const nextPage = { ...currentPage, frontmatter };
+      pageRef.current = nextPage;
+      setPage(nextPage);
+      markPageDirty("property-edit");
+    },
+    [markPageDirty]
+  );
 
   const clearPageLoadCache = useCallback(() => {
     pageLoadCacheGenerationRef.current += 1;
@@ -597,15 +629,17 @@ export function App(): ReactElement {
     setMessage("");
 
     const markdownBody = getCurrentDraftBody();
+    const frontmatter = page.frontmatter;
     const savingRevision = editorRevisionRef.current;
+    const saveReason = saveReasonRef.current;
 
     try {
       const result: SavePageResult = await api.savePage({
         path: page.path,
         baseVersion: page.version,
-        frontmatter: page.frontmatter,
+        frontmatter,
         markdownBody,
-        reason: "editor-autosave"
+        reason: saveReason
       });
 
       if (pageRef.current?.path !== page.path) {
@@ -621,19 +655,31 @@ export function App(): ReactElement {
 
       const savedPage = {
         ...page,
+        frontmatter,
         markdownBody,
         version: result.version,
         contentHash: result.contentHash
       };
 
-      setPage(savedPage);
       cacheResolvedPage(savedPage);
 
       if (editorRevisionRef.current === savingRevision) {
+        pageRef.current = savedPage;
+        setPage(savedPage);
         editorRef.current?.markClean(markdownBody);
         setDraftBody(markdownBody);
         setSaveState("saved");
       } else {
+        const currentPage = pageRef.current;
+        if (currentPage?.path === page.path) {
+          const dirtyPage = {
+            ...currentPage,
+            version: result.version,
+            contentHash: result.contentHash
+          };
+          pageRef.current = dirtyPage;
+          setPage(dirtyPage);
+        }
         setSaveState("dirty");
       }
 
@@ -969,7 +1015,11 @@ export function App(): ReactElement {
                   onMessage={setMessage}
                 />
               ) : (
-                <PageProperties frontmatter={page.frontmatter} />
+                <PageProperties
+                  frontmatter={page.frontmatter}
+                  disabled={saveState === "conflict"}
+                  onChange={updatePageFrontmatter}
+                />
               )}
 
               <div className={page.kind === "database" || Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
@@ -983,12 +1033,7 @@ export function App(): ReactElement {
                     onOpenDocument={openDocumentLink}
                     onUploadAsset={uploadEditorAsset}
                     onMessage={setMessage}
-                    onDirty={() => {
-                      editorRevisionRef.current += 1;
-                      setEditorRevision(editorRevisionRef.current);
-                      setSaveState("dirty");
-                      setMessage("");
-                    }}
+                    onDirty={() => markPageDirty("editor-autosave")}
                   />
                 </Suspense>
               </div>

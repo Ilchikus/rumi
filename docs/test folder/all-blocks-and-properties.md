@@ -32,8 +32,8 @@ The heading above verifies the smallest supported heading level.
 
 - Mini PC chassis
 - Memory
-  - SODIMM
-    - DDR5
+    - SODIMM
+        - DDR5
 - Storage
 
 ## Numbered list
@@ -48,7 +48,7 @@ The heading above verifies the smallest supported heading level.
 
 - [x] Choose a CPU
 - [ ] Install the operating system
-  - [ ] Configure backups
+    - [ ] Configure backups
 - [ ] Run a thermal test
 
 ## Quote
@@ -63,7 +63,7 @@ The heading above verifies the smallest supported heading level.
 
 
 | Model                | CPU            | RAM   | Storage | Wi-Fi    |
-| :------------------- | :------------: | ----: | :------ | :------- |
+| :--- | :---: | ---: | :--- | :--- |
 | Beelink EQ12         | Intel N100     | 16 GB | 500 GB  | Wi-Fi 6  |
 | Minisforum UM790 Pro | Ryzen 9 7940HS | 32 GB | 1 TB    | Wi-Fi 6E |
 

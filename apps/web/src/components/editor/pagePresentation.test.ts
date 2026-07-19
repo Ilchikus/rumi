@@ -90,7 +90,7 @@ describe("page editor presentation", () => {
     expect(markup).toContain("Add property");
   });
 
-  it("renders type-aware controls for editable page properties", () => {
+  it("renders calm property previews that toggle editing when clicked", () => {
     const markup = renderToStaticMarkup(
       createElement(PageProperties, {
         frontmatter: {
@@ -103,10 +103,13 @@ describe("page editor presentation", () => {
       })
     );
 
-    expect(markup).toContain('aria-label="Property text"');
-    expect(markup).toContain('aria-pressed="true"');
-    expect(markup).toContain('type="date"');
-    expect(markup).toContain('aria-label="Add list item"');
-    expect(markup).toContain('aria-label="Delete status"');
+    expect(markup).toContain('aria-label="Edit status"');
+    expect(markup).toContain('aria-label="Edit published"');
+    expect(markup).toContain('aria-label="Edit launched"');
+    expect(markup).toContain('aria-label="Edit tags"');
+    expect(markup).toContain("right-click for property options");
+    expect(markup).not.toContain('aria-label="Property text"');
+    expect(markup).not.toContain('aria-label="Type for status"');
+    expect(markup).not.toContain('aria-label="Delete status"');
   });
 });

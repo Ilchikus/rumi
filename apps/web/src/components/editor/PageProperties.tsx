@@ -1,11 +1,24 @@
 import type { FrontmatterRecord } from "@rumi/contracts";
+import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
+import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
+import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { Square } from "@phosphor-icons/react/dist/csr/Square";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from "../ui/dropdown-menu";
 import { formatPropertyValue } from "./pagePresentation";
 
 export type PagePropertyKind = "text" | "number" | "date" | "checkbox" | "list" | "json";
@@ -237,6 +250,8 @@ function PropertyRow({
   onRename
 }: PropertyRowProps): ReactElement {
   const kind = pagePropertyKind(value);
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
 
   if (!editable) {
     return (
@@ -252,46 +267,116 @@ function PropertyRow({
   }
 
   return (
-    <div className="group grid min-h-9 grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)_5.75rem_2rem] items-start gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/70 focus-within:bg-muted/70">
+    <div className="grid min-h-9 grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)] items-start gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/70 focus-within:bg-muted/70">
       <dt className="min-w-0">
-        <PropertyNameInput
-          name={name}
-          allNames={allNames}
-          disabled={disabled}
-          onRename={onRename}
-        />
+        {renaming ? (
+          <PropertyNameInput
+            name={name}
+            allNames={allNames}
+            disabled={disabled}
+            onFinish={() => setRenaming(false)}
+            onRename={onRename}
+          />
+        ) : (
+          <span
+            className="block h-7 truncate rounded px-1 py-1 text-xs text-muted-foreground"
+            title={`${name} — right-click for property options`}
+            onContextMenu={(event) => {
+              if (disabled) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setContextPoint({ x: event.clientX, y: event.clientY });
+            }}
+          >
+            {name}
+          </span>
+        )}
       </dt>
       <dd className="min-w-0">
-        <PropertyValueEditor kind={kind} value={value} disabled={disabled} onChange={onChange} />
+        <PropertyValueCell
+          name={name}
+          kind={kind}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
       </dd>
-      <select
-        aria-label={`Type for ${name}`}
-        className="h-7 w-full rounded border border-transparent bg-transparent px-1 text-xs text-muted-foreground outline-none hover:border-input focus:border-input focus:ring-2 focus:ring-ring disabled:opacity-50"
-        value={kind}
-        disabled={disabled}
-        onChange={(event) =>
-          onChange(convertPagePropertyValue(value, event.currentTarget.value as PagePropertyKind))
-        }
-      >
-        {PROPERTY_KIND_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-        aria-label={`Delete ${name}`}
-        title={`Delete ${name}`}
-        disabled={disabled}
-        onClick={onDelete}
-      >
-        <Trash size={14} aria-hidden="true" />
-      </Button>
+      {contextPoint && (
+        <PropertyContextMenu
+          point={contextPoint}
+          currentKind={kind}
+          onOpenChange={(open) => {
+            if (!open) setContextPoint(null);
+          }}
+          onRename={() => setRenaming(true)}
+          onChangeKind={(nextKind) => onChange(convertPagePropertyValue(value, nextKind))}
+          onDelete={onDelete}
+        />
+      )}
     </div>
+  );
+}
+
+interface PropertyContextMenuProps {
+  point: { x: number; y: number };
+  currentKind: PagePropertyKind;
+  onOpenChange: (open: boolean) => void;
+  onRename: () => void;
+  onChangeKind: (kind: PagePropertyKind) => void;
+  onDelete: () => void;
+}
+
+function PropertyContextMenu({
+  point,
+  currentKind,
+  onOpenChange,
+  onRename,
+  onChangeKind,
+  onDelete
+}: PropertyContextMenuProps): ReactElement {
+  return (
+    <DropdownMenu open onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-hidden="true"
+          tabIndex={-1}
+          className="fixed h-px w-px opacity-0"
+          style={{ left: point.x, top: point.y }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
+        <DropdownMenuItem onSelect={onRename}>
+          <PencilSimple size={16} aria-hidden="true" />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ArrowsClockwise size={16} aria-hidden="true" />
+            Change type
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {PROPERTY_KIND_OPTIONS.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                disabled={option.value === currentKind}
+                onSelect={() => onChangeKind(option.value)}
+              >
+                <span className="flex w-4 justify-center" aria-hidden="true">
+                  {option.value === currentKind && <Check size={14} />}
+                </span>
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
+          <Trash size={16} aria-hidden="true" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -299,24 +384,38 @@ interface PropertyNameInputProps {
   name: string;
   allNames: string[];
   disabled: boolean;
+  onFinish: () => void;
   onRename: (name: string) => void;
 }
 
-function PropertyNameInput({ name, allNames, disabled, onRename }: PropertyNameInputProps): ReactElement {
+function PropertyNameInput({
+  name,
+  allNames,
+  disabled,
+  onFinish,
+  onRename
+}: PropertyNameInputProps): ReactElement {
   const [draft, setDraft] = useState(name);
   const [error, setError] = useState("");
   const cancelledRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraft(name);
     setError("");
   }, [name]);
 
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
   const commit = () => {
     if (cancelledRef.current) {
       cancelledRef.current = false;
       setDraft(name);
       setError("");
+      onFinish();
       return;
     }
 
@@ -335,10 +434,12 @@ function PropertyNameInput({ name, allNames, disabled, onRename }: PropertyNameI
 
     setError("");
     onRename(nextName);
+    onFinish();
   };
 
   return (
     <input
+      ref={inputRef}
       aria-label={`Property name: ${name}`}
       aria-invalid={error ? true : undefined}
       title={error || name}
@@ -370,9 +471,50 @@ interface PropertyValueEditorProps {
   value: unknown;
   disabled: boolean;
   onChange: (value: unknown) => void;
+  onFinish: () => void;
 }
 
-function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueEditorProps): ReactElement {
+function PropertyValueCell({
+  name,
+  kind,
+  value,
+  disabled,
+  onChange
+}: Omit<PropertyValueEditorProps, "onFinish"> & { name: string }): ReactElement {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <PropertyValueEditor
+        kind={kind}
+        value={value}
+        disabled={disabled}
+        onChange={onChange}
+        onFinish={() => setEditing(false)}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Edit ${name}`}
+      className="min-h-7 w-full rounded px-1 py-1 text-left outline-none hover:bg-background focus:ring-2 focus:ring-ring disabled:opacity-50"
+      disabled={disabled}
+      onClick={() => setEditing(true)}
+    >
+      <PropertyValue value={value} />
+    </button>
+  );
+}
+
+function PropertyValueEditor({
+  kind,
+  value,
+  disabled,
+  onChange,
+  onFinish
+}: PropertyValueEditorProps): ReactElement {
   switch (kind) {
     case "checkbox": {
       const checked = value === true;
@@ -381,9 +523,14 @@ function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueE
         <button
           type="button"
           aria-pressed={checked}
-          className="flex h-7 w-full items-center gap-1.5 rounded px-1 text-left outline-none hover:bg-background focus:ring-2 focus:ring-ring disabled:opacity-50"
+          autoFocus
+          className="flex h-7 w-full items-center gap-1.5 rounded border border-input bg-background px-1 text-left outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           disabled={disabled}
-          onClick={() => onChange(!checked)}
+          onBlur={onFinish}
+          onClick={() => {
+            onChange(!checked);
+            onFinish();
+          }}
         >
           <Icon size={16} className="text-neutral-400" aria-hidden="true" />
           {checked ? "True" : "False"}
@@ -405,6 +552,7 @@ function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueE
               : { ok: false, message: "Enter a valid number." };
           }}
           onCommit={onChange}
+          onFinish={onFinish}
         />
       );
     case "date":
@@ -413,9 +561,14 @@ function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueE
           type="date"
           aria-label="Property date"
           className={propertyInputClassName}
+          autoFocus
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
-          onChange={(event) => onChange(event.currentTarget.value)}
+          onBlur={onFinish}
+          onChange={(event) => {
+            onChange(event.currentTarget.value);
+            onFinish();
+          }}
         />
       );
     case "list":
@@ -424,10 +577,11 @@ function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueE
           values={Array.isArray(value) ? value : []}
           disabled={disabled}
           onChange={onChange}
+          onFinish={onFinish}
         />
       );
     case "json":
-      return <JsonEditor value={value} disabled={disabled} onChange={onChange} />;
+      return <JsonEditor value={value} disabled={disabled} onChange={onChange} onFinish={onFinish} />;
     case "text":
       return (
         <DraftInput
@@ -436,6 +590,7 @@ function PropertyValueEditor({ kind, value, disabled, onChange }: PropertyValueE
           disabled={disabled}
           parse={(draft) => ({ ok: true, value: draft })}
           onCommit={onChange}
+          onFinish={onFinish}
         />
       );
   }
@@ -450,9 +605,18 @@ interface DraftInputProps {
   inputMode?: "decimal";
   parse: (draft: string) => ParseResult;
   onCommit: (value: unknown) => void;
+  onFinish: () => void;
 }
 
-function DraftInput({ ariaLabel, value, disabled, inputMode, parse, onCommit }: DraftInputProps): ReactElement {
+function DraftInput({
+  ariaLabel,
+  value,
+  disabled,
+  inputMode,
+  parse,
+  onCommit,
+  onFinish
+}: DraftInputProps): ReactElement {
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState("");
   const cancelledRef = useRef(false);
@@ -467,11 +631,13 @@ function DraftInput({ ariaLabel, value, disabled, inputMode, parse, onCommit }: 
       cancelledRef.current = false;
       setDraft(value);
       setError("");
+      onFinish();
       return;
     }
 
     if (draft === value) {
       setError("");
+      onFinish();
       return;
     }
 
@@ -483,6 +649,7 @@ function DraftInput({ ariaLabel, value, disabled, inputMode, parse, onCommit }: 
 
     setError("");
     onCommit(result.value);
+    onFinish();
   };
 
   return (
@@ -491,6 +658,7 @@ function DraftInput({ ariaLabel, value, disabled, inputMode, parse, onCommit }: 
       aria-invalid={error ? true : undefined}
       title={error || undefined}
       className={propertyInputClassName}
+      autoFocus
       value={draft}
       disabled={disabled}
       inputMode={inputMode}
@@ -518,9 +686,10 @@ interface ListEditorProps {
   values: unknown[];
   disabled: boolean;
   onChange: (value: unknown[]) => void;
+  onFinish: () => void;
 }
 
-function ListEditor({ values, disabled, onChange }: ListEditorProps): ReactElement {
+function ListEditor({ values, disabled, onChange, onFinish }: ListEditorProps): ReactElement {
   const [draft, setDraft] = useState("");
 
   const addDraft = () => {
@@ -531,7 +700,14 @@ function ListEditor({ values, disabled, onChange }: ListEditorProps): ReactEleme
   };
 
   return (
-    <div className="flex min-h-7 flex-wrap items-center gap-1 rounded border border-transparent px-1 hover:border-input focus-within:border-input focus-within:ring-2 focus-within:ring-ring">
+    <div
+      className="flex min-h-7 flex-wrap items-center gap-1 rounded border border-input bg-background px-1 focus-within:ring-2 focus-within:ring-ring"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          onFinish();
+        }
+      }}
+    >
       {values.map((item, index) => (
         <span key={index} className="inline-flex max-w-full items-center gap-0.5 rounded bg-background px-1.5 py-0.5 text-xs">
           <span className="truncate">{formatPropertyValue(item)}</span>
@@ -548,6 +724,7 @@ function ListEditor({ values, disabled, onChange }: ListEditorProps): ReactEleme
       ))}
       <input
         aria-label="Add list item"
+        autoFocus
         className="h-6 min-w-20 flex-1 bg-transparent px-0.5 text-sm outline-none placeholder:text-muted-foreground"
         value={draft}
         disabled={disabled}
@@ -560,7 +737,7 @@ function ListEditor({ values, disabled, onChange }: ListEditorProps): ReactEleme
             addDraft();
           } else if (event.key === "Escape") {
             setDraft("");
-            event.currentTarget.blur();
+            onFinish();
           }
         }}
       />
@@ -572,9 +749,10 @@ interface JsonEditorProps {
   value: unknown;
   disabled: boolean;
   onChange: (value: unknown) => void;
+  onFinish: () => void;
 }
 
-function JsonEditor({ value, disabled, onChange }: JsonEditorProps): ReactElement {
+function JsonEditor({ value, disabled, onChange, onFinish }: JsonEditorProps): ReactElement {
   const formattedValue = JSON.stringify(value, null, 2) ?? "null";
   const [draft, setDraft] = useState(formattedValue);
   const [error, setError] = useState("");
@@ -587,14 +765,16 @@ function JsonEditor({ value, disabled, onChange }: JsonEditorProps): ReactElemen
   const commit = () => {
     if (draft === formattedValue) {
       setError("");
-      return;
+      return true;
     }
 
     try {
       onChange(JSON.parse(draft) as unknown);
       setError("");
+      return true;
     } catch {
       setError("Enter valid JSON before leaving this field.");
+      return false;
     }
   };
 
@@ -604,19 +784,21 @@ function JsonEditor({ value, disabled, onChange }: JsonEditorProps): ReactElemen
       aria-invalid={error ? true : undefined}
       title={error || undefined}
       className="min-h-16 w-full resize-y rounded border border-input bg-background px-2 py-1 font-mono text-xs leading-5 outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+      autoFocus
       value={draft}
       disabled={disabled}
       onChange={(event) => setDraft(event.currentTarget.value)}
-      onBlur={commit}
+      onBlur={() => {
+        if (commit()) onFinish();
+      }}
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
-          commit();
-          event.currentTarget.blur();
+          if (commit()) onFinish();
         } else if (event.key === "Escape") {
           setDraft(formattedValue);
           setError("");
-          event.currentTarget.blur();
+          onFinish();
         }
       }}
     />
@@ -716,6 +898,10 @@ function PropertyValue({ value }: { value: unknown }): ReactElement {
         {value ? "True" : "False"}
       </span>
     );
+  }
+
+  if (Array.isArray(value) && value.length === 0) {
+    return <span className="text-muted-foreground">Empty</span>;
   }
 
   if (Array.isArray(value) && value.length > 0) {

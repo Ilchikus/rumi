@@ -92,7 +92,7 @@ describe("Rumi server API", () => {
   it("stores uploaded editor assets in the workspace with collision-safe names", async () => {
     const root = await tempWorkspace();
     const { server } = await createRumiServer({ workspacePath: root });
-    const payload = Buffer.from([137, 80, 78, 71]);
+    const payload = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
     const first = await server.inject({
       method: "POST",
@@ -119,6 +119,38 @@ describe("Rumi server API", () => {
       payload: Buffer.from("<svg/>")
     });
     expect(unsafe.statusCode).toBe(400);
+
+    await server.close();
+  });
+
+  it("uses the workspace upload policy as the HTTP request limit", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".rumi", "config.json"),
+      JSON.stringify({ uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] } }),
+      "utf8"
+    );
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    const pdf = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=document.pdf",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.from("%PDF-1.7")
+    });
+    const oversized = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=large.png",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.alloc(1024 * 1024 + 1)
+    });
+
+    expect(pdf.statusCode).toBe(400);
+    expect(pdf.json()).toMatchObject({
+      error: { message: expect.stringMatching(/not allowed by this workspace/) }
+    });
+    expect(oversized.statusCode).toBe(413);
 
     await server.close();
   });

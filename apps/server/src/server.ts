@@ -119,7 +119,7 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
   });
   server.addContentTypeParser(
     "application/octet-stream",
-    { parseAs: "buffer", bodyLimit: 50 * 1024 * 1024 },
+    { parseAs: "buffer", bodyLimit: runtime.assetPolicy.maxFileSizeBytes },
     (_request, body, done) => done(null, body)
   );
   const webRoot = await resolveWebRoot(options.webRoot);

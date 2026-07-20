@@ -68,6 +68,19 @@ import {
 } from "./reference-repair";
 import { WorkspaceTrash } from "./trash";
 import { WorkspaceIndex } from "./workspace-index";
+import {
+  assetContentMatchesFileType,
+  loadWorkspaceAssetPolicy,
+  SUPPORTED_ASSET_CONTENT_TYPES,
+  type WorkspaceAssetPolicy
+} from "./workspace-config";
+
+export {
+  MAX_ASSET_FILE_SIZE_MB,
+  SUPPORTED_ASSET_CONTENT_TYPES,
+  WORKSPACE_CONFIG_PATH,
+  type WorkspaceAssetPolicy
+} from "./workspace-config";
 
 export interface WorkspaceRuntimeOptions {
   rootPath: string;
@@ -116,6 +129,7 @@ export class RuntimeEventBus {
 export class WorkspaceRuntime {
   readonly rootPath: string;
   readonly name: string;
+  readonly assetPolicy: WorkspaceAssetPolicy;
   readonly events = new RuntimeEventBus();
   private readonly revisions: RevisionStore;
   private readonly trash: WorkspaceTrash;
@@ -123,9 +137,14 @@ export class WorkspaceRuntime {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private workspaceWatcher: WorkspaceWatcher | null = null;
 
-  private constructor(rootPath: string, workspaceIndex: WorkspaceIndex) {
+  private constructor(
+    rootPath: string,
+    workspaceIndex: WorkspaceIndex,
+    assetPolicy: WorkspaceAssetPolicy
+  ) {
     this.rootPath = rootPath;
     this.name = path.basename(rootPath);
+    this.assetPolicy = assetPolicy;
     this.revisions = new RevisionStore({ rootPath });
     this.trash = new WorkspaceTrash(rootPath);
     this.workspaceIndex = workspaceIndex;
@@ -143,7 +162,8 @@ export class WorkspaceRuntime {
       throw new Error(`Workspace root must be a directory: ${rootPath}`);
     }
 
-    return new WorkspaceRuntime(rootPath, await WorkspaceIndex.open(rootPath));
+    const assetPolicy = await loadWorkspaceAssetPolicy(rootPath);
+    return new WorkspaceRuntime(rootPath, await WorkspaceIndex.open(rootPath), assetPolicy);
   }
 
   info(): OpenWorkspaceResult {
@@ -163,7 +183,7 @@ export class WorkspaceRuntime {
     const extension = path.posix.extname(relPath).toLocaleLowerCase();
 
     if (
-      !SAFE_ASSET_CONTENT_TYPES[extension] ||
+      !SUPPORTED_ASSET_CONTENT_TYPES[extension] ||
       segments.some((segment) => segment.startsWith(".") && segment !== ".assets")
     ) {
       throw new Error(`Path is not a readable workspace asset: ${inputPath}`);
@@ -176,7 +196,7 @@ export class WorkspaceRuntime {
     return {
       path: relPath,
       fileName: path.basename(relPath),
-      contentType: SAFE_ASSET_CONTENT_TYPES[extension]!,
+      contentType: SUPPORTED_ASSET_CONTENT_TYPES[extension]!,
       data: await fs.readFile(absolutePath)
     };
   }
@@ -184,8 +204,18 @@ export class WorkspaceRuntime {
   async saveAsset(fileName: string, data: Uint8Array): Promise<SaveAssetResult> {
     const cleanedName = sanitizeAssetFileName(fileName);
     const extension = path.posix.extname(cleanedName).toLocaleLowerCase();
-    const contentType = SAFE_ASSET_CONTENT_TYPES[extension];
+    const contentType = SUPPORTED_ASSET_CONTENT_TYPES[extension];
     if (!contentType) throw new Error(`Unsupported asset type: ${extension || "unknown"}`);
+    if (!this.assetPolicy.allowedFileTypes.includes(extension)) {
+      throw new Error(`Asset type is not allowed by this workspace: ${extension}`);
+    }
+    if (data.byteLength === 0) throw new Error("Asset content is required");
+    if (data.byteLength > this.assetPolicy.maxFileSizeBytes) {
+      throw new Error(`Asset exceeds this workspace's ${this.assetPolicy.maxFileSizeMb} MB upload limit`);
+    }
+    if (!assetContentMatchesFileType(extension, data)) {
+      throw new Error(`Asset content does not match its ${extension} file type`);
+    }
 
     await fs.mkdir(this.resolveAbsolutePath(".assets"), { recursive: true });
     const desiredPath = path.posix.join(".assets", cleanedName);
@@ -1363,18 +1393,6 @@ export class WorkspaceRuntime {
     }
   }
 }
-
-const SAFE_ASSET_CONTENT_TYPES: Record<string, string> = {
-  ".avif": "image/avif",
-  ".bmp": "image/bmp",
-  ".gif": "image/gif",
-  ".ico": "image/x-icon",
-  ".jpeg": "image/jpeg",
-  ".jpg": "image/jpeg",
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".webp": "image/webp"
-};
 
 function sanitizeAssetFileName(fileName: string): string {
   const base = path.posix.basename(fileName.replace(/\\/gu, "/"));

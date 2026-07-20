@@ -22,6 +22,7 @@ describe("WorkspaceRuntime", () => {
       rootPath: root,
       name: path.basename(root)
     });
+    expect(runtime.assetPolicy).toMatchObject({ maxFileSizeMb: 50 });
   });
 
   it("rejects missing roots and files as roots", async () => {
@@ -66,7 +67,7 @@ describe("WorkspaceRuntime", () => {
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
     const events: RumiEventEnvelope[] = [];
     runtime.events.subscribe((event) => events.push(event));
-    const bytes = Buffer.from([137, 80, 78, 71]);
+    const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
     const first = await runtime.saveAsset("diagram.png", bytes);
     const second = await runtime.saveAsset("diagram.png", bytes);
@@ -79,6 +80,54 @@ describe("WorkspaceRuntime", () => {
     expect(events.map((entry) => entry.event.name)).toEqual(["asset.changed", "asset.changed"]);
     await expect(runtime.readAsset("Idea.md")).rejects.toThrow(/not a readable workspace asset/);
     await expect(runtime.saveAsset("script.svg", Buffer.from("<svg/>"))).rejects.toThrow(/Unsupported asset type/);
+  });
+
+  it("enforces workspace-specific upload types, size limits, and file signatures", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
+    await fs.mkdir(path.join(root, ".assets"), { recursive: true });
+    await fs.writeFile(path.join(root, ".assets", "existing.pdf"), "%PDF-1.7", "utf8");
+    await fs.writeFile(
+      path.join(root, ".rumi", "config.json"),
+      JSON.stringify({
+        uploads: {
+          maxFileSizeMb: 1,
+          allowedFileTypes: ["png", ".jpg"]
+        }
+      }),
+      "utf8"
+    );
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    expect(runtime.assetPolicy).toEqual({
+      maxFileSizeBytes: 1024 * 1024,
+      maxFileSizeMb: 1,
+      allowedFileTypes: [".png", ".jpg"]
+    });
+    await expect(runtime.readAsset(".assets/existing.pdf")).resolves.toMatchObject({
+      contentType: "application/pdf"
+    });
+    await expect(runtime.saveAsset("document.pdf", Buffer.from("%PDF-1.7"))).rejects.toThrow(
+      /not allowed by this workspace/
+    );
+    await expect(runtime.saveAsset("pretend.png", Buffer.from("not a png"))).rejects.toThrow(
+      /does not match/
+    );
+    await expect(runtime.saveAsset("large.png", Buffer.alloc(1024 * 1024 + 1))).rejects.toThrow(
+      /1 MB upload limit/
+    );
+  });
+
+  it("rejects invalid workspace upload policies", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".rumi", "config.json"),
+      JSON.stringify({ uploads: { maxFileSizeMb: 10, allowedFileTypes: [".svg"] } }),
+      "utf8"
+    );
+
+    await expect(WorkspaceRuntime.open({ rootPath: root })).rejects.toThrow(/unsupported upload type/);
   });
 
   it("opens a page with frontmatter, body, and hashes", async () => {
@@ -458,7 +507,10 @@ describe("WorkspaceRuntime", () => {
     await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "# Original" });
     await runtime.createFolder({ parentPath: "", name: "Projects", markdownBody: "# Projects" });
     await runtime.createDatabase({ parentPath: "", name: "Tasks" });
-    const asset = await runtime.saveAsset("diagram.png", Buffer.from([137, 80, 78, 71]));
+    const asset = await runtime.saveAsset(
+      "diagram.png",
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    );
 
     await runtime.deleteNode({ path: "Note.md" });
     await runtime.deleteNode({ path: "Projects", recursive: true });
@@ -503,7 +555,7 @@ describe("WorkspaceRuntime", () => {
     await runtime.restoreTrashItem({ id: assetItem!.id });
     await expect(fs.stat(path.join(root, "Projects", "Projects.index.md"))).resolves.toBeDefined();
     await expect(fs.readFile(path.join(root, ".assets", "diagram.png"))).resolves.toEqual(
-      Buffer.from([137, 80, 78, 71])
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
     );
     expect((await runtime.listTrash()).items).toEqual([]);
   });

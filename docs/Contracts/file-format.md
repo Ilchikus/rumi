@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # File Format
 
@@ -31,6 +31,25 @@ The root-level `<workspace-root-name>.index.md` is the workspace homepage: it is
 workspace root node, hidden as a separate sidebar child, and opens at `/`.
 For compatibility with existing Markdown folders, a plain root-level `index.md` is also recognized
 as the homepage when the workspace-named companion is absent.
+
+Workspace upload policy lives at `.rumi/config.json`. Rumi reads it when the workspace opens and
+refuses to start when the policy is malformed or attempts to enable an unsupported file type. For
+example:
+
+```json
+{
+  "uploads": {
+    "maxFileSizeMb": 10,
+    "allowedFileTypes": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"]
+  }
+}
+```
+
+The upload limit may be from 1 through 50 MB. Supported extensions are `.avif`, `.bmp`, `.gif`,
+`.ico`, `.jpeg`, `.jpg`, `.pdf`, `.png`, and `.webp`; a workspace can enable any subset, including
+an empty list to disable uploads. Rumi verifies uploaded bytes against the declared file type in
+addition to checking the filename extension. Existing workspace assets remain readable when a type
+is removed from the upload allowlist. Restart the workspace server after changing this configuration.
 
 SQLite index data is rebuildable.
 

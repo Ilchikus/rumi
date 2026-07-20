@@ -2,6 +2,7 @@ import type {
   DatabasePropertyDefinition,
   DatabasePropertyOption,
   DatabasePropertyOptionColor,
+  DatabasePropertyType,
   FrontmatterRecord,
   PageDatabaseContext
 } from "@rumi/contracts";
@@ -43,6 +44,18 @@ export interface PagePropertiesProps {
     option: string,
     color: DatabasePropertyOptionColor
   ) => Promise<boolean>;
+  onRenameDatabaseOption?: (
+    property: string,
+    option: string,
+    newName: string
+  ) => Promise<boolean>;
+  onDeleteDatabaseOption?: (property: string, option: string) => Promise<boolean>;
+  onRenameDatabaseProperty?: (property: string, newName: string) => Promise<boolean>;
+  onChangeDatabasePropertyType?: (
+    property: string,
+    type: DatabasePropertyType
+  ) => Promise<boolean>;
+  onDeleteDatabaseProperty?: (property: string) => Promise<boolean>;
 }
 
 const PROPERTY_KIND_OPTIONS: ReadonlyArray<{ value: PagePropertyKind; label: string }> = [
@@ -52,6 +65,18 @@ const PROPERTY_KIND_OPTIONS: ReadonlyArray<{ value: PagePropertyKind; label: str
   { value: "checkbox", label: "Checkbox" },
   { value: "list", label: "List" },
   { value: "json", label: "JSON" }
+];
+
+const DATABASE_PROPERTY_KIND_OPTIONS: ReadonlyArray<{
+  value: DatabasePropertyType;
+  label: string;
+}> = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "select", label: "Select" },
+  { value: "multi-select", label: "Multi-select" }
 ];
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -166,7 +191,12 @@ export function PageProperties({
   disabled = false,
   onChange,
   onCreateDatabaseOption,
-  onChangeDatabaseOptionColor
+  onChangeDatabaseOptionColor,
+  onRenameDatabaseOption,
+  onDeleteDatabaseOption,
+  onRenameDatabaseProperty,
+  onChangeDatabasePropertyType,
+  onDeleteDatabaseProperty
 }: PagePropertiesProps): ReactElement | null {
   const schemaPropertyNames = database ? Object.keys(database.schema.properties) : [];
   const propertyNames = [
@@ -245,6 +275,21 @@ export function PageProperties({
               editable={editable}
               onDelete={() => deleteProperty(name)}
               onRename={(nextName) => renameProperty(name, nextName)}
+              onRenameSchemaProperty={
+                onRenameDatabaseProperty
+                  ? (nextName) => onRenameDatabaseProperty(name, nextName)
+                  : undefined
+              }
+              onChangeSchemaPropertyType={
+                onChangeDatabasePropertyType
+                  ? (type) => onChangeDatabasePropertyType(name, type)
+                  : undefined
+              }
+              onDeleteSchemaProperty={
+                onDeleteDatabaseProperty
+                  ? () => onDeleteDatabaseProperty(name)
+                  : undefined
+              }
               onChange={(nextValue) => updateProperty(name, nextValue)}
               onCreateOption={
                 onCreateDatabaseOption
@@ -254,6 +299,16 @@ export function PageProperties({
               onChangeOptionColor={
                 onChangeDatabaseOptionColor
                   ? (option, color) => onChangeDatabaseOptionColor(name, option, color)
+                  : undefined
+              }
+              onRenameOption={
+                onRenameDatabaseOption
+                  ? (option, newName) => onRenameDatabaseOption(name, option, newName)
+                  : undefined
+              }
+              onDeleteOption={
+                onDeleteDatabaseOption
+                  ? (option) => onDeleteDatabaseOption(name, option)
                   : undefined
               }
             />
@@ -286,8 +341,13 @@ interface PropertyRowProps {
   onChange: (value: unknown) => void;
   onDelete: () => void;
   onRename: (name: string) => void;
+  onRenameSchemaProperty?: ((name: string) => Promise<boolean>) | undefined;
+  onChangeSchemaPropertyType?: ((type: DatabasePropertyType) => Promise<boolean>) | undefined;
+  onDeleteSchemaProperty?: (() => Promise<boolean>) | undefined;
   onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
   onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
+  onRenameOption?: ((option: string, newName: string) => Promise<boolean>) | undefined;
+  onDeleteOption?: ((option: string) => Promise<boolean>) | undefined;
 }
 
 function PropertyRow({
@@ -300,8 +360,13 @@ function PropertyRow({
   onChange,
   onDelete,
   onRename,
+  onRenameSchemaProperty,
+  onChangeSchemaPropertyType,
+  onDeleteSchemaProperty,
   onCreateOption,
-  onChangeOptionColor
+  onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption
 }: PropertyRowProps): ReactElement {
   const kind: PropertyEditorKind = definition?.type ?? pagePropertyKind(value);
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
@@ -329,7 +394,13 @@ function PropertyRow({
             allNames={allNames}
             disabled={disabled}
             onFinish={() => setRenaming(false)}
-            onRename={onRename}
+            onRename={(nextName) => {
+              if (definition && onRenameSchemaProperty) {
+                void onRenameSchemaProperty(nextName);
+              } else {
+                onRename(nextName);
+              }
+            }}
           />
         ) : (
           <span
@@ -356,20 +427,36 @@ function PropertyRow({
           options={definition?.options ?? []}
           onCreateOption={onCreateOption}
           onChangeOptionColor={onChangeOptionColor}
+          onRenameOption={onRenameOption}
+          onDeleteOption={onDeleteOption}
         />
       </dd>
       {contextPoint && (
         <PropertyContextMenu
           point={contextPoint}
-          currentKind={definition ? undefined : kind as PagePropertyKind}
+          currentKind={kind}
           schemaOwned={Boolean(definition)}
-          hasValue={value !== undefined}
+          schemaActionsAvailable={Boolean(
+            onRenameSchemaProperty && onChangeSchemaPropertyType && onDeleteSchemaProperty
+          )}
           onOpenChange={(open) => {
             if (!open) setContextPoint(null);
           }}
           onRename={() => setRenaming(true)}
-          onChangeKind={(nextKind) => onChange(convertPagePropertyValue(value, nextKind))}
-          onDelete={onDelete}
+          onChangeKind={(nextKind) => {
+            if (definition && onChangeSchemaPropertyType) {
+              void onChangeSchemaPropertyType(nextKind as DatabasePropertyType);
+            } else {
+              onChange(convertPagePropertyValue(value, nextKind as PagePropertyKind));
+            }
+          }}
+          onDelete={() => {
+            if (definition && onDeleteSchemaProperty) {
+              void onDeleteSchemaProperty();
+            } else {
+              onDelete();
+            }
+          }}
         />
       )}
     </div>
@@ -378,12 +465,12 @@ function PropertyRow({
 
 interface PropertyContextMenuProps {
   point: { x: number; y: number };
-  currentKind?: PagePropertyKind | undefined;
+  currentKind: PropertyEditorKind;
   schemaOwned: boolean;
-  hasValue: boolean;
+  schemaActionsAvailable: boolean;
   onOpenChange: (open: boolean) => void;
   onRename: () => void;
-  onChangeKind: (kind: PagePropertyKind) => void;
+  onChangeKind: (kind: PropertyEditorKind) => void;
   onDelete: () => void;
 }
 
@@ -391,12 +478,15 @@ function PropertyContextMenu({
   point,
   currentKind,
   schemaOwned,
-  hasValue,
+  schemaActionsAvailable,
   onOpenChange,
   onRename,
   onChangeKind,
   onDelete
 }: PropertyContextMenuProps): ReactElement {
+  const kindOptions = schemaOwned ? DATABASE_PROPERTY_KIND_OPTIONS : PROPERTY_KIND_OPTIONS;
+  const schemaActionDisabled = schemaOwned && !schemaActionsAvailable;
+
   return (
     <DropdownMenu open onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
@@ -409,44 +499,39 @@ function PropertyContextMenu({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
-        {schemaOwned ? (
-          <DropdownMenuItem disabled={!hasValue} onSelect={onDelete}>
-            <Trash size={16} aria-hidden="true" />
-            Clear value
-          </DropdownMenuItem>
-        ) : (
-          <>
-            <DropdownMenuItem onSelect={onRename}>
-              <PencilSimple size={16} aria-hidden="true" />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <ArrowsClockwise size={16} aria-hidden="true" />
-                Change type
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {PROPERTY_KIND_OPTIONS.map((option) => (
-                  <DropdownMenuItem
-                    key={option.value}
-                    disabled={option.value === currentKind}
-                    onSelect={() => onChangeKind(option.value)}
-                  >
-                    <span className="flex w-4 justify-center" aria-hidden="true">
-                      {option.value === currentKind && <Check size={14} />}
-                    </span>
-                    {option.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
-              <Trash size={16} aria-hidden="true" />
-              Delete
-            </DropdownMenuItem>
-          </>
-        )}
+        <DropdownMenuItem disabled={schemaActionDisabled} onSelect={onRename}>
+          <PencilSimple size={16} aria-hidden="true" />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={schemaActionDisabled}>
+            <ArrowsClockwise size={16} aria-hidden="true" />
+            Change type
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {kindOptions.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                disabled={option.value === currentKind}
+                onSelect={() => onChangeKind(option.value)}
+              >
+                <span className="flex w-4 justify-center" aria-hidden="true">
+                  {option.value === currentKind && <Check size={14} />}
+                </span>
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={schemaActionDisabled}
+          className="text-destructive focus:text-destructive"
+          onSelect={onDelete}
+        >
+          <Trash size={16} aria-hidden="true" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -547,6 +632,8 @@ interface PropertyValueEditorProps {
   options: DatabasePropertyOption[];
   onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
   onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
+  onRenameOption?: ((option: string, newName: string) => Promise<boolean>) | undefined;
+  onDeleteOption?: ((option: string) => Promise<boolean>) | undefined;
 }
 
 function PropertyValueCell({
@@ -557,7 +644,9 @@ function PropertyValueCell({
   onChange,
   options,
   onCreateOption,
-  onChangeOptionColor
+  onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption
 }: Omit<PropertyValueEditorProps, "onFinish"> & { name: string }): ReactElement {
   const [editing, setEditing] = useState(false);
 
@@ -586,6 +675,8 @@ function PropertyValueCell({
         options={options}
         onCreateOption={onCreateOption}
         onChangeOptionColor={onChangeOptionColor}
+        onRenameOption={onRenameOption}
+        onDeleteOption={onDeleteOption}
         onFinish={() => setEditing(false)}
       />
     );
@@ -603,7 +694,6 @@ function PropertyValueCell({
         kind={kind}
         value={value}
         options={options}
-        onChangeOptionColor={onChangeOptionColor}
       />
     </button>
   );
@@ -617,7 +707,9 @@ function PropertyValueEditor({
   onFinish,
   options,
   onCreateOption,
-  onChangeOptionColor
+  onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption
 }: PropertyValueEditorProps): ReactElement {
   switch (kind) {
     case "checkbox": {
@@ -695,6 +787,8 @@ function PropertyValueEditor({
           onChange={onChange}
           onCreateOption={onCreateOption}
           onChangeOptionColor={onChangeOptionColor}
+          onRenameOption={onRenameOption}
+          onDeleteOption={onDeleteOption}
           onFinish={onFinish}
         />
       );
@@ -1009,13 +1103,11 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
 function PropertyValue({
   kind,
   value,
-  options,
-  onChangeOptionColor
+  options
 }: {
   kind: PropertyEditorKind;
   value: unknown;
   options: DatabasePropertyOption[];
-  onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
 }): ReactElement {
   if (typeof value === "boolean") {
     return <CheckboxValue checked={value} />;
@@ -1036,11 +1128,6 @@ function PropertyValue({
           <DatabaseOptionPill
             key={item}
             option={optionForValue(item, options)}
-            onColorChange={
-              onChangeOptionColor
-                ? (color) => onChangeOptionColor(item, color)
-                : undefined
-            }
           />
         ))}
       </span>

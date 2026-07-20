@@ -375,12 +375,70 @@ describe("Rumi server API", () => {
       }
     });
 
+    const renameOption = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property/options/update",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: optionQuery.json().schemaVersion,
+        property: "priority",
+        option: "urgent",
+        action: "rename",
+        newName: "critical"
+      }
+    });
+    expect(renameOption.statusCode).toBe(200);
+    const renamedOptionQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(renamedOptionQuery.json().schema.properties.priority.options).toContainEqual({
+      name: "critical",
+      color: "teal"
+    });
+
+    const changeType = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property/type",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: renamedOptionQuery.json().schemaVersion,
+        property: "priority",
+        type: "multi-select"
+      }
+    });
+    expect(changeType.statusCode).toBe(200);
+    const changedTypeQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(changedTypeQuery.json().schema.properties.priority.type).toBe("multi-select");
+
+    const deleteProperty = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property/delete",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: changedTypeQuery.json().schemaVersion,
+        property: "priority"
+      }
+    });
+    expect(deleteProperty.statusCode).toBe(200);
+    const deletedPropertyQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(deletedPropertyQuery.json().schema.properties.priority).toBeUndefined();
+
     const renameProperty = await server.inject({
       method: "POST",
       url: "/api/database/schema/property/rename",
       payload: {
         databasePath: "Tasks",
-        baseVersion: optionQuery.json().schemaVersion,
+        baseVersion: deletedPropertyQuery.json().schemaVersion,
         property: "status",
         newName: "state"
       }

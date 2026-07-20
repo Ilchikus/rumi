@@ -413,6 +413,88 @@ describe("WorkspaceRuntime", () => {
     expect(renamed.records[0]?.frontmatter).toEqual({ state: "doing" });
   });
 
+  it("renames and deletes select options and changes or deletes schema properties across records", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Inventory" });
+    await runtime.createDatabaseRecord({
+      databasePath: "Inventory",
+      name: "Mini PC",
+      frontmatter: { tags: ["quiet", "available"], watts: "42" }
+    });
+    const initial = await runtime.queryDatabase({ databasePath: "Inventory" });
+    await runtime.updateDatabaseSchema({
+      databasePath: "Inventory",
+      baseVersion: initial.schemaVersion,
+      properties: {
+        tags: {
+          type: "multi-select",
+          options: [
+            { name: "quiet", color: "teal" },
+            { name: "available", color: "lime" }
+          ]
+        },
+        watts: { type: "text" }
+      },
+      views: [{ name: "All", type: "table", columns: ["tags", "watts"] }]
+    });
+
+    let query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Inventory",
+      baseVersion: query.schemaVersion,
+      property: "tags",
+      option: "quiet",
+      action: "rename",
+      newName: "silent"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    expect(query.schema.properties.tags?.options).toContainEqual({ name: "silent", color: "teal" });
+    expect(query.records[0]?.frontmatter.tags).toEqual(["silent", "available"]);
+
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Inventory",
+      baseVersion: query.schemaVersion,
+      property: "tags",
+      option: "silent",
+      action: "change-color",
+      color: "violet"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    expect(query.schema.properties.tags?.options).toContainEqual({ name: "silent", color: "violet" });
+
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Inventory",
+      baseVersion: query.schemaVersion,
+      property: "tags",
+      option: "available",
+      action: "delete"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    expect(query.schema.properties.tags?.options).toEqual([{ name: "silent", color: "violet" }]);
+    expect(query.records[0]?.frontmatter.tags).toEqual(["silent"]);
+
+    await runtime.changeDatabasePropertyType({
+      databasePath: "Inventory",
+      baseVersion: query.schemaVersion,
+      property: "watts",
+      type: "number"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    expect(query.schema.properties.watts).toEqual({ type: "number" });
+    expect(query.records[0]?.frontmatter.watts).toBe(42);
+
+    await runtime.deleteDatabaseProperty({
+      databasePath: "Inventory",
+      baseVersion: query.schemaVersion,
+      property: "tags"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Inventory" });
+    expect(query.schema.properties.tags).toBeUndefined();
+    expect(query.schema.views[0]?.columns).toEqual(["watts"]);
+    expect(query.records[0]?.frontmatter.tags).toBeUndefined();
+  });
+
   it("preserves unsupported future database properties during schema updates", async () => {
     const root = await tempWorkspace();
     await fs.mkdir(path.join(root, "Tasks"), { recursive: true });

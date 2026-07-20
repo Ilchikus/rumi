@@ -4,12 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import type {
   CheckpointRequest,
+  ChangeDatabasePropertyTypeRequest,
+  DatabasePropertyDefinition,
+  DatabasePropertyType,
   CreateDatabasePropertyOptionRequest,
   CreateFolderRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreatePageRequest,
   DeleteNodeRequest,
+  DeleteDatabasePropertyRequest,
   FrontmatterRecord,
   MoveNodeRequest,
   OpenWorkspaceResult,
@@ -31,6 +35,7 @@ import type {
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
   WorkspaceNode,
   WorkspaceNodeKind,
@@ -523,6 +528,204 @@ export class WorkspaceRuntime {
       },
       views: config.schema.views
     });
+  }
+
+  async updateDatabasePropertyOption(
+    request: UpdateDatabasePropertyOptionRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const property = request.property.trim();
+    const optionName = request.option.trim();
+    const definition = config.schema.properties[property];
+
+    if (!["rename", "change-color", "delete"].includes(request.action)) {
+      throw new Error(`Unsupported database option action: ${String(request.action)}`);
+    }
+
+    if (!definition || (definition.type !== "select" && definition.type !== "multi-select")) {
+      throw new Error(`Database property is not a select: ${property || request.property}`);
+    }
+
+    const currentOption = (definition.options ?? []).find((option) => option.name === optionName);
+    if (!currentOption) {
+      throw new Error(`Database option does not exist: ${optionName || request.option}`);
+    }
+
+    let replacementName: string | undefined;
+    if (request.action === "rename") {
+      replacementName = request.newName.trim();
+      if (!replacementName) {
+        throw new Error("Database option name cannot be empty");
+      }
+      if (
+        replacementName.toLowerCase() !== optionName.toLowerCase() &&
+        (definition.options ?? []).some(
+          (option) => option.name.toLowerCase() === replacementName?.toLowerCase()
+        )
+      ) {
+        throw new Error(`Database option already exists: ${replacementName}`);
+      }
+    }
+
+    if (
+      request.action === "change-color" &&
+      !DATABASE_PROPERTY_OPTION_COLORS.includes(request.color)
+    ) {
+      throw new Error(`Unsupported database option color: ${request.color}`);
+    }
+
+    const nextOptions = (definition.options ?? []).flatMap((option) => {
+      if (option.name !== optionName) return [option];
+      if (request.action === "delete") return [];
+      if (request.action === "rename") return [{ ...option, name: replacementName ?? option.name }];
+      return [{ ...option, color: request.color }];
+    });
+    const records = request.action === "change-color"
+      ? []
+      : (await this.queryDatabase({ databasePath: config.databasePath })).records;
+    const views = config.schema.views.map((view) => ({
+      ...view,
+      ...(view.filters
+        ? {
+            filters: view.filters.flatMap((filter) => {
+              if (filter.property !== property) return [filter];
+              const nextValue = updateDatabaseOptionReference(
+                filter.value,
+                optionName,
+                request.action === "rename" ? replacementName : undefined
+              );
+              return nextValue === undefined && filter.value !== undefined
+                ? []
+                : [{ ...filter, value: nextValue }];
+            })
+          }
+        : {})
+    }));
+    const schemaResult = await this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      properties: {
+        ...config.schema.properties,
+        [property]: { ...definition, options: nextOptions }
+      },
+      views
+    });
+
+    if (schemaResult.status === "conflict" || request.action === "change-color") {
+      return schemaResult;
+    }
+
+    for (const record of records) {
+      if (!Object.prototype.hasOwnProperty.call(record.frontmatter, property)) continue;
+      const currentValue = record.frontmatter[property];
+      const nextValue = updateDatabaseOptionReference(
+        currentValue,
+        optionName,
+        request.action === "rename" ? replacementName : undefined
+      );
+      if (JSON.stringify(nextValue) === JSON.stringify(currentValue)) continue;
+      await this.updateDatabaseRecordProperty({
+        databasePath: config.databasePath,
+        recordPath: record.path,
+        baseVersion: record.version,
+        property,
+        value: nextValue
+      });
+    }
+
+    return schemaResult;
+  }
+
+  async changeDatabasePropertyType(
+    request: ChangeDatabasePropertyTypeRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const property = request.property.trim();
+    const definition = config.schema.properties[property];
+
+    if (!["text", "number", "date", "checkbox", "select", "multi-select"].includes(request.type)) {
+      throw new Error(`Unsupported database property type: ${String(request.type)}`);
+    }
+
+    if (!definition) {
+      throw new Error(`Database property does not exist: ${property || request.property}`);
+    }
+
+    const records = (await this.queryDatabase({ databasePath: config.databasePath })).records;
+    const convertedValues = records.map((record) => ({
+      record,
+      value: convertDatabasePropertyValue(record.frontmatter[property], request.type)
+    }));
+    const nextDefinition = databasePropertyDefinitionForType(
+      request.type,
+      definition,
+      convertedValues.map(({ value }) => value)
+    );
+    const schemaResult = await this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      properties: { ...config.schema.properties, [property]: nextDefinition },
+      views: config.schema.views
+    });
+
+    if (schemaResult.status === "conflict") return schemaResult;
+
+    for (const { record, value } of convertedValues) {
+      if (!Object.prototype.hasOwnProperty.call(record.frontmatter, property)) continue;
+      if (JSON.stringify(value) === JSON.stringify(record.frontmatter[property])) continue;
+      await this.updateDatabaseRecordProperty({
+        databasePath: config.databasePath,
+        recordPath: record.path,
+        baseVersion: record.version,
+        property,
+        value
+      });
+    }
+
+    return schemaResult;
+  }
+
+  async deleteDatabaseProperty(
+    request: DeleteDatabasePropertyRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const property = request.property.trim();
+
+    if (!config.schema.properties[property]) {
+      throw new Error(`Database property does not exist: ${property || request.property}`);
+    }
+
+    const records = (await this.queryDatabase({ databasePath: config.databasePath })).records;
+    const { [property]: _deleted, ...properties } = config.schema.properties;
+    const views = config.schema.views.map((view) => ({
+      ...view,
+      columns: view.columns.filter((column) => column !== property),
+      ...(view.filters
+        ? { filters: view.filters.filter((filter) => filter.property !== property) }
+        : {}),
+      ...(view.sorts ? { sorts: view.sorts.filter((sort) => sort.property !== property) } : {})
+    }));
+    const schemaResult = await this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      properties,
+      views
+    });
+
+    if (schemaResult.status === "conflict") return schemaResult;
+
+    for (const record of records) {
+      if (!Object.prototype.hasOwnProperty.call(record.frontmatter, property)) continue;
+      await this.updateDatabaseRecordProperty({
+        databasePath: config.databasePath,
+        recordPath: record.path,
+        baseVersion: record.version,
+        property,
+        value: undefined
+      });
+    }
+
+    return schemaResult;
   }
 
   async renameDatabaseProperty(request: RenameDatabasePropertyRequest): Promise<SavePageResult> {
@@ -1165,6 +1368,91 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 function randomDatabasePropertyOptionColor(): (typeof DATABASE_PROPERTY_OPTION_COLORS)[number] {
   const index = Math.floor(Math.random() * DATABASE_PROPERTY_OPTION_COLORS.length);
   return DATABASE_PROPERTY_OPTION_COLORS[index] ?? "neutral";
+}
+
+function updateDatabaseOptionReference(
+  value: unknown,
+  option: string,
+  replacement: string | undefined
+): unknown {
+  if (typeof value === "string") {
+    return value === option ? replacement : value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) =>
+      item === option ? (replacement === undefined ? [] : [replacement]) : [item]
+    );
+  }
+
+  return value;
+}
+
+function databasePropertyDefinitionForType(
+  type: DatabasePropertyType,
+  current: DatabasePropertyDefinition,
+  values: unknown[]
+): DatabasePropertyDefinition {
+  if (type !== "select" && type !== "multi-select") {
+    return { type };
+  }
+
+  const existingOptions = current.type === "select" || current.type === "multi-select"
+    ? [...(current.options ?? [])]
+    : [];
+  const optionNames = new Set(existingOptions.map((option) => option.name.toLowerCase()));
+  const valueNames = values.flatMap((value) =>
+    Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string" && Boolean(item))
+      : typeof value === "string" && value
+        ? [value]
+        : []
+  );
+
+  for (const name of valueNames) {
+    if (optionNames.has(name.toLowerCase())) continue;
+    existingOptions.push({ name, color: randomDatabasePropertyOptionColor() });
+    optionNames.add(name.toLowerCase());
+  }
+
+  return { type, options: existingOptions };
+}
+
+function convertDatabasePropertyValue(value: unknown, type: DatabasePropertyType): unknown {
+  if (value === undefined || value === null || value === "") return undefined;
+
+  switch (type) {
+    case "text":
+      return typeof value === "string"
+        ? value
+        : typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+    case "number": {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      const number = typeof value === "string" ? Number(value) : Number.NaN;
+      return Number.isFinite(number) ? number : undefined;
+    }
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? value
+        : undefined;
+    case "checkbox":
+      if (typeof value === "boolean") return value;
+      if (typeof value === "string") {
+        return ["true", "yes", "1"].includes(value.trim().toLowerCase());
+      }
+      return Boolean(value);
+    case "select":
+      if (Array.isArray(value)) {
+        return value.find((item): item is string => typeof item === "string" && Boolean(item));
+      }
+      return typeof value === "string" ? value : String(value);
+    case "multi-select":
+      return Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string" && Boolean(item))
+        : [typeof value === "string" ? value : String(value)];
+  }
 }
 
 function saveSource(reason: SavePageRequest["reason"]): "editor" | "api" | "cli" | "runtime" {

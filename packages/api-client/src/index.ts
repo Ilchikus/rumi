@@ -2,12 +2,14 @@ import type {
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
+  ChangeDatabasePropertyTypeRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
+  DeleteDatabasePropertyRequest,
   MoveNodeRequest,
   OpenWorkspaceResult,
   PageDocument,
@@ -25,6 +27,7 @@ import type {
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
   WorkspaceMutationResult,
   WorkspaceNode
@@ -203,8 +206,36 @@ export class RumiApiClient {
     });
   }
 
+  async updateDatabasePropertyOption(
+    request: UpdateDatabasePropertyOptionRequest
+  ): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property/options/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
   async renameDatabaseProperty(request: RenameDatabasePropertyRequest): Promise<SavePageResult> {
     return this.request<SavePageResult>("/api/database/schema/property/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async changeDatabasePropertyType(
+    request: ChangeDatabasePropertyTypeRequest
+  ): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property/type", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async deleteDatabaseProperty(request: DeleteDatabasePropertyRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property/delete", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

@@ -186,7 +186,7 @@ describe("page editor presentation", () => {
     const markup = renderToStaticMarkup(
       createElement(DatabaseOptionPill, {
         option: { name: "Blocked", color: "rose" },
-        onColorChange: () => undefined
+        onRemove: () => undefined
       })
     );
 
@@ -194,7 +194,9 @@ describe("page editor presentation", () => {
     expect(markup).toContain("border-rose-300");
     expect(markup).toContain("text-rose-600");
     expect(markup).toContain('data-option-color="rose"');
-    expect(markup).toContain("right-click to change color");
+    expect(markup).toContain("cursor-default");
+    expect(markup).toContain('aria-label="Remove Blocked"');
+    expect(markup).not.toContain("cursor-context-menu");
     expect(databaseOptionColor("legacy-color")).toBe("neutral");
     expect(randomDatabaseOptionColor(() => 0)).toBe("neutral");
     expect(randomDatabaseOptionColor(() => 0.999)).toBe("fuchsia");

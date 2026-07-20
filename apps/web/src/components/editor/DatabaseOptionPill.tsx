@@ -3,16 +3,9 @@ import {
   type DatabasePropertyOption,
   type DatabasePropertyOptionColor
 } from "@rumi/contracts";
-import { Check } from "@phosphor-icons/react/dist/csr/Check";
-import { useState } from "react";
+import { X } from "@phosphor-icons/react/dist/csr/X";
 import type { ReactElement } from "react";
 import { cn } from "../../lib/utils";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from "../ui/dropdown-menu";
 
 const OPTION_COLOR_CLASSES: Record<DatabasePropertyOptionColor, string> = {
   neutral: "border-neutral-300 bg-neutral-100 text-neutral-600",
@@ -31,80 +24,52 @@ export interface DatabaseOptionPillProps {
   option: DatabasePropertyOption;
   className?: string;
   disabled?: boolean;
-  onColorChange?: ((color: DatabasePropertyOptionColor) => void | Promise<unknown>) | undefined;
+  onRemove?: (() => void) | undefined;
 }
 
 export function DatabaseOptionPill({
   option,
   className,
   disabled = false,
-  onColorChange
+  onRemove
 }: DatabaseOptionPillProps): ReactElement {
-  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
   const color = databaseOptionColor(option.color);
 
   return (
-    <>
-      <span
-        className={cn(
-          "inline-flex max-w-full items-center truncate rounded border px-1.5 py-0.5 text-xs font-medium",
-          OPTION_COLOR_CLASSES[color],
-          onColorChange && !disabled && "cursor-context-menu",
-          className
-        )}
-        data-option-color={color}
-        title={onColorChange && !disabled ? `${option.name} — right-click to change color` : option.name}
-        onContextMenu={(event) => {
-          if (!onColorChange || disabled) return;
-          event.preventDefault();
-          event.stopPropagation();
-          setContextPoint({ x: event.clientX, y: event.clientY });
-        }}
-      >
+    <span
+      className={cn(
+        "inline-flex max-w-full cursor-default items-center gap-0.5 rounded border px-1.5 py-0.5 text-xs font-medium",
+        OPTION_COLOR_CLASSES[color],
+        className
+      )}
+      data-option-color={color}
+      title={option.name}
+    >
+      <span className="truncate">
         {option.name}
       </span>
-
-      {contextPoint && onColorChange && (
-        <DropdownMenu
-          open
-          onOpenChange={(open) => {
-            if (!open) setContextPoint(null);
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${option.name}`}
+          className="-mr-0.5 grid h-3.5 w-3.5 cursor-default place-items-center rounded-sm opacity-65 outline-none hover:opacity-100 focus-visible:ring-1 focus-visible:ring-current disabled:opacity-35"
+          disabled={disabled}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onRemove();
           }}
         >
-          <DropdownMenuTrigger asChild>
-            <span
-              aria-hidden="true"
-              className="fixed h-px w-px opacity-0"
-              style={{ left: contextPoint.x, top: contextPoint.y }}
-            />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            aria-label={`Color for ${option.name}`}
-            data-database-option-color-menu="true"
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
-            {DATABASE_PROPERTY_OPTION_COLORS.map((candidate) => (
-              <DropdownMenuItem
-                key={candidate}
-                disabled={disabled}
-                onSelect={() => void onColorChange(candidate)}
-              >
-                <span
-                  className={cn("h-4 w-4 rounded border", OPTION_COLOR_CLASSES[candidate])}
-                  aria-hidden="true"
-                />
-                <span className="capitalize">{candidate}</span>
-                <span className="ml-auto flex w-4 justify-end" aria-hidden="true">
-                  {candidate === color && <Check size={13} />}
-                </span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <X size={10} weight="bold" aria-hidden="true" />
+        </button>
       )}
-    </>
+    </span>
   );
+}
+
+export function databaseOptionColorClassName(color: DatabasePropertyOptionColor): string {
+  return OPTION_COLOR_CLASSES[color];
 }
 
 export function databaseOptionColor(color: string | undefined): DatabasePropertyOptionColor {

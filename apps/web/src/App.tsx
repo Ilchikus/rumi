@@ -6,6 +6,7 @@ import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
 import type {
   DatabasePropertyOptionColor,
+  DatabasePropertyType,
   PageDocument,
   RumiEvent,
   SavePageReason,
@@ -250,11 +251,14 @@ export function App(): ReactElement {
     [api, forgetCachedPage]
   );
 
-  const changeOpenPageDatabaseOptionColor = useCallback(
+  const updateOpenPageDatabaseOption = useCallback(
     async (
       property: string,
       option: string,
-      color: DatabasePropertyOptionColor
+      update:
+        | { action: "rename"; newName: string }
+        | { action: "change-color"; color: DatabasePropertyOptionColor }
+        | { action: "delete" }
     ): Promise<boolean> => {
       const currentPage = pageRef.current;
       const database = currentPage?.database;
@@ -269,19 +273,13 @@ export function App(): ReactElement {
         return false;
       }
 
-      const options = (definition.options ?? []).map((candidate) =>
-        candidate.name === option ? { ...candidate, color } : candidate
-      );
-
       try {
-        const result = await api.updateDatabaseSchema({
+        const result = await api.updateDatabasePropertyOption({
           databasePath: database.databasePath,
           baseVersion: database.schemaVersion,
-          properties: {
-            ...database.schema.properties,
-            [property]: { ...definition, options }
-          },
-          views: database.schema.views
+          property,
+          option,
+          ...update
         });
 
         if (result.status === "conflict") {
@@ -290,49 +288,78 @@ export function App(): ReactElement {
           return false;
         }
 
-        const latestPage = pageRef.current;
-        const latestDefinition = latestPage?.database?.schema.properties[property];
-        if (
-          !latestPage ||
-          latestPage.path !== currentPage.path ||
-          !latestPage.database ||
-          !latestDefinition ||
-          (latestDefinition.type !== "select" && latestDefinition.type !== "multi-select")
-        ) {
-          return false;
-        }
-
-        const nextPage: PageDocument = {
-          ...latestPage,
-          database: {
-            ...latestPage.database,
-            schemaVersion: result.version,
-            schema: {
-              ...latestPage.database.schema,
-              properties: {
-                ...latestPage.database.schema.properties,
-                [property]: {
-                  ...latestDefinition,
-                  options: (latestDefinition.options ?? []).map((candidate) =>
-                    candidate.name === option ? { ...candidate, color } : candidate
-                  )
-                }
-              }
-            }
-          }
-        };
-
         forgetCachedPage(currentPage.path);
+        const nextPage = await api.openPage(currentPage.path);
+        if (pageRef.current?.path !== currentPage.path) return false;
         pageRef.current = nextPage;
         setPage(nextPage);
-        setMessage(`Changed “${option}” to ${color}.`);
+        cacheResolvedPage(nextPage);
+        setMessage(
+          update.action === "rename"
+            ? `Renamed “${option}” to “${update.newName}”.`
+            : update.action === "delete"
+              ? `Deleted “${option}”.`
+              : `Changed “${option}” to ${update.color}.`
+        );
         return true;
       } catch (error) {
         setMessage(errorMessage(error));
         return false;
       }
     },
-    [api, forgetCachedPage]
+    [api, cacheResolvedPage, forgetCachedPage]
+  );
+
+  const updateOpenPageDatabaseProperty = useCallback(
+    async (
+      property: string,
+      update:
+        | { action: "rename"; newName: string }
+        | { action: "change-type"; type: DatabasePropertyType }
+        | { action: "delete" }
+    ): Promise<boolean> => {
+      const currentPage = pageRef.current;
+      const database = currentPage?.database;
+      if (!currentPage || !database || !database.schema.properties[property]) return false;
+
+      try {
+        const requestBase = {
+          databasePath: database.databasePath,
+          baseVersion: database.schemaVersion,
+          property
+        };
+        const result = update.action === "rename"
+          ? await api.renameDatabaseProperty({ ...requestBase, newName: update.newName })
+          : update.action === "change-type"
+            ? await api.changeDatabasePropertyType({ ...requestBase, type: update.type })
+            : await api.deleteDatabaseProperty(requestBase);
+
+        if (result.status === "conflict") {
+          forgetCachedPage(currentPage.path);
+          setMessage("The database schema changed elsewhere. Reopen this record and try again.");
+          return false;
+        }
+
+        forgetCachedPage(currentPage.path);
+        const nextPage = await api.openPage(currentPage.path);
+        if (pageRef.current?.path !== currentPage.path) return false;
+        pageRef.current = nextPage;
+        setPage(nextPage);
+        cacheResolvedPage(nextPage);
+        setMessage(
+          update.action === "rename"
+            ? `Renamed “${property}” to “${update.newName}”.`
+            : update.action === "change-type"
+              ? `Changed “${property}” to ${update.type}.`
+              : `Deleted “${property}”.`
+        );
+        return true;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, cacheResolvedPage, forgetCachedPage]
   );
 
   const loadPage = useCallback(
@@ -1221,7 +1248,24 @@ export function App(): ReactElement {
                   disabled={saveState === "conflict"}
                   onChange={updatePageFrontmatter}
                   onCreateDatabaseOption={createOpenPageDatabaseOption}
-                  onChangeDatabaseOptionColor={changeOpenPageDatabaseOptionColor}
+                  onChangeDatabaseOptionColor={(property, option, color) =>
+                    updateOpenPageDatabaseOption(property, option, { action: "change-color", color })
+                  }
+                  onRenameDatabaseOption={(property, option, newName) =>
+                    updateOpenPageDatabaseOption(property, option, { action: "rename", newName })
+                  }
+                  onDeleteDatabaseOption={(property, option) =>
+                    updateOpenPageDatabaseOption(property, option, { action: "delete" })
+                  }
+                  onRenameDatabaseProperty={(property, newName) =>
+                    updateOpenPageDatabaseProperty(property, { action: "rename", newName })
+                  }
+                  onChangeDatabasePropertyType={(property, type) =>
+                    updateOpenPageDatabaseProperty(property, { action: "change-type", type })
+                  }
+                  onDeleteDatabaseProperty={(property) =>
+                    updateOpenPageDatabaseProperty(property, { action: "delete" })
+                  }
                 />
               )}
 

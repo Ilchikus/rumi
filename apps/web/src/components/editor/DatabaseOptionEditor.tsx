@@ -1,11 +1,33 @@
-import type { DatabasePropertyOption, DatabasePropertyOptionColor } from "@rumi/contracts";
+import {
+  DATABASE_PROPERTY_OPTION_COLORS,
+  type DatabasePropertyOption,
+  type DatabasePropertyOptionColor
+} from "@rumi/contracts";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
+import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
+import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
+import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/utils";
-import { DatabaseOptionPill, optionForValue } from "./DatabaseOptionPill";
+import {
+  DatabaseOptionPill,
+  databaseOptionColor,
+  databaseOptionColorClassName,
+  optionForValue
+} from "./DatabaseOptionPill";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from "../ui/dropdown-menu";
 
 export interface DatabaseOptionEditorProps {
   mode: "select" | "multi-select";
@@ -15,6 +37,8 @@ export interface DatabaseOptionEditorProps {
   onChange: (value: string | string[] | undefined) => void;
   onCreateOption?: ((name: string) => Promise<boolean>) | undefined;
   onChangeOptionColor?: ((name: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
+  onRenameOption?: ((name: string, newName: string) => Promise<boolean>) | undefined;
+  onDeleteOption?: ((name: string) => Promise<boolean>) | undefined;
   onFinish: () => void;
 }
 
@@ -64,6 +88,8 @@ export function DatabaseOptionEditor({
   onChange,
   onCreateOption,
   onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption,
   onFinish
 }: DatabaseOptionEditorProps): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -72,6 +98,10 @@ export function DatabaseOptionEditor({
   const [search, setSearch] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [renamingOption, setRenamingOption] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [updatingOption, setUpdatingOption] = useState<string | null>(null);
+  const [openOptionMenu, setOpenOptionMenu] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [position, setPosition] = useState({ left: 0, top: 0, width: 224 });
   const selected = useMemo(
@@ -128,7 +158,7 @@ export function DatabaseOptionEditor({
       if (
         anchorRef.current?.contains(target) ||
         panelRef.current?.contains(target) ||
-        (target instanceof Element && target.closest("[data-database-option-color-menu]"))
+        (target instanceof Element && target.closest("[data-database-option-menu]"))
       ) return;
       onFinish();
     };
@@ -148,6 +178,46 @@ export function DatabaseOptionEditor({
     setSearch("");
     setActiveIndex(0);
     requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const removeSelectedOption = (name: string) => {
+    onChange(mode === "select" ? undefined : selected.filter((item) => item !== name));
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const commitOptionRename = async () => {
+    const currentName = renamingOption;
+    const nextName = renameDraft.trim();
+    if (!currentName || !onRenameOption || !nextName || nextName === currentName || updatingOption) {
+      setRenamingOption(null);
+      return;
+    }
+
+    setUpdatingOption(currentName);
+    setError("");
+    try {
+      if (await onRenameOption(currentName, nextName)) {
+        setRenamingOption(null);
+        setSearch("");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename this option.");
+    } finally {
+      setUpdatingOption(null);
+    }
+  };
+
+  const deleteOption = async (name: string) => {
+    if (!onDeleteOption || updatingOption) return;
+    setUpdatingOption(name);
+    setError("");
+    try {
+      await onDeleteOption(name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete this option.");
+    } finally {
+      setUpdatingOption(null);
+    }
   };
 
   const createOption = async () => {
@@ -183,11 +253,7 @@ export function DatabaseOptionEditor({
             key={name}
             option={optionForValue(name, options)}
             disabled={disabled}
-            onColorChange={
-              onChangeOptionColor
-                ? (color) => onChangeOptionColor(name, color)
-                : undefined
-            }
+            onRemove={() => removeSelectedOption(name)}
           />
         ))}
         <input
@@ -251,33 +317,136 @@ export function DatabaseOptionEditor({
           {filteredOptions.map((option, index) => {
             const selectedOption = selected.includes(option.name);
             const active = activeChoice?.type === "option" && activeChoice.name === option.name;
+            const manageable = Boolean(onRenameOption || onChangeOptionColor || onDeleteOption);
             return (
-              <button
+              <div
                 key={option.name}
-                id={choiceId({ type: "option", name: option.name })}
-                type="button"
-                role="option"
-                aria-selected={selectedOption}
                 className={cn(
                   "flex min-h-8 w-full items-center gap-2 rounded px-2 text-left",
                   active ? "bg-accent text-accent-foreground" : "hover:bg-accent/70"
                 )}
-                onPointerMove={() => setActiveIndex(index)}
-                onClick={() => chooseOption(option.name)}
+                onContextMenu={(event) => {
+                  if (!manageable) return;
+                  event.preventDefault();
+                  setOpenOptionMenu(option.name);
+                }}
               >
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-                  {selectedOption && <Check size={13} />}
-                </span>
-                <DatabaseOptionPill
-                  option={option}
-                  disabled={disabled}
-                  onColorChange={
-                    onChangeOptionColor
-                      ? (color) => onChangeOptionColor(option.name, color)
-                      : undefined
-                  }
-                />
-              </button>
+                {renamingOption === option.name ? (
+                  <input
+                    autoFocus
+                    aria-label={`Rename ${option.name}`}
+                    className="h-7 min-w-0 flex-1 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    value={renameDraft}
+                    disabled={updatingOption === option.name}
+                    onChange={(event) => setRenameDraft(event.currentTarget.value)}
+                    onBlur={() => void commitOptionRename()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void commitOptionRename();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setRenamingOption(null);
+                        requestAnimationFrame(() => inputRef.current?.focus());
+                      }
+                    }}
+                  />
+                ) : (
+                  <>
+                    <button
+                      id={choiceId({ type: "option", name: option.name })}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedOption}
+                      className="flex min-h-8 min-w-0 flex-1 items-center gap-2 text-left"
+                      onPointerMove={() => setActiveIndex(index)}
+                      onClick={() => chooseOption(option.name)}
+                    >
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                        {selectedOption && <Check size={13} />}
+                      </span>
+                      <DatabaseOptionPill option={option} disabled={disabled} />
+                    </button>
+
+                    {manageable && (
+                      <DropdownMenu
+                        open={openOptionMenu === option.name}
+                        onOpenChange={(open) => setOpenOptionMenu(open ? option.name : null)}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Edit ${option.name} option`}
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                            disabled={disabled || updatingOption === option.name}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <DotsThree size={15} weight="bold" aria-hidden="true" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          data-database-option-menu="true"
+                          onCloseAutoFocus={(event) => {
+                            event.preventDefault();
+                            inputRef.current?.focus();
+                          }}
+                        >
+                          {onRenameOption && (
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setRenamingOption(option.name);
+                                setRenameDraft(option.name);
+                              }}
+                            >
+                              <PencilSimple size={15} aria-hidden="true" />
+                              Rename
+                            </DropdownMenuItem>
+                          )}
+                          {onChangeOptionColor && (
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>Change color</DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent data-database-option-menu="true">
+                                {DATABASE_PROPERTY_OPTION_COLORS.map((color) => (
+                                  <DropdownMenuItem
+                                    key={color}
+                                    onSelect={() => void onChangeOptionColor(option.name, color)}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "h-4 w-4 rounded border",
+                                        databaseOptionColorClassName(color)
+                                      )}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="capitalize">{color}</span>
+                                    <span className="ml-auto flex w-4 justify-end" aria-hidden="true">
+                                      {databaseOptionColor(option.color) === color && <Check size={13} />}
+                                    </span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          )}
+                          {onDeleteOption && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => void deleteOption(option.name)}
+                              >
+                                <Trash size={15} aria-hidden="true" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </>
+                )}
+              </div>
             );
           })}
 

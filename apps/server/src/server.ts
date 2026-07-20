@@ -7,12 +7,14 @@ import type {
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
+  ChangeDatabasePropertyTypeRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
+  DeleteDatabasePropertyRequest,
   MoveNodeRequest,
   QueryDatabaseRequest,
   RenameDatabasePropertyRequest,
@@ -23,6 +25,7 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   UpdateDatabaseRecordPropertyRequest,
+  UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest
 } from "@rumi/contracts";
 import { WorkspaceRuntime } from "@rumi/runtime";
@@ -531,10 +534,49 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     }
   );
 
+  server.post<{ Body: UpdateDatabasePropertyOptionRequest }>(
+    "/api/database/schema/property/options/update",
+    async (request, reply) => {
+      const result = await runtime.updateDatabasePropertyOption(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
   server.post<{ Body: RenameDatabasePropertyRequest }>(
     "/api/database/schema/property/rename",
     async (request, reply) => {
       const result = await runtime.renameDatabaseProperty(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
+  server.post<{ Body: ChangeDatabasePropertyTypeRequest }>(
+    "/api/database/schema/property/type",
+    async (request, reply) => {
+      const result = await runtime.changeDatabasePropertyType(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
+  server.post<{ Body: DeleteDatabasePropertyRequest }>(
+    "/api/database/schema/property/delete",
+    async (request, reply) => {
+      const result = await runtime.deleteDatabaseProperty(request.body);
 
       if (result.status === "conflict") {
         return reply.status(409).send(result);

@@ -157,10 +157,43 @@ export interface CreateDatabasePropertyOptionRequest {
   baseVersion?: string;
 }
 
+interface UpdateDatabasePropertyOptionBaseRequest {
+  databasePath: string;
+  property: string;
+  option: string;
+  baseVersion?: string;
+}
+
+export type UpdateDatabasePropertyOptionRequest =
+  | (UpdateDatabasePropertyOptionBaseRequest & {
+      action: "rename";
+      newName: string;
+    })
+  | (UpdateDatabasePropertyOptionBaseRequest & {
+      action: "change-color";
+      color: DatabasePropertyOptionColor;
+    })
+  | (UpdateDatabasePropertyOptionBaseRequest & {
+      action: "delete";
+    });
+
 export interface RenameDatabasePropertyRequest {
   databasePath: string;
   property: string;
   newName: string;
+  baseVersion?: string;
+}
+
+export interface ChangeDatabasePropertyTypeRequest {
+  databasePath: string;
+  property: string;
+  type: DatabasePropertyType;
+  baseVersion?: string;
+}
+
+export interface DeleteDatabasePropertyRequest {
+  databasePath: string;
+  property: string;
   baseVersion?: string;
 }
 

@@ -3,8 +3,11 @@ import type { ChangeEvent, ReactElement } from "react";
 import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
+import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
+import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
+import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { RumiApiClient } from "@rumi/api-client";
 import type {
   DatabasePropertyDefinition,
@@ -21,7 +24,26 @@ import {
   randomDatabaseOptionColor
 } from "../editor/DatabaseOptionPill";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
+
+const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; label: string }> = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "select", label: "Select" },
+  { value: "multi-select", label: "Multi-select" }
+];
 
 export interface DatabaseViewProps {
   api: RumiApiClient;
@@ -247,11 +269,14 @@ export function DatabaseView({
     [api, databasePath, load, onMessage, result]
   );
 
-  const changeOptionColor = useCallback(
+  const updateOption = useCallback(
     async (
       property: string,
       option: string,
-      color: DatabasePropertyOptionColor
+      update:
+        | { action: "rename"; newName: string }
+        | { action: "change-color"; color: DatabasePropertyOptionColor }
+        | { action: "delete" }
     ): Promise<boolean> => {
       const currentResult = result;
       const definition = currentResult?.schema.properties[property];
@@ -264,19 +289,13 @@ export function DatabaseView({
         return false;
       }
 
-      const options = (definition.options ?? []).map((candidate) =>
-        candidate.name === option ? { ...candidate, color } : candidate
-      );
-
       try {
-        const saved = await api.updateDatabaseSchema({
+        const saved = await api.updateDatabasePropertyOption({
           databasePath,
           baseVersion: currentResult.schemaVersion,
-          properties: {
-            ...currentResult.schema.properties,
-            [property]: { ...definition, options }
-          },
-          views: currentResult.schema.views
+          property,
+          option,
+          ...update
         });
 
         if (saved.status === "conflict") {
@@ -285,33 +304,7 @@ export function DatabaseView({
           return false;
         }
 
-        setResult((current) => {
-          const currentDefinition = current?.schema.properties[property];
-          if (
-            !current ||
-            !currentDefinition ||
-            (currentDefinition.type !== "select" && currentDefinition.type !== "multi-select")
-          ) {
-            return current;
-          }
-
-          return {
-            ...current,
-            schemaVersion: saved.version,
-            schema: {
-              ...current.schema,
-              properties: {
-                ...current.schema.properties,
-                [property]: {
-                  ...currentDefinition,
-                  options: (currentDefinition.options ?? []).map((candidate) =>
-                    candidate.name === option ? { ...candidate, color } : candidate
-                  )
-                }
-              }
-            }
-          };
-        });
+        await load();
         return true;
       } catch (error) {
         onMessage(errorMessage(error));
@@ -364,15 +357,14 @@ export function DatabaseView({
   }, [api, databasePath, load, newPropertyName, newPropertyType, onMessage, result]);
 
   const renameProperty = useCallback(
-    async (property: string) => {
+    async (property: string, newName: string): Promise<boolean> => {
       if (!result) {
-        return;
+        return false;
       }
 
-      const newName = window.prompt(`Rename “${property}” to`, property)?.trim();
-
-      if (!newName || newName === property) {
-        return;
+      const normalizedName = newName.trim();
+      if (!normalizedName || normalizedName === property) {
+        return false;
       }
 
       try {
@@ -380,16 +372,71 @@ export function DatabaseView({
           databasePath,
           baseVersion: result.schemaVersion,
           property,
-          newName
+          newName: normalizedName
         });
 
         if (saved.status === "conflict") {
           onMessage("The database schema changed elsewhere. Reloaded the latest version.");
+          await load();
+          return false;
         }
 
         await load();
+        return true;
       } catch (error) {
         onMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, databasePath, load, onMessage, result]
+  );
+
+  const changePropertyType = useCallback(
+    async (property: string, type: DatabasePropertyType): Promise<boolean> => {
+      if (!result || result.schema.properties[property]?.type === type) return false;
+
+      try {
+        const saved = await api.changeDatabasePropertyType({
+          databasePath,
+          baseVersion: result.schemaVersion,
+          property,
+          type
+        });
+        if (saved.status === "conflict") {
+          onMessage("The database schema changed elsewhere. Reloaded the latest version.");
+          await load();
+          return false;
+        }
+        await load();
+        return true;
+      } catch (error) {
+        onMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, databasePath, load, onMessage, result]
+  );
+
+  const deleteProperty = useCallback(
+    async (property: string): Promise<boolean> => {
+      if (!result) return false;
+
+      try {
+        const saved = await api.deleteDatabaseProperty({
+          databasePath,
+          baseVersion: result.schemaVersion,
+          property
+        });
+        if (saved.status === "conflict") {
+          onMessage("The database schema changed elsewhere. Reloaded the latest version.");
+          await load();
+          return false;
+        }
+        await load();
+        return true;
+      } catch (error) {
+        onMessage(errorMessage(error));
+        return false;
       }
     },
     [api, databasePath, load, onMessage, result]
@@ -443,9 +490,12 @@ export function DatabaseView({
                   key={column}
                   label={column}
                   property={column}
+                  definition={result?.schema.properties[column]}
                   sorts={sorts}
                   onSort={toggleSort}
-                  onRename={() => void renameProperty(column)}
+                  onRename={(newName) => renameProperty(column, newName)}
+                  onChangeType={(type) => changePropertyType(column, type)}
+                  onDelete={() => deleteProperty(column)}
                 />
               ))}
               <th className="w-12 border-b border-border px-2 py-2">
@@ -481,7 +531,15 @@ export function DatabaseView({
                       value={record.frontmatter[column]}
                       onChange={(value) => void updateProperty(record, column, value)}
                       onCreateOption={(option) => createOption(column, option)}
-                      onChangeOptionColor={(option, color) => changeOptionColor(column, option, color)}
+                      onChangeOptionColor={(option, color) =>
+                        updateOption(column, option, { action: "change-color", color })
+                      }
+                      onRenameOption={(option, newName) =>
+                        updateOption(column, option, { action: "rename", newName })
+                      }
+                      onDeleteOption={(option) =>
+                        updateOption(column, option, { action: "delete" })
+                      }
                     />
                   </td>
                 ))}
@@ -543,40 +601,132 @@ export function DatabaseView({
 function SortableHeader({
   label,
   property,
+  definition,
   sorts,
   onSort,
-  onRename
+  onRename,
+  onChangeType,
+  onDelete
 }: {
   label: string;
   property: string;
+  definition?: DatabasePropertyDefinition | undefined;
   sorts: DatabaseSort[];
   onSort: (property: string) => void;
-  onRename?: () => void;
+  onRename?: ((newName: string) => Promise<boolean>) | undefined;
+  onChangeType?: ((type: DatabasePropertyType) => Promise<boolean>) | undefined;
+  onDelete?: (() => Promise<boolean>) | undefined;
 }): ReactElement {
   const direction = sorts.find((sort) => sort.property === property)?.direction;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(label);
+  const [busy, setBusy] = useState(false);
+  const manageable = Boolean(definition && onRename && onChangeType && onDelete);
+
+  const commitRename = async () => {
+    if (!onRename || busy) return;
+    const nextName = renameDraft.trim();
+    if (!nextName || nextName === label) {
+      setRenameDraft(label);
+      setRenaming(false);
+      return;
+    }
+    setBusy(true);
+    if (await onRename(nextName)) setRenaming(false);
+    setBusy(false);
+  };
 
   return (
-    <th className="border-b border-r border-border px-2 py-1.5 last:border-r-0">
+    <th
+      className="border-b border-r border-border px-2 py-1.5 last:border-r-0"
+      onContextMenu={(event) => {
+        if (!manageable) return;
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+    >
       <div className="flex items-center gap-0.5">
-      <button
-        type="button"
-        className="flex min-h-6 w-full items-center gap-1 rounded px-1 text-left hover:bg-background"
-        onClick={() => onSort(property)}
-      >
-        <span className="truncate">{label}</span>
-        {direction === "asc" ? <CaretUp size={12} /> : direction === "desc" ? <CaretDown size={12} /> : null}
-      </button>
-      {onRename && (
-        <button
-          type="button"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-background"
-          aria-label={`Rename ${label} property`}
-          title="Rename property"
-          onClick={onRename}
-        >
-          <DotsThree size={14} />
-        </button>
-      )}
+        {renaming ? (
+          <input
+            autoFocus
+            aria-label={`Rename ${label} property`}
+            className="h-7 min-w-24 flex-1 rounded border border-input bg-background px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
+            value={renameDraft}
+            disabled={busy}
+            onChange={(event) => setRenameDraft(event.currentTarget.value)}
+            onBlur={() => void commitRename()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void commitRename();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setRenameDraft(label);
+                setRenaming(false);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="flex min-h-6 w-full items-center gap-1 rounded px-1 text-left hover:bg-background"
+            onClick={() => onSort(property)}
+          >
+            <span className="truncate">{label}</span>
+            {direction === "asc" ? <CaretUp size={12} /> : direction === "desc" ? <CaretDown size={12} /> : null}
+          </button>
+        )}
+        {definition && onRename && onChangeType && onDelete && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-background"
+                aria-label={`Edit ${label} property`}
+                title="Property options"
+              >
+                <DotsThree size={14} weight="bold" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setRenameDraft(label);
+                  setRenaming(true);
+                }}
+              >
+                <PencilSimple size={16} aria-hidden="true" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Change type</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {DATABASE_PROPERTY_TYPES.map((type) => (
+                    <DropdownMenuItem
+                      key={type.value}
+                      disabled={definition.type === type.value}
+                      onSelect={() => void onChangeType(type.value)}
+                    >
+                      <span className="flex w-4 justify-center" aria-hidden="true">
+                        {definition.type === type.value && <Check size={14} />}
+                      </span>
+                      {type.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => void onDelete()}
+              >
+                <Trash size={16} aria-hidden="true" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </th>
   );
@@ -588,7 +738,9 @@ function PropertyCell({
   value,
   onChange,
   onCreateOption,
-  onChangeOptionColor
+  onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption
 }: {
   property: string;
   definition: DatabasePropertyDefinition;
@@ -596,6 +748,8 @@ function PropertyCell({
   onChange: (value: unknown) => void;
   onCreateOption: (option: string) => Promise<boolean>;
   onChangeOptionColor: (option: string, color: DatabasePropertyOptionColor) => Promise<boolean>;
+  onRenameOption: (option: string, newName: string) => Promise<boolean>;
+  onDeleteOption: (option: string) => Promise<boolean>;
 }): ReactElement {
   if (definition.type === "checkbox") {
     return (
@@ -620,6 +774,8 @@ function PropertyCell({
         onChange={onChange}
         onCreateOption={onCreateOption}
         onChangeOptionColor={onChangeOptionColor}
+        onRenameOption={onRenameOption}
+        onDeleteOption={onDeleteOption}
       />
     );
   }
@@ -648,7 +804,9 @@ function DatabaseTableOptionCell({
   options,
   onChange,
   onCreateOption,
-  onChangeOptionColor
+  onChangeOptionColor,
+  onRenameOption,
+  onDeleteOption
 }: {
   property: string;
   mode: "select" | "multi-select";
@@ -657,6 +815,8 @@ function DatabaseTableOptionCell({
   onChange: (value: unknown) => void;
   onCreateOption: (option: string) => Promise<boolean>;
   onChangeOptionColor: (option: string, color: DatabasePropertyOptionColor) => Promise<boolean>;
+  onRenameOption: (option: string, newName: string) => Promise<boolean>;
+  onDeleteOption: (option: string) => Promise<boolean>;
 }): ReactElement {
   const [editing, setEditing] = useState(false);
   const selected = mode === "multi-select"
@@ -677,6 +837,8 @@ function DatabaseTableOptionCell({
         onChange={onChange}
         onCreateOption={onCreateOption}
         onChangeOptionColor={onChangeOptionColor}
+        onRenameOption={onRenameOption}
+        onDeleteOption={onDeleteOption}
         onFinish={() => setEditing(false)}
       />
     );
@@ -694,7 +856,6 @@ function DatabaseTableOptionCell({
           <DatabaseOptionPill
             key={item}
             option={optionForValue(item, options)}
-            onColorChange={(color) => onChangeOptionColor(item, color)}
           />
         ))
       ) : (

@@ -9,6 +9,10 @@ import {
   renameFrontmatterProperty
 } from "./PageProperties";
 import { formatPropertyValue, pageTitleFromPath } from "./pagePresentation";
+import {
+  databasePropertyOptionChoices,
+  rankDatabasePropertyOptions
+} from "./DatabaseOptionEditor";
 
 describe("page editor presentation", () => {
   it("derives page titles from each canonical filename shape", () => {
@@ -42,7 +46,8 @@ describe("page editor presentation", () => {
     expect(markup).toContain("status");
     expect(markup).toContain("ready");
     expect(markup).toContain("published");
-    expect(markup).toContain("True");
+    expect(markup).toContain("Checked");
+    expect(markup).not.toContain("True");
     expect(markup).toContain("server");
     expect(markup).toContain("editor");
   });
@@ -104,12 +109,71 @@ describe("page editor presentation", () => {
     );
 
     expect(markup).toContain('aria-label="Edit status"');
-    expect(markup).toContain('aria-label="Edit published"');
+    expect(markup).toContain('aria-label="Toggle published"');
+    expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('aria-label="Edit launched"');
     expect(markup).toContain('aria-label="Edit tags"');
     expect(markup).toContain("right-click for property options");
     expect(markup).not.toContain('aria-label="Property text"');
     expect(markup).not.toContain('aria-label="Type for status"');
     expect(markup).not.toContain('aria-label="Delete status"');
+  });
+
+  it("uses database schema definitions for record properties, including empty fields", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PageProperties, {
+        frontmatter: { status: "doing" },
+        database: {
+          databasePath: "Tasks",
+          schemaVersion: "schema-v1",
+          schema: {
+            type: "database",
+            unsupportedProperties: [],
+            properties: {
+              status: { type: "select", options: [{ name: "todo" }, { name: "doing" }] },
+              areas: { type: "multi-select", options: [{ name: "editor" }] },
+              approved: { type: "checkbox" }
+            },
+            views: [{ name: "All", type: "table", columns: ["status", "areas", "approved"] }]
+          }
+        },
+        onChange: () => undefined
+      })
+    );
+
+    expect(markup).toContain('aria-label="Edit status"');
+    expect(markup).toContain('aria-label="Edit areas"');
+    expect(markup).toContain('aria-label="Toggle approved"');
+    expect(markup).not.toContain("Add property");
+  });
+
+  it("ranks exact, prefix, and substring option matches in that order", () => {
+    const options = [
+      { name: "frontend" },
+      { name: "end" },
+      { name: "backend" },
+      { name: "ending" }
+    ];
+
+    expect(rankDatabasePropertyOptions(options, "end").map((option) => option.name)).toEqual([
+      "end",
+      "ending",
+      "frontend",
+      "backend"
+    ]);
+  });
+
+  it("focuses the first match or option creation when nothing matches", () => {
+    const options = [{ name: "todo" }, { name: "doing" }];
+
+    expect(databasePropertyOptionChoices(options, "do", true)[0]).toEqual({
+      type: "option",
+      name: "doing"
+    });
+    expect(databasePropertyOptionChoices(options, "blocked", true)[0]).toEqual({ type: "create" });
+    expect(databasePropertyOptionChoices([], "", true)[0]).toEqual({ type: "create" });
+    expect(databasePropertyOptionChoices(options, "todo", true)).toEqual([
+      { type: "option", name: "todo" }
+    ]);
   });
 });

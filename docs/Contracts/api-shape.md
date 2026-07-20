@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # API Shape
 
@@ -32,6 +32,11 @@ API tests should protect shape, not duplicate every runtime behavior test.
 Current command groups include workspace/tree/page mutation, database schema/record/query, indexed
 search, Rumi revision checkpoint/list/content/restore, workspace asset upload/read, authentication,
 and normalized events.
+
+Opening a Markdown record directly inside a database includes its database path, schema, and schema
+version in the page response. This lets any client render typed record properties without querying
+or downloading every database record. Creating a select option is a versioned database-schema
+command; the client does not write `.db.md` directly.
 
 `POST /api/assets?fileName=...` accepts bounded raw asset bytes and returns the runtime-selected
 relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted image/PDF formats from

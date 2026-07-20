@@ -2,6 +2,7 @@ import type {
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
+  CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreateFolderRequest,
@@ -186,6 +187,16 @@ export class RumiApiClient {
 
   async updateDatabaseSchema(request: UpdateDatabaseSchemaRequest): Promise<SavePageResult> {
     return this.request<SavePageResult>("/api/database/schema", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async createDatabasePropertyOption(
+    request: CreateDatabasePropertyOptionRequest
+  ): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property/options", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

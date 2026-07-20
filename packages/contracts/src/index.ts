@@ -134,6 +134,13 @@ export interface UpdateDatabaseSchemaRequest {
   baseVersion?: string;
 }
 
+export interface CreateDatabasePropertyOptionRequest {
+  databasePath: string;
+  property: string;
+  option: string;
+  baseVersion?: string;
+}
+
 export interface RenameDatabasePropertyRequest {
   databasePath: string;
   property: string;
@@ -178,6 +185,12 @@ export interface OpenWorkspaceResult {
 
 export type PageDocumentKind = "page" | "folder" | "database";
 
+export interface PageDatabaseContext {
+  databasePath: string;
+  schema: DatabaseSchema;
+  schemaVersion: string;
+}
+
 export interface PageDocument {
   path: string;
   kind: PageDocumentKind;
@@ -186,6 +199,7 @@ export interface PageDocument {
   contentHash: string;
   frontmatterHash: string;
   version: string;
+  database?: PageDatabaseContext;
 }
 
 export type SavePageReason =

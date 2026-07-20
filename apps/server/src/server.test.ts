@@ -317,8 +317,11 @@ describe("Rumi server API", () => {
       payload: {
         databasePath: "Tasks",
         baseVersion: updatedQuery.json().schemaVersion,
-        properties: { status: { type: "text" } },
-        views: [{ name: "All", type: "table", columns: ["status"] }]
+        properties: {
+          status: { type: "text" },
+          priority: { type: "select", options: [{ name: "normal" }] }
+        },
+        views: [{ name: "All", type: "table", columns: ["status", "priority"] }]
       }
     });
     expect(schemaUpdate.statusCode).toBe(200);
@@ -328,12 +331,55 @@ describe("Rumi server API", () => {
       url: "/api/database/query",
       payload: { databasePath: "Tasks" }
     });
+    const createOption = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property/options",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: schemaQuery.json().schemaVersion,
+        property: "priority",
+        option: "urgent"
+      }
+    });
+    expect(createOption.statusCode).toBe(200);
+
+    const optionQuery = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(optionQuery.json().schema.properties.priority.options).toEqual([
+      { name: "normal" },
+      { name: "urgent" }
+    ]);
+
+    const openRecord = await server.inject({
+      method: "GET",
+      url: "/api/page?path=Tasks%2FAPI%20record.md"
+    });
+    expect(openRecord.statusCode).toBe(200);
+    expect(openRecord.json()).toMatchObject({
+      path: "Tasks/API record.md",
+      database: {
+        databasePath: "Tasks",
+        schemaVersion: optionQuery.json().schemaVersion,
+        schema: {
+          properties: {
+            priority: {
+              type: "select",
+              options: [{ name: "normal" }, { name: "urgent" }]
+            }
+          }
+        }
+      }
+    });
+
     const renameProperty = await server.inject({
       method: "POST",
       url: "/api/database/schema/property/rename",
       payload: {
         databasePath: "Tasks",
-        baseVersion: schemaQuery.json().schemaVersion,
+        baseVersion: optionQuery.json().schemaVersion,
         property: "status",
         newName: "state"
       }

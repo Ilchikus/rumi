@@ -295,6 +295,15 @@ describe("WorkspaceRuntime", () => {
         }
       ]
     });
+
+    await expect(runtime.openPage(record.path)).resolves.toMatchObject({
+      path: "Tasks/Ship editor.md",
+      database: {
+        databasePath: "Tasks",
+        schemaVersion: query.schemaVersion,
+        schema: query.schema
+      }
+    });
   });
 
   it("updates database schema and record properties without client-side file coordination", async () => {
@@ -331,6 +340,20 @@ describe("WorkspaceRuntime", () => {
       options: [{ name: "todo" }, { name: "done" }]
     });
     expect(query.records[0]?.frontmatter.status).toBe("done");
+
+    const optionResult = await runtime.createDatabasePropertyOption({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "status",
+      option: "blocked"
+    });
+    expect(optionResult.status).toBe("saved");
+
+    const withCreatedOption = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(withCreatedOption.schema.properties.status).toEqual({
+      type: "select",
+      options: [{ name: "todo" }, { name: "done" }, { name: "blocked" }]
+    });
   });
 
   it("renames a supported database property across schema, views, and records", async () => {

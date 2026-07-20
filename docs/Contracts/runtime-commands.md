@@ -24,6 +24,7 @@ createDatabase
 createDatabaseRecord
 updateDatabaseRecordProperty
 updateDatabaseSchema
+createDatabasePropertyOption
 renameDatabaseProperty
 renameNode
 moveNode

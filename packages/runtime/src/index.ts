@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type {
   CheckpointRequest,
+  CreateDatabasePropertyOptionRequest,
   CreateFolderRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
@@ -12,6 +13,7 @@ import type {
   FrontmatterRecord,
   MoveNodeRequest,
   OpenWorkspaceResult,
+  PageDatabaseContext,
   PageDocument,
   PageDocumentKind,
   QueryDatabaseRequest,
@@ -200,6 +202,7 @@ export class WorkspaceRuntime {
     const absolutePath = this.resolveAbsolutePath(target.path);
     const content = await fs.readFile(absolutePath, "utf8");
     const parsed = parseMarkdownFile(content);
+    const database = target.kind === "page" ? await this.databaseContextForPage(target.path) : null;
 
     return {
       path: target.path,
@@ -208,7 +211,8 @@ export class WorkspaceRuntime {
       markdownBody: parsed.body,
       contentHash: hashText(content),
       frontmatterHash: hashJson(parsed.frontmatter),
-      version: hashText(content)
+      version: hashText(content),
+      ...(database ? { database } : {})
     };
   }
 
@@ -478,6 +482,40 @@ export class WorkspaceRuntime {
       ...result,
       events: [...result.events, databaseEvent]
     };
+  }
+
+  async createDatabasePropertyOption(
+    request: CreateDatabasePropertyOptionRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const property = request.property.trim();
+    const option = request.option.trim();
+    const definition = config.schema.properties[property];
+
+    if (!definition || (definition.type !== "select" && definition.type !== "multi-select")) {
+      throw new Error(`Database property is not a select: ${property || request.property}`);
+    }
+
+    if (!option) {
+      throw new Error("Database option name cannot be empty");
+    }
+
+    if ((definition.options ?? []).some((candidate) => candidate.name.toLowerCase() === option.toLowerCase())) {
+      throw new Error(`Database option already exists: ${option}`);
+    }
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
+      properties: {
+        ...config.schema.properties,
+        [property]: {
+          ...definition,
+          options: [...(definition.options ?? []), { name: option }]
+        }
+      },
+      views: config.schema.views
+    });
   }
 
   async renameDatabaseProperty(request: RenameDatabasePropertyRequest): Promise<SavePageResult> {
@@ -884,6 +922,27 @@ export class WorkspaceRuntime {
 
       index += 1;
     }
+  }
+
+  private async databaseContextForPage(pagePath: string): Promise<PageDatabaseContext | null> {
+    const databasePath = path.posix.dirname(pagePath);
+
+    if (databasePath === "." || databasePath === "") {
+      return null;
+    }
+
+    const configPath = databaseConfigPathForDirectory(databasePath);
+
+    if (!(await fileExists(this.resolveAbsolutePath(configPath)))) {
+      return null;
+    }
+
+    const config = await loadDatabaseConfig(this.rootPath, databasePath);
+    return {
+      databasePath: config.databasePath,
+      schema: config.schema,
+      schemaVersion: config.version
+    };
   }
 
   private async checkpointNodeBeforeDelete(

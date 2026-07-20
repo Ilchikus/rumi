@@ -166,6 +166,85 @@ export function App(): ReactElement {
     pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
   }, []);
 
+  const createOpenPageDatabaseOption = useCallback(
+    async (property: string, option: string): Promise<boolean> => {
+      const currentPage = pageRef.current;
+      const database = currentPage?.database;
+      const definition = database?.schema.properties[property];
+
+      if (
+        !currentPage ||
+        !database ||
+        !definition ||
+        (definition.type !== "select" && definition.type !== "multi-select")
+      ) {
+        return false;
+      }
+
+      try {
+        const result = await api.createDatabasePropertyOption({
+          databasePath: database.databasePath,
+          baseVersion: database.schemaVersion,
+          property,
+          option
+        });
+
+        if (result.status === "conflict") {
+          forgetCachedPage(currentPage.path);
+          setMessage("The database options changed elsewhere. Reopen this record and try again.");
+          return false;
+        }
+
+        const latestPage = pageRef.current;
+        if (latestPage?.path !== currentPage.path || !latestPage.database) {
+          return false;
+        }
+
+        const latestDefinition = latestPage.database.schema.properties[property];
+        if (
+          !latestDefinition ||
+          (latestDefinition.type !== "select" && latestDefinition.type !== "multi-select")
+        ) {
+          return false;
+        }
+
+        const optionAlreadyPresent = (latestDefinition.options ?? []).some(
+          (candidate) => candidate.name.toLowerCase() === option.toLowerCase()
+        );
+
+        const nextPage: PageDocument = {
+          ...latestPage,
+          database: {
+            ...latestPage.database,
+            schemaVersion: optionAlreadyPresent ? latestPage.database.schemaVersion : result.version,
+            schema: {
+              ...latestPage.database.schema,
+              properties: {
+                ...latestPage.database.schema.properties,
+                [property]: {
+                  ...latestDefinition,
+                  options: optionAlreadyPresent
+                    ? (latestDefinition.options ?? [])
+                    : [...(latestDefinition.options ?? []), { name: option }]
+                }
+              }
+            }
+          }
+        };
+
+        forgetCachedPage(currentPage.path);
+        pageRef.current = nextPage;
+        setPage(nextPage);
+        setMessage(`Created “${option}” in ${property}.`);
+        return true;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, forgetCachedPage]
+  );
+
   const loadPage = useCallback(
     async (path: string): Promise<PageDocument> => {
       const cachedRequest = pageLoadCacheRef.current.get(path);
@@ -197,6 +276,30 @@ export function App(): ReactElement {
     },
     [api, cacheResolvedPage]
   );
+
+  const refreshOpenPageDatabaseContext = useCallback(async () => {
+    const currentPage = pageRef.current;
+
+    if (!currentPage?.database) {
+      return;
+    }
+
+    try {
+      forgetCachedPage(currentPage.path);
+      const refreshedPage = await api.openPage(currentPage.path);
+      const latestPage = pageRef.current;
+
+      if (latestPage?.path !== currentPage.path || !refreshedPage.database) {
+        return;
+      }
+
+      const nextPage = { ...latestPage, database: refreshedPage.database };
+      pageRef.current = nextPage;
+      setPage(nextPage);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, [api, forgetCachedPage]);
 
   const prefetchNode = useCallback(
     (node: WorkspaceNode) => {
@@ -864,8 +967,15 @@ export function App(): ReactElement {
       if (event.name === "database.recordsChanged" || event.name === "database.schemaChanged") {
         setDatabaseRefreshRevision((current) => current + 1);
       }
+
+      if (
+        event.name === "database.schemaChanged" &&
+        pageRef.current?.database?.databasePath === event.path
+      ) {
+        void refreshOpenPageDatabaseContext();
+      }
     });
-  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree]);
+  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTree, refreshOpenPageDatabaseContext]);
 
   return (
     <main className="relative flex h-screen max-h-screen min-h-0 overflow-hidden bg-background text-foreground">
@@ -1017,8 +1127,10 @@ export function App(): ReactElement {
               ) : (
                 <PageProperties
                   frontmatter={page.frontmatter}
+                  database={page.database}
                   disabled={saveState === "conflict"}
                   onChange={updatePageFrontmatter}
+                  onCreateDatabaseOption={createOpenPageDatabaseOption}
                 />
               )}
 

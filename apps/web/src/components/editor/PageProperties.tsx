@@ -1,4 +1,9 @@
-import type { FrontmatterRecord } from "@rumi/contracts";
+import type {
+  DatabasePropertyDefinition,
+  DatabasePropertyOption,
+  FrontmatterRecord,
+  PageDatabaseContext
+} from "@rumi/contracts";
 import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
@@ -19,14 +24,18 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
+import { DatabaseOptionEditor } from "./DatabaseOptionEditor";
 import { formatPropertyValue } from "./pagePresentation";
 
 export type PagePropertyKind = "text" | "number" | "date" | "checkbox" | "list" | "json";
+type PropertyEditorKind = PagePropertyKind | "select" | "multi-select";
 
 export interface PagePropertiesProps {
   frontmatter: FrontmatterRecord;
+  database?: PageDatabaseContext | undefined;
   disabled?: boolean;
   onChange?: (frontmatter: FrontmatterRecord) => void;
+  onCreateDatabaseOption?: (property: string, option: string) => Promise<boolean>;
 }
 
 const PROPERTY_KIND_OPTIONS: ReadonlyArray<{ value: PagePropertyKind; label: string }> = [
@@ -144,8 +153,19 @@ export function renameFrontmatterProperty(
   return renamed;
 }
 
-export function PageProperties({ frontmatter, disabled = false, onChange }: PagePropertiesProps): ReactElement | null {
-  const properties = Object.entries(frontmatter);
+export function PageProperties({
+  frontmatter,
+  database,
+  disabled = false,
+  onChange,
+  onCreateDatabaseOption
+}: PagePropertiesProps): ReactElement | null {
+  const schemaPropertyNames = database ? Object.keys(database.schema.properties) : [];
+  const propertyNames = [
+    ...schemaPropertyNames,
+    ...Object.keys(frontmatter).filter((name) => !schemaPropertyNames.includes(name))
+  ];
+  const properties = propertyNames.map((name) => [name, frontmatter[name]] as const);
   const editable = Boolean(onChange);
   const [addingProperty, setAddingProperty] = useState(false);
 
@@ -154,7 +174,16 @@ export function PageProperties({ frontmatter, disabled = false, onChange }: Page
   }
 
   const updateProperty = (name: string, value: unknown) => {
-    onChange?.({ ...frontmatter, [name]: value });
+    if (!onChange) return;
+    const nextFrontmatter = { ...frontmatter };
+
+    if (value === undefined) {
+      delete nextFrontmatter[name];
+    } else {
+      nextFrontmatter[name] = value;
+    }
+
+    onChange(nextFrontmatter);
   };
 
   const deleteProperty = (name: string) => {
@@ -180,7 +209,7 @@ export function PageProperties({ frontmatter, disabled = false, onChange }: Page
         >
           Properties
         </h2>
-        {editable && !addingProperty && (
+        {editable && !database && !addingProperty && (
           <Button
             type="button"
             size="sm"
@@ -202,18 +231,24 @@ export function PageProperties({ frontmatter, disabled = false, onChange }: Page
               key={name}
               name={name}
               value={value}
+              definition={database?.schema.properties[name]}
               allNames={properties.map(([propertyName]) => propertyName)}
               disabled={disabled}
               editable={editable}
               onDelete={() => deleteProperty(name)}
               onRename={(nextName) => renameProperty(name, nextName)}
               onChange={(nextValue) => updateProperty(name, nextValue)}
+              onCreateOption={
+                onCreateDatabaseOption
+                  ? (option) => onCreateDatabaseOption(name, option)
+                  : undefined
+              }
             />
           ))}
         </dl>
       )}
 
-      {editable && addingProperty && (
+      {editable && !database && addingProperty && (
         <AddPropertyRow
           existingNames={properties.map(([name]) => name)}
           disabled={disabled}
@@ -231,25 +266,29 @@ export function PageProperties({ frontmatter, disabled = false, onChange }: Page
 interface PropertyRowProps {
   name: string;
   value: unknown;
+  definition?: DatabasePropertyDefinition | undefined;
   allNames: string[];
   disabled: boolean;
   editable: boolean;
   onChange: (value: unknown) => void;
   onDelete: () => void;
   onRename: (name: string) => void;
+  onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
 }
 
 function PropertyRow({
   name,
   value,
+  definition,
   allNames,
   disabled,
   editable,
   onChange,
   onDelete,
-  onRename
+  onRename,
+  onCreateOption
 }: PropertyRowProps): ReactElement {
-  const kind = pagePropertyKind(value);
+  const kind: PropertyEditorKind = definition?.type ?? pagePropertyKind(value);
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
 
@@ -299,12 +338,16 @@ function PropertyRow({
           value={value}
           disabled={disabled}
           onChange={onChange}
+          options={definition?.options ?? []}
+          onCreateOption={onCreateOption}
         />
       </dd>
       {contextPoint && (
         <PropertyContextMenu
           point={contextPoint}
-          currentKind={kind}
+          currentKind={definition ? undefined : kind as PagePropertyKind}
+          schemaOwned={Boolean(definition)}
+          hasValue={value !== undefined}
           onOpenChange={(open) => {
             if (!open) setContextPoint(null);
           }}
@@ -319,7 +362,9 @@ function PropertyRow({
 
 interface PropertyContextMenuProps {
   point: { x: number; y: number };
-  currentKind: PagePropertyKind;
+  currentKind?: PagePropertyKind | undefined;
+  schemaOwned: boolean;
+  hasValue: boolean;
   onOpenChange: (open: boolean) => void;
   onRename: () => void;
   onChangeKind: (kind: PagePropertyKind) => void;
@@ -329,6 +374,8 @@ interface PropertyContextMenuProps {
 function PropertyContextMenu({
   point,
   currentKind,
+  schemaOwned,
+  hasValue,
   onOpenChange,
   onRename,
   onChangeKind,
@@ -346,35 +393,44 @@ function PropertyContextMenu({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
-        <DropdownMenuItem onSelect={onRename}>
-          <PencilSimple size={16} aria-hidden="true" />
-          Rename
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <ArrowsClockwise size={16} aria-hidden="true" />
-            Change type
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {PROPERTY_KIND_OPTIONS.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                disabled={option.value === currentKind}
-                onSelect={() => onChangeKind(option.value)}
-              >
-                <span className="flex w-4 justify-center" aria-hidden="true">
-                  {option.value === currentKind && <Check size={14} />}
-                </span>
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
-          <Trash size={16} aria-hidden="true" />
-          Delete
-        </DropdownMenuItem>
+        {schemaOwned ? (
+          <DropdownMenuItem disabled={!hasValue} onSelect={onDelete}>
+            <Trash size={16} aria-hidden="true" />
+            Clear value
+          </DropdownMenuItem>
+        ) : (
+          <>
+            <DropdownMenuItem onSelect={onRename}>
+              <PencilSimple size={16} aria-hidden="true" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <ArrowsClockwise size={16} aria-hidden="true" />
+                Change type
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {PROPERTY_KIND_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    disabled={option.value === currentKind}
+                    onSelect={() => onChangeKind(option.value)}
+                  >
+                    <span className="flex w-4 justify-center" aria-hidden="true">
+                      {option.value === currentKind && <Check size={14} />}
+                    </span>
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
+              <Trash size={16} aria-hidden="true" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -467,11 +523,13 @@ function PropertyNameInput({
 }
 
 interface PropertyValueEditorProps {
-  kind: PagePropertyKind;
+  kind: PropertyEditorKind;
   value: unknown;
   disabled: boolean;
   onChange: (value: unknown) => void;
   onFinish: () => void;
+  options: DatabasePropertyOption[];
+  onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
 }
 
 function PropertyValueCell({
@@ -479,9 +537,26 @@ function PropertyValueCell({
   kind,
   value,
   disabled,
-  onChange
+  onChange,
+  options,
+  onCreateOption
 }: Omit<PropertyValueEditorProps, "onFinish"> & { name: string }): ReactElement {
   const [editing, setEditing] = useState(false);
+
+  if (kind === "checkbox") {
+    return (
+      <button
+        type="button"
+        aria-label={`Toggle ${name}`}
+        aria-pressed={value === true}
+        className="flex min-h-7 w-full items-center rounded px-1 py-1 text-left outline-none hover:bg-background focus:ring-2 focus:ring-ring disabled:opacity-50"
+        disabled={disabled}
+        onClick={() => onChange(value !== true)}
+      >
+        <CheckboxValue checked={value === true} />
+      </button>
+    );
+  }
 
   if (editing) {
     return (
@@ -490,6 +565,8 @@ function PropertyValueCell({
         value={value}
         disabled={disabled}
         onChange={onChange}
+        options={options}
+        onCreateOption={onCreateOption}
         onFinish={() => setEditing(false)}
       />
     );
@@ -513,7 +590,9 @@ function PropertyValueEditor({
   value,
   disabled,
   onChange,
-  onFinish
+  onFinish,
+  options,
+  onCreateOption
 }: PropertyValueEditorProps): ReactElement {
   switch (kind) {
     case "checkbox": {
@@ -533,7 +612,7 @@ function PropertyValueEditor({
           }}
         >
           <Icon size={16} className="text-neutral-400" aria-hidden="true" />
-          {checked ? "True" : "False"}
+          <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
         </button>
       );
     }
@@ -577,6 +656,19 @@ function PropertyValueEditor({
           values={Array.isArray(value) ? value : []}
           disabled={disabled}
           onChange={onChange}
+          onFinish={onFinish}
+        />
+      );
+    case "select":
+    case "multi-select":
+      return (
+        <DatabaseOptionEditor
+          mode={kind}
+          value={value}
+          options={options}
+          disabled={disabled}
+          onChange={onChange}
+          onCreateOption={onCreateOption}
           onFinish={onFinish}
         />
       );
@@ -890,14 +982,7 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
 
 function PropertyValue({ value }: { value: unknown }): ReactElement {
   if (typeof value === "boolean") {
-    const Icon = value ? CheckSquare : Square;
-
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <Icon size={16} className="text-neutral-400" aria-hidden="true" />
-        {value ? "True" : "False"}
-      </span>
-    );
+    return <CheckboxValue checked={value} />;
   }
 
   if (Array.isArray(value) && value.length === 0) {
@@ -921,6 +1006,16 @@ function PropertyValue({ value }: { value: unknown }): ReactElement {
   return (
     <span className={displayValue === "Empty" ? "text-muted-foreground" : undefined}>
       {displayValue}
+    </span>
+  );
+}
+
+function CheckboxValue({ checked }: { checked: boolean }): ReactElement {
+  const Icon = checked ? CheckSquare : Square;
+  return (
+    <span className="inline-flex items-center" title={checked ? "Checked" : "Unchecked"}>
+      <Icon size={16} className="text-neutral-400" aria-hidden="true" />
+      <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
     </span>
   );
 }

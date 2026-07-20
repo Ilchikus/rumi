@@ -7,6 +7,7 @@ import type {
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
+  CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreateFolderRequest,
@@ -508,6 +509,19 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     "/api/database/schema",
     async (request, reply) => {
       const result = await runtime.updateDatabaseSchema(request.body);
+
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+
+      return result;
+    }
+  );
+
+  server.post<{ Body: CreateDatabasePropertyOptionRequest }>(
+    "/api/database/schema/property/options",
+    async (request, reply) => {
+      const result = await runtime.createDatabasePropertyOption(request.body);
 
       if (result.status === "conflict") {
         return reply.status(409).send(result);

@@ -13,9 +13,9 @@ import type {
   DatabaseSort,
   QueryDatabaseResult
 } from "@rumi/contracts";
+import { DatabaseOptionEditor } from "../editor/DatabaseOptionEditor";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { cn } from "../../lib/utils";
 
 export interface DatabaseViewProps {
   api: RumiApiClient;
@@ -109,20 +109,20 @@ export function DatabaseView({
 
   const updateProperty = useCallback(
     async (record: DatabaseRecord, property: string, value: unknown) => {
-      const previousResult = result;
+      const previousValue = record.frontmatter[property];
 
-      if (!previousResult) {
-        return;
-      }
-
-      setResult({
-        ...previousResult,
-        records: previousResult.records.map((candidate) =>
-          candidate.path === record.path
-            ? { ...candidate, frontmatter: { ...candidate.frontmatter, [property]: value } }
-            : candidate
-        )
-      });
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              records: current.records.map((candidate) =>
+                candidate.path === record.path
+                  ? { ...candidate, frontmatter: { ...candidate.frontmatter, [property]: value } }
+                  : candidate
+              )
+            }
+          : current
+      );
 
       try {
         const saved = await api.updateDatabaseRecordProperty({
@@ -152,8 +152,87 @@ export function DatabaseView({
             : current
         );
       } catch (error) {
-        setResult(previousResult);
+        setResult((current) =>
+          current
+            ? {
+                ...current,
+                records: current.records.map((candidate) => {
+                  if (candidate.path !== record.path) return candidate;
+                  const frontmatter = { ...candidate.frontmatter };
+                  if (previousValue === undefined) delete frontmatter[property];
+                  else frontmatter[property] = previousValue;
+                  return { ...candidate, frontmatter };
+                })
+              }
+            : current
+        );
         onMessage(errorMessage(error));
+      }
+    },
+    [api, databasePath, load, onMessage]
+  );
+
+  const createOption = useCallback(
+    async (property: string, option: string): Promise<boolean> => {
+      const currentResult = result;
+      const definition = currentResult?.schema.properties[property];
+
+      if (
+        !currentResult ||
+        !definition ||
+        (definition.type !== "select" && definition.type !== "multi-select")
+      ) {
+        return false;
+      }
+
+      try {
+        const saved = await api.createDatabasePropertyOption({
+          databasePath,
+          baseVersion: currentResult.schemaVersion,
+          property,
+          option
+        });
+
+        if (saved.status === "conflict") {
+          onMessage("The database options changed elsewhere. Reloaded the latest version.");
+          await load();
+          return false;
+        }
+
+        setResult((current) => {
+          const currentDefinition = current?.schema.properties[property];
+          if (
+            !current ||
+            !currentDefinition ||
+            (currentDefinition.type !== "select" && currentDefinition.type !== "multi-select")
+          ) {
+            return current;
+          }
+
+          const optionExists = (currentDefinition.options ?? []).some(
+            (candidate) => candidate.name.toLowerCase() === option.toLowerCase()
+          );
+          return {
+            ...current,
+            schemaVersion: optionExists ? current.schemaVersion : saved.version,
+            schema: {
+              ...current.schema,
+              properties: {
+                ...current.schema.properties,
+                [property]: {
+                  ...currentDefinition,
+                  options: optionExists
+                    ? (currentDefinition.options ?? [])
+                    : [...(currentDefinition.options ?? []), { name: option }]
+                }
+              }
+            }
+          };
+        });
+        return true;
+      } catch (error) {
+        onMessage(errorMessage(error));
+        return false;
       }
     },
     [api, databasePath, load, onMessage, result]
@@ -314,9 +393,11 @@ export function DatabaseView({
                 {columns.map((column) => (
                   <td key={column} className="border-b border-border px-2 py-1">
                     <PropertyCell
+                      property={column}
                       definition={result.schema.properties[column] ?? { type: "text" }}
                       value={record.frontmatter[column]}
                       onChange={(value) => void updateProperty(record, column, value)}
+                      onCreateOption={(option) => createOption(column, option)}
                     />
                   </td>
                 ))}
@@ -418,13 +499,17 @@ function SortableHeader({
 }
 
 function PropertyCell({
+  property,
   definition,
   value,
-  onChange
+  onChange,
+  onCreateOption
 }: {
+  property: string;
   definition: DatabasePropertyDefinition;
   value: unknown;
   onChange: (value: unknown) => void;
+  onCreateOption: (option: string) => Promise<boolean>;
 }): ReactElement {
   if (definition.type === "checkbox") {
     return (
@@ -439,20 +524,16 @@ function PropertyCell({
     );
   }
 
-  if (definition.type === "select") {
+  if (definition.type === "select" || definition.type === "multi-select") {
     return (
-      <select
-        value={typeof value === "string" ? value : ""}
-        className="h-7 min-w-28 rounded border-0 bg-transparent px-1 outline-none focus:ring-1 focus:ring-ring"
-        onChange={(event) => onChange(event.target.value || undefined)}
-      >
-        <option value="">Empty</option>
-        {(definition.options ?? []).map((option) => (
-          <option key={option.name} value={option.name}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+      <DatabaseTableOptionCell
+        property={property}
+        mode={definition.type}
+        value={value}
+        options={definition.options ?? []}
+        onChange={onChange}
+        onCreateOption={onCreateOption}
+      />
     );
   }
 
@@ -461,11 +542,8 @@ function PropertyCell({
       type={definition.type === "number" ? "number" : definition.type === "date" ? "date" : "text"}
       defaultValue={inputValue(value, definition.type)}
       key={`${definition.type}:${inputValue(value, definition.type)}`}
-      className={cn(
-        "h-7 w-full min-w-28 rounded border-0 bg-transparent px-1 outline-none focus:bg-background focus:ring-1 focus:ring-ring",
-        definition.type === "multi-select" && "min-w-40"
-      )}
-      placeholder={definition.type === "multi-select" ? "Comma-separated" : "Empty"}
+      className="h-7 w-full min-w-28 rounded border-0 bg-transparent px-1 outline-none focus:bg-background focus:ring-1 focus:ring-ring"
+      placeholder="Empty"
       onBlur={(event) => onChange(parseInput(event, definition.type))}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
@@ -473,6 +551,64 @@ function PropertyCell({
         }
       }}
     />
+  );
+}
+
+function DatabaseTableOptionCell({
+  property,
+  mode,
+  value,
+  options,
+  onChange,
+  onCreateOption
+}: {
+  property: string;
+  mode: "select" | "multi-select";
+  value: unknown;
+  options: NonNullable<DatabasePropertyDefinition["options"]>;
+  onChange: (value: unknown) => void;
+  onCreateOption: (option: string) => Promise<boolean>;
+}): ReactElement {
+  const [editing, setEditing] = useState(false);
+  const selected = mode === "multi-select"
+    ? Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : []
+    : typeof value === "string" && value
+      ? [value]
+      : [];
+
+  if (editing) {
+    return (
+      <DatabaseOptionEditor
+        mode={mode}
+        value={value}
+        options={options}
+        disabled={false}
+        onChange={onChange}
+        onCreateOption={onCreateOption}
+        onFinish={() => setEditing(false)}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Edit ${property}`}
+      className="flex min-h-7 min-w-28 flex-wrap items-center gap-1 rounded px-1 text-left hover:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+      onClick={() => setEditing(true)}
+    >
+      {selected.length > 0 ? (
+        selected.map((item) => (
+          <span key={item} className="rounded bg-muted px-1.5 py-0.5 text-xs">
+            {item}
+          </span>
+        ))
+      ) : (
+        <span className="text-muted-foreground">Empty</span>
+      )}
+    </button>
   );
 }
 

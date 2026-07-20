@@ -7,7 +7,6 @@ select_property: testing
 multi_select_property:
   - editor
   - database
-  - home-lab
 ---
 # Complete content fixture
 

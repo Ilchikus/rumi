@@ -28,3 +28,4 @@
 - Highlight every current-page match and keep the active result visible.
 - Make replace-one and replace-all undoable editor transactions that preserve surrounding block structure and marks.
 - Add focused transaction tests and real-browser smoke coverage for paste, keyboard movement, global search, page find, and replacement.
+- Explore a workspace-global Tag property whose option catalog is stored at the application/workspace level; when the Tag property is added to an ordinary page or database schema, the same options should be available across every page in that workspace.

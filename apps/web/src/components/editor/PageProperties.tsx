@@ -1,6 +1,7 @@
 import type {
   DatabasePropertyDefinition,
   DatabasePropertyOption,
+  DatabasePropertyOptionColor,
   FrontmatterRecord,
   PageDatabaseContext
 } from "@rumi/contracts";
@@ -25,6 +26,7 @@ import {
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
 import { DatabaseOptionEditor } from "./DatabaseOptionEditor";
+import { DatabaseOptionPill, optionForValue } from "./DatabaseOptionPill";
 import { formatPropertyValue } from "./pagePresentation";
 
 export type PagePropertyKind = "text" | "number" | "date" | "checkbox" | "list" | "json";
@@ -36,6 +38,11 @@ export interface PagePropertiesProps {
   disabled?: boolean;
   onChange?: (frontmatter: FrontmatterRecord) => void;
   onCreateDatabaseOption?: (property: string, option: string) => Promise<boolean>;
+  onChangeDatabaseOptionColor?: (
+    property: string,
+    option: string,
+    color: DatabasePropertyOptionColor
+  ) => Promise<boolean>;
 }
 
 const PROPERTY_KIND_OPTIONS: ReadonlyArray<{ value: PagePropertyKind; label: string }> = [
@@ -158,7 +165,8 @@ export function PageProperties({
   database,
   disabled = false,
   onChange,
-  onCreateDatabaseOption
+  onCreateDatabaseOption,
+  onChangeDatabaseOptionColor
 }: PagePropertiesProps): ReactElement | null {
   const schemaPropertyNames = database ? Object.keys(database.schema.properties) : [];
   const propertyNames = [
@@ -243,6 +251,11 @@ export function PageProperties({
                   ? (option) => onCreateDatabaseOption(name, option)
                   : undefined
               }
+              onChangeOptionColor={
+                onChangeDatabaseOptionColor
+                  ? (option, color) => onChangeDatabaseOptionColor(name, option, color)
+                  : undefined
+              }
             />
           ))}
         </dl>
@@ -274,6 +287,7 @@ interface PropertyRowProps {
   onDelete: () => void;
   onRename: (name: string) => void;
   onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
+  onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
 }
 
 function PropertyRow({
@@ -286,7 +300,8 @@ function PropertyRow({
   onChange,
   onDelete,
   onRename,
-  onCreateOption
+  onCreateOption,
+  onChangeOptionColor
 }: PropertyRowProps): ReactElement {
   const kind: PropertyEditorKind = definition?.type ?? pagePropertyKind(value);
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
@@ -299,7 +314,7 @@ function PropertyRow({
           {name}
         </dt>
         <dd className="min-w-0 break-words text-foreground">
-          <PropertyValue value={value} />
+          <PropertyValue kind={kind} value={value} options={definition?.options ?? []} />
         </dd>
       </div>
     );
@@ -340,6 +355,7 @@ function PropertyRow({
           onChange={onChange}
           options={definition?.options ?? []}
           onCreateOption={onCreateOption}
+          onChangeOptionColor={onChangeOptionColor}
         />
       </dd>
       {contextPoint && (
@@ -530,6 +546,7 @@ interface PropertyValueEditorProps {
   onFinish: () => void;
   options: DatabasePropertyOption[];
   onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
+  onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
 }
 
 function PropertyValueCell({
@@ -539,7 +556,8 @@ function PropertyValueCell({
   disabled,
   onChange,
   options,
-  onCreateOption
+  onCreateOption,
+  onChangeOptionColor
 }: Omit<PropertyValueEditorProps, "onFinish"> & { name: string }): ReactElement {
   const [editing, setEditing] = useState(false);
 
@@ -567,6 +585,7 @@ function PropertyValueCell({
         onChange={onChange}
         options={options}
         onCreateOption={onCreateOption}
+        onChangeOptionColor={onChangeOptionColor}
         onFinish={() => setEditing(false)}
       />
     );
@@ -580,7 +599,12 @@ function PropertyValueCell({
       disabled={disabled}
       onClick={() => setEditing(true)}
     >
-      <PropertyValue value={value} />
+      <PropertyValue
+        kind={kind}
+        value={value}
+        options={options}
+        onChangeOptionColor={onChangeOptionColor}
+      />
     </button>
   );
 }
@@ -592,7 +616,8 @@ function PropertyValueEditor({
   onChange,
   onFinish,
   options,
-  onCreateOption
+  onCreateOption,
+  onChangeOptionColor
 }: PropertyValueEditorProps): ReactElement {
   switch (kind) {
     case "checkbox": {
@@ -669,6 +694,7 @@ function PropertyValueEditor({
           disabled={disabled}
           onChange={onChange}
           onCreateOption={onCreateOption}
+          onChangeOptionColor={onChangeOptionColor}
           onFinish={onFinish}
         />
       );
@@ -980,9 +1006,47 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
   );
 }
 
-function PropertyValue({ value }: { value: unknown }): ReactElement {
+function PropertyValue({
+  kind,
+  value,
+  options,
+  onChangeOptionColor
+}: {
+  kind: PropertyEditorKind;
+  value: unknown;
+  options: DatabasePropertyOption[];
+  onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
+}): ReactElement {
   if (typeof value === "boolean") {
     return <CheckboxValue checked={value} />;
+  }
+
+  const selectedOptions = kind === "multi-select"
+    ? Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : []
+    : kind === "select" && typeof value === "string" && value
+      ? [value]
+      : null;
+
+  if (selectedOptions) {
+    return selectedOptions.length > 0 ? (
+      <span className="flex flex-wrap gap-1">
+        {selectedOptions.map((item) => (
+          <DatabaseOptionPill
+            key={item}
+            option={optionForValue(item, options)}
+            onColorChange={
+              onChangeOptionColor
+                ? (color) => onChangeOptionColor(item, color)
+                : undefined
+            }
+          />
+        ))}
+      </span>
+    ) : (
+      <span className="text-muted-foreground">Empty</span>
+    );
   }
 
   if (Array.isArray(value) && value.length === 0) {

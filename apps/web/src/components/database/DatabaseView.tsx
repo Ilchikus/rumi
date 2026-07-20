@@ -8,12 +8,18 @@ import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
 import type { RumiApiClient } from "@rumi/api-client";
 import type {
   DatabasePropertyDefinition,
+  DatabasePropertyOptionColor,
   DatabasePropertyType,
   DatabaseRecord,
   DatabaseSort,
   QueryDatabaseResult
 } from "@rumi/contracts";
 import { DatabaseOptionEditor } from "../editor/DatabaseOptionEditor";
+import {
+  DatabaseOptionPill,
+  optionForValue,
+  randomDatabaseOptionColor
+} from "../editor/DatabaseOptionPill";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
@@ -185,12 +191,15 @@ export function DatabaseView({
         return false;
       }
 
+      const color = randomDatabaseOptionColor();
+
       try {
         const saved = await api.createDatabasePropertyOption({
           databasePath,
           baseVersion: currentResult.schemaVersion,
           property,
-          option
+          option,
+          color
         });
 
         if (saved.status === "conflict") {
@@ -223,7 +232,81 @@ export function DatabaseView({
                   ...currentDefinition,
                   options: optionExists
                     ? (currentDefinition.options ?? [])
-                    : [...(currentDefinition.options ?? []), { name: option }]
+                    : [...(currentDefinition.options ?? []), { name: option, color }]
+                }
+              }
+            }
+          };
+        });
+        return true;
+      } catch (error) {
+        onMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, databasePath, load, onMessage, result]
+  );
+
+  const changeOptionColor = useCallback(
+    async (
+      property: string,
+      option: string,
+      color: DatabasePropertyOptionColor
+    ): Promise<boolean> => {
+      const currentResult = result;
+      const definition = currentResult?.schema.properties[property];
+
+      if (
+        !currentResult ||
+        !definition ||
+        (definition.type !== "select" && definition.type !== "multi-select")
+      ) {
+        return false;
+      }
+
+      const options = (definition.options ?? []).map((candidate) =>
+        candidate.name === option ? { ...candidate, color } : candidate
+      );
+
+      try {
+        const saved = await api.updateDatabaseSchema({
+          databasePath,
+          baseVersion: currentResult.schemaVersion,
+          properties: {
+            ...currentResult.schema.properties,
+            [property]: { ...definition, options }
+          },
+          views: currentResult.schema.views
+        });
+
+        if (saved.status === "conflict") {
+          onMessage("The database options changed elsewhere. Reloaded the latest version.");
+          await load();
+          return false;
+        }
+
+        setResult((current) => {
+          const currentDefinition = current?.schema.properties[property];
+          if (
+            !current ||
+            !currentDefinition ||
+            (currentDefinition.type !== "select" && currentDefinition.type !== "multi-select")
+          ) {
+            return current;
+          }
+
+          return {
+            ...current,
+            schemaVersion: saved.version,
+            schema: {
+              ...current.schema,
+              properties: {
+                ...current.schema.properties,
+                [property]: {
+                  ...currentDefinition,
+                  options: (currentDefinition.options ?? []).map((candidate) =>
+                    candidate.name === option ? { ...candidate, color } : candidate
+                  )
                 }
               }
             }
@@ -398,6 +481,7 @@ export function DatabaseView({
                       value={record.frontmatter[column]}
                       onChange={(value) => void updateProperty(record, column, value)}
                       onCreateOption={(option) => createOption(column, option)}
+                      onChangeOptionColor={(option, color) => changeOptionColor(column, option, color)}
                     />
                   </td>
                 ))}
@@ -503,13 +587,15 @@ function PropertyCell({
   definition,
   value,
   onChange,
-  onCreateOption
+  onCreateOption,
+  onChangeOptionColor
 }: {
   property: string;
   definition: DatabasePropertyDefinition;
   value: unknown;
   onChange: (value: unknown) => void;
   onCreateOption: (option: string) => Promise<boolean>;
+  onChangeOptionColor: (option: string, color: DatabasePropertyOptionColor) => Promise<boolean>;
 }): ReactElement {
   if (definition.type === "checkbox") {
     return (
@@ -533,6 +619,7 @@ function PropertyCell({
         options={definition.options ?? []}
         onChange={onChange}
         onCreateOption={onCreateOption}
+        onChangeOptionColor={onChangeOptionColor}
       />
     );
   }
@@ -560,7 +647,8 @@ function DatabaseTableOptionCell({
   value,
   options,
   onChange,
-  onCreateOption
+  onCreateOption,
+  onChangeOptionColor
 }: {
   property: string;
   mode: "select" | "multi-select";
@@ -568,6 +656,7 @@ function DatabaseTableOptionCell({
   options: NonNullable<DatabasePropertyDefinition["options"]>;
   onChange: (value: unknown) => void;
   onCreateOption: (option: string) => Promise<boolean>;
+  onChangeOptionColor: (option: string, color: DatabasePropertyOptionColor) => Promise<boolean>;
 }): ReactElement {
   const [editing, setEditing] = useState(false);
   const selected = mode === "multi-select"
@@ -587,6 +676,7 @@ function DatabaseTableOptionCell({
         disabled={false}
         onChange={onChange}
         onCreateOption={onCreateOption}
+        onChangeOptionColor={onChangeOptionColor}
         onFinish={() => setEditing(false)}
       />
     );
@@ -601,9 +691,11 @@ function DatabaseTableOptionCell({
     >
       {selected.length > 0 ? (
         selected.map((item) => (
-          <span key={item} className="rounded bg-muted px-1.5 py-0.5 text-xs">
-            {item}
-          </span>
+          <DatabaseOptionPill
+            key={item}
+            option={optionForValue(item, options)}
+            onColorChange={(color) => onChangeOptionColor(item, color)}
+          />
         ))
       ) : (
         <span className="text-muted-foreground">Empty</span>

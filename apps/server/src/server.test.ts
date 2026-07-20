@@ -338,7 +338,8 @@ describe("Rumi server API", () => {
         databasePath: "Tasks",
         baseVersion: schemaQuery.json().schemaVersion,
         property: "priority",
-        option: "urgent"
+        option: "urgent",
+        color: "teal"
       }
     });
     expect(createOption.statusCode).toBe(200);
@@ -350,7 +351,7 @@ describe("Rumi server API", () => {
     });
     expect(optionQuery.json().schema.properties.priority.options).toEqual([
       { name: "normal" },
-      { name: "urgent" }
+      { name: "urgent", color: "teal" }
     ]);
 
     const openRecord = await server.inject({

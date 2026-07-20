@@ -37,6 +37,21 @@ export type DatabasePropertyType =
   | "select"
   | "multi-select";
 
+export const DATABASE_PROPERTY_OPTION_COLORS = [
+  "neutral",
+  "blue",
+  "orange",
+  "rose",
+  "yellow",
+  "teal",
+  "violet",
+  "lime",
+  "cyan",
+  "fuchsia"
+] as const;
+
+export type DatabasePropertyOptionColor = (typeof DATABASE_PROPERTY_OPTION_COLORS)[number];
+
 export interface DatabasePropertyOption {
   name: string;
   color?: string;
@@ -138,6 +153,7 @@ export interface CreateDatabasePropertyOptionRequest {
   databasePath: string;
   property: string;
   option: string;
+  color?: DatabasePropertyOptionColor;
   baseVersion?: string;
 }
 

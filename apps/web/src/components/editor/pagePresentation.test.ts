@@ -13,6 +13,11 @@ import {
   databasePropertyOptionChoices,
   rankDatabasePropertyOptions
 } from "./DatabaseOptionEditor";
+import {
+  DatabaseOptionPill,
+  databaseOptionColor,
+  randomDatabaseOptionColor
+} from "./DatabaseOptionPill";
 
 describe("page editor presentation", () => {
   it("derives page titles from each canonical filename shape", () => {
@@ -175,5 +180,23 @@ describe("page editor presentation", () => {
     expect(databasePropertyOptionChoices(options, "todo", true)).toEqual([
       { type: "option", name: "todo" }
     ]);
+  });
+
+  it("renders select options as palette pills with the requested Tailwind weights", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DatabaseOptionPill, {
+        option: { name: "Blocked", color: "rose" },
+        onColorChange: () => undefined
+      })
+    );
+
+    expect(markup).toContain("bg-rose-100");
+    expect(markup).toContain("border-rose-300");
+    expect(markup).toContain("text-rose-600");
+    expect(markup).toContain('data-option-color="rose"');
+    expect(markup).toContain("right-click to change color");
+    expect(databaseOptionColor("legacy-color")).toBe("neutral");
+    expect(randomDatabaseOptionColor(() => 0)).toBe("neutral");
+    expect(randomDatabaseOptionColor(() => 0.999)).toBe("fuchsia");
   });
 });

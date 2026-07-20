@@ -1,10 +1,11 @@
-import type { DatabasePropertyOption } from "@rumi/contracts";
+import type { DatabasePropertyOption, DatabasePropertyOptionColor } from "@rumi/contracts";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/utils";
+import { DatabaseOptionPill, optionForValue } from "./DatabaseOptionPill";
 
 export interface DatabaseOptionEditorProps {
   mode: "select" | "multi-select";
@@ -13,6 +14,7 @@ export interface DatabaseOptionEditorProps {
   disabled: boolean;
   onChange: (value: string | string[] | undefined) => void;
   onCreateOption?: ((name: string) => Promise<boolean>) | undefined;
+  onChangeOptionColor?: ((name: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
   onFinish: () => void;
 }
 
@@ -61,6 +63,7 @@ export function DatabaseOptionEditor({
   disabled,
   onChange,
   onCreateOption,
+  onChangeOptionColor,
   onFinish
 }: DatabaseOptionEditorProps): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -122,7 +125,11 @@ export function DatabaseOptionEditor({
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (anchorRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      if (
+        anchorRef.current?.contains(target) ||
+        panelRef.current?.contains(target) ||
+        (target instanceof Element && target.closest("[data-database-option-color-menu]"))
+      ) return;
       onFinish();
     };
 
@@ -170,7 +177,19 @@ export function DatabaseOptionEditor({
 
   return (
     <>
-      <div ref={anchorRef} className="flex min-h-7 items-center rounded border border-input bg-background px-1">
+      <div ref={anchorRef} className="flex min-h-7 flex-wrap items-center gap-1 rounded border border-input bg-background px-1">
+        {selected.map((name) => (
+          <DatabaseOptionPill
+            key={name}
+            option={optionForValue(name, options)}
+            disabled={disabled}
+            onColorChange={
+              onChangeOptionColor
+                ? (color) => onChangeOptionColor(name, color)
+                : undefined
+            }
+          />
+        ))}
         <input
           ref={inputRef}
           aria-label={mode === "select" ? "Search select options" : "Search multi-select options"}
@@ -249,7 +268,15 @@ export function DatabaseOptionEditor({
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
                   {selectedOption && <Check size={13} />}
                 </span>
-                <OptionPill option={option} />
+                <DatabaseOptionPill
+                  option={option}
+                  disabled={disabled}
+                  onColorChange={
+                    onChangeOptionColor
+                      ? (color) => onChangeOptionColor(option.name, color)
+                      : undefined
+                  }
+                />
               </button>
             );
           })}
@@ -286,17 +313,6 @@ export function DatabaseOptionEditor({
         document.body
       )}
     </>
-  );
-}
-
-function OptionPill({ option }: { option: DatabasePropertyOption }): ReactElement {
-  return (
-    <span
-      className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 text-xs"
-      data-option-color={option.color}
-    >
-      {option.name}
-    </span>
   );
 }
 

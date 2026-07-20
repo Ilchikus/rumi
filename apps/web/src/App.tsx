@@ -5,6 +5,7 @@ import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass"
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
 import type {
+  DatabasePropertyOptionColor,
   PageDocument,
   RumiEvent,
   SavePageReason,
@@ -18,6 +19,7 @@ import type {
 } from "./components/editor/RumiBlockEditor";
 import { DatabaseView } from "./components/database/DatabaseView";
 import { PageProperties } from "./components/editor/PageProperties";
+import { randomDatabaseOptionColor } from "./components/editor/DatabaseOptionPill";
 import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
 import { pageTitleFromPath } from "./components/editor/pagePresentation";
 import { Sidebar } from "./components/sidebar/Sidebar";
@@ -181,12 +183,15 @@ export function App(): ReactElement {
         return false;
       }
 
+      const color = randomDatabaseOptionColor();
+
       try {
         const result = await api.createDatabasePropertyOption({
           databasePath: database.databasePath,
           baseVersion: database.schemaVersion,
           property,
-          option
+          option,
+          color
         });
 
         if (result.status === "conflict") {
@@ -225,7 +230,7 @@ export function App(): ReactElement {
                   ...latestDefinition,
                   options: optionAlreadyPresent
                     ? (latestDefinition.options ?? [])
-                    : [...(latestDefinition.options ?? []), { name: option }]
+                    : [...(latestDefinition.options ?? []), { name: option, color }]
                 }
               }
             }
@@ -236,6 +241,91 @@ export function App(): ReactElement {
         pageRef.current = nextPage;
         setPage(nextPage);
         setMessage(`Created “${option}” in ${property}.`);
+        return true;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, forgetCachedPage]
+  );
+
+  const changeOpenPageDatabaseOptionColor = useCallback(
+    async (
+      property: string,
+      option: string,
+      color: DatabasePropertyOptionColor
+    ): Promise<boolean> => {
+      const currentPage = pageRef.current;
+      const database = currentPage?.database;
+      const definition = database?.schema.properties[property];
+
+      if (
+        !currentPage ||
+        !database ||
+        !definition ||
+        (definition.type !== "select" && definition.type !== "multi-select")
+      ) {
+        return false;
+      }
+
+      const options = (definition.options ?? []).map((candidate) =>
+        candidate.name === option ? { ...candidate, color } : candidate
+      );
+
+      try {
+        const result = await api.updateDatabaseSchema({
+          databasePath: database.databasePath,
+          baseVersion: database.schemaVersion,
+          properties: {
+            ...database.schema.properties,
+            [property]: { ...definition, options }
+          },
+          views: database.schema.views
+        });
+
+        if (result.status === "conflict") {
+          forgetCachedPage(currentPage.path);
+          setMessage("The database options changed elsewhere. Reopen this record and try again.");
+          return false;
+        }
+
+        const latestPage = pageRef.current;
+        const latestDefinition = latestPage?.database?.schema.properties[property];
+        if (
+          !latestPage ||
+          latestPage.path !== currentPage.path ||
+          !latestPage.database ||
+          !latestDefinition ||
+          (latestDefinition.type !== "select" && latestDefinition.type !== "multi-select")
+        ) {
+          return false;
+        }
+
+        const nextPage: PageDocument = {
+          ...latestPage,
+          database: {
+            ...latestPage.database,
+            schemaVersion: result.version,
+            schema: {
+              ...latestPage.database.schema,
+              properties: {
+                ...latestPage.database.schema.properties,
+                [property]: {
+                  ...latestDefinition,
+                  options: (latestDefinition.options ?? []).map((candidate) =>
+                    candidate.name === option ? { ...candidate, color } : candidate
+                  )
+                }
+              }
+            }
+          }
+        };
+
+        forgetCachedPage(currentPage.path);
+        pageRef.current = nextPage;
+        setPage(nextPage);
+        setMessage(`Changed “${option}” to ${color}.`);
         return true;
       } catch (error) {
         setMessage(errorMessage(error));
@@ -1131,6 +1221,7 @@ export function App(): ReactElement {
                   disabled={saveState === "conflict"}
                   onChange={updatePageFrontmatter}
                   onCreateDatabaseOption={createOpenPageDatabaseOption}
+                  onChangeDatabaseOptionColor={changeOpenPageDatabaseOptionColor}
                 />
               )}
 

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RumiEventEnvelope } from "@rumi/contracts";
+import { DATABASE_PROPERTY_OPTION_COLORS } from "@rumi/contracts";
 import { createTempWorkspace, WorkspaceRuntime } from "./index";
 
 const cleanupPaths: string[] = [];
@@ -345,15 +346,28 @@ describe("WorkspaceRuntime", () => {
       databasePath: "Tasks",
       baseVersion: query.schemaVersion,
       property: "status",
-      option: "blocked"
+      option: "blocked",
+      color: "rose"
     });
     expect(optionResult.status).toBe("saved");
 
     const withCreatedOption = await runtime.queryDatabase({ databasePath: "Tasks" });
     expect(withCreatedOption.schema.properties.status).toEqual({
       type: "select",
-      options: [{ name: "todo" }, { name: "done" }, { name: "blocked" }]
+      options: [{ name: "todo" }, { name: "done" }, { name: "blocked", color: "rose" }]
     });
+
+    await runtime.createDatabasePropertyOption({
+      databasePath: "Tasks",
+      baseVersion: withCreatedOption.schemaVersion,
+      property: "status",
+      option: "review"
+    });
+    const withRandomOption = await runtime.queryDatabase({ databasePath: "Tasks" });
+    const randomColor = withRandomOption.schema.properties.status?.options?.find(
+      (option) => option.name === "review"
+    )?.color;
+    expect(DATABASE_PROPERTY_OPTION_COLORS).toContain(randomColor);
   });
 
   it("renames a supported database property across schema, views, and records", async () => {

@@ -36,6 +36,7 @@ import type {
   WorkspaceNodeKind,
   WorkspaceMutationResult
 } from "@rumi/contracts";
+import { DATABASE_PROPERTY_OPTION_COLORS } from "@rumi/contracts";
 import { parseMarkdownFile, serializeMarkdownFile } from "@rumi/markdown";
 import {
   classifyFilePath,
@@ -504,6 +505,12 @@ export class WorkspaceRuntime {
       throw new Error(`Database option already exists: ${option}`);
     }
 
+    if (request.color && !DATABASE_PROPERTY_OPTION_COLORS.includes(request.color)) {
+      throw new Error(`Unsupported database option color: ${request.color}`);
+    }
+
+    const color = request.color ?? randomDatabasePropertyOptionColor();
+
     return this.updateDatabaseSchema({
       databasePath: config.databasePath,
       ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
@@ -511,7 +518,7 @@ export class WorkspaceRuntime {
         ...config.schema.properties,
         [property]: {
           ...definition,
-          options: [...(definition.options ?? []), { name: option }]
+          options: [...(definition.options ?? []), { name: option, color }]
         }
       },
       views: config.schema.views
@@ -1153,6 +1160,11 @@ function sortJson(value: unknown): unknown {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function randomDatabasePropertyOptionColor(): (typeof DATABASE_PROPERTY_OPTION_COLORS)[number] {
+  const index = Math.floor(Math.random() * DATABASE_PROPERTY_OPTION_COLORS.length);
+  return DATABASE_PROPERTY_OPTION_COLORS[index] ?? "neutral";
 }
 
 function saveSource(reason: SavePageRequest["reason"]): "editor" | "api" | "cli" | "runtime" {

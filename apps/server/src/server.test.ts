@@ -226,6 +226,18 @@ describe("Rumi server API", () => {
     }
   });
 
+  it("closes active event streams during graceful shutdown", async () => {
+    const root = await tempWorkspace();
+    const { server } = await createRumiServer({ workspacePath: root });
+    const url = await server.listen({ host: "127.0.0.1", port: 0 });
+    const eventsResponse = await fetch(`${url}/api/events`);
+    const reader = eventsResponse.body!.getReader();
+    await readUntil(reader, ": connected");
+
+    await expect(resolveWithin(server.close(), 1_000)).resolves.toBeUndefined();
+    await expect(readWithTimeout(reader, 1_000)).resolves.toMatchObject({ done: true });
+  });
+
   it("runs sidebar CRUD operations through API routes", async () => {
     const root = await tempWorkspace();
     const { server } = await createRumiServer({ workspacePath: root });
@@ -620,14 +632,33 @@ async function readUntil(
   return text;
 }
 
-function readWithTimeout(
+async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
-  return Promise.race([
-    reader.read(),
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Timed out waiting for SSE event")), timeoutMs);
-    })
-  ]);
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Timed out waiting for SSE event")), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function resolveWithin(promise: Promise<void>, timeoutMs: number): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Timed out waiting for server shutdown")), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }

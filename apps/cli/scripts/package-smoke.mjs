@@ -26,7 +26,13 @@ try {
   await fs.mkdir(installRoot, { recursive: true });
   await fs.mkdir(globalInstallRoot, { recursive: true });
   await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.mkdir(path.join(workspaceRoot, ".rumi"), { recursive: true });
   await fs.writeFile(path.join(workspaceRoot, "Welcome.md"), "# Welcome to Rumi\n", "utf8");
+  await fs.writeFile(
+    path.join(workspaceRoot, ".rumi", "config.json"),
+    JSON.stringify({ uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] } }),
+    "utf8"
+  );
 
   const packed = await execute(
     process.platform === "win32" ? "npm.cmd" : "npm",
@@ -129,14 +135,34 @@ try {
     throw new Error("Installed CLI did not serve the packaged official web client");
   }
 
-  serving.process.kill("SIGTERM");
-  await once(serving.process, "close");
+  const rejectedUploadResponse = await fetch(new URL("/api/assets?fileName=document.pdf", serving.url), {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from("%PDF-1.7")
+  });
+  const rejectedUpload = await rejectedUploadResponse.json();
+  if (
+    rejectedUploadResponse.status !== 400 ||
+    rejectedUpload?.error?.code !== "invalid_asset_upload" ||
+    !rejectedUpload.error.message.includes("not allowed by this workspace")
+  ) {
+    throw new Error(`Installed CLI ignored the workspace upload policy: ${JSON.stringify(rejectedUpload)}`);
+  }
+
+  const eventsResponse = await fetch(new URL("/api/events", serving.url));
+  if (eventsResponse.status !== 200 || !eventsResponse.body) {
+    throw new Error("Installed CLI did not open the workspace event stream");
+  }
+  const eventsReader = eventsResponse.body.getReader();
+  await readStreamChunk(eventsReader, 2_000);
+
+  await stopServer(serving.process);
+  await eventsReader.cancel().catch(() => undefined);
   servingProcess = undefined;
   console.log(`Verified installable package ${packageJson.name}@${packageJson.version}`);
 } finally {
-  if (servingProcess && servingProcess.exitCode === null) {
-    servingProcess.kill("SIGTERM");
-    await once(servingProcess, "close").catch(() => undefined);
+  if (servingProcess && !hasExited(servingProcess)) {
+    await stopServer(servingProcess).catch(() => undefined);
   }
   await fs.rm(temporaryRoot, { recursive: true, force: true });
 }
@@ -183,4 +209,58 @@ async function startServer(executable, cwd) {
   });
 
   return { process: child, url };
+}
+
+async function stopServer(child) {
+  if (hasExited(child)) return;
+  const closePromise = waitForEvent(child, "close", 5_000, "Timed out waiting for packaged CLI shutdown");
+  child.kill("SIGTERM");
+
+  try {
+    await closePromise;
+  } catch (error) {
+    if (!hasExited(child)) {
+      const forcedClose = waitForEvent(child, "close", 2_000, "Packaged CLI ignored SIGKILL");
+      child.kill("SIGKILL");
+      await forcedClose.catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function readStreamChunk(reader, timeoutMs) {
+  let timeout;
+  try {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Timed out waiting for packaged CLI event stream")),
+          timeoutMs
+        );
+      })
+    ]);
+    if (result.done) throw new Error("Packaged CLI event stream closed unexpectedly");
+    return result.value;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function waitForEvent(emitter, event, timeoutMs, message) {
+  let timeout;
+  try {
+    await Promise.race([
+      once(emitter, event),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
 }

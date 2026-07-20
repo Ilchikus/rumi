@@ -3,6 +3,7 @@ import path from "node:path";
 
 export const WORKSPACE_CONFIG_PATH = ".rumi/config.json";
 export const MAX_ASSET_FILE_SIZE_MB = 50;
+const BYTES_PER_MEGABYTE = 1024 * 1024;
 
 export const SUPPORTED_ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   ".avif": "image/avif",
@@ -23,7 +24,7 @@ export interface WorkspaceAssetPolicy {
 }
 
 const DEFAULT_ASSET_POLICY: WorkspaceAssetPolicy = Object.freeze({
-  maxFileSizeBytes: MAX_ASSET_FILE_SIZE_MB * 1024 * 1024,
+  maxFileSizeBytes: MAX_ASSET_FILE_SIZE_MB * BYTES_PER_MEGABYTE,
   maxFileSizeMb: MAX_ASSET_FILE_SIZE_MB,
   allowedFileTypes: Object.freeze(Object.keys(SUPPORTED_ASSET_CONTENT_TYPES))
 });
@@ -45,7 +46,6 @@ export async function loadWorkspaceAssetPolicy(rootPath: string): Promise<Worksp
   }
 
   const config = requireObject(parsed, WORKSPACE_CONFIG_PATH);
-  requireOnlyKeys(config, ["uploads"], WORKSPACE_CONFIG_PATH);
   if (!("uploads" in config)) return DEFAULT_ASSET_POLICY;
 
   const uploads = requireObject(config.uploads, `${WORKSPACE_CONFIG_PATH} uploads`);
@@ -59,7 +59,7 @@ export async function loadWorkspaceAssetPolicy(rootPath: string): Promise<Worksp
     : DEFAULT_ASSET_POLICY.allowedFileTypes;
 
   return Object.freeze({
-    maxFileSizeBytes: maxFileSizeMb * 1024 * 1024,
+    maxFileSizeBytes: maxFileSizeMb * BYTES_PER_MEGABYTE,
     maxFileSizeMb,
     allowedFileTypes: Object.freeze([...allowedFileTypes])
   });
@@ -109,9 +109,9 @@ function requireAllowedFileTypes(value: unknown): readonly string[] {
         `Invalid ${WORKSPACE_CONFIG_PATH}: uploads.allowedFileTypes[${index}] must be a file extension`
       );
     }
-    const extension = entry.trim().toLocaleLowerCase();
+    const extension = entry.trim().toLowerCase();
     const dottedExtension = extension.startsWith(".") ? extension : `.${extension}`;
-    if (!SUPPORTED_ASSET_CONTENT_TYPES[dottedExtension]) {
+    if (!Object.hasOwn(SUPPORTED_ASSET_CONTENT_TYPES, dottedExtension)) {
       throw new Error(
         `Invalid ${WORKSPACE_CONFIG_PATH}: unsupported upload type ${JSON.stringify(entry)}`
       );

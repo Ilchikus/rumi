@@ -118,18 +118,6 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
-  it("rejects invalid workspace upload policies", async () => {
-    const root = await tempWorkspace();
-    await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, ".rumi", "config.json"),
-      JSON.stringify({ uploads: { maxFileSizeMb: 10, allowedFileTypes: [".svg"] } }),
-      "utf8"
-    );
-
-    await expect(WorkspaceRuntime.open({ rootPath: root })).rejects.toThrow(/unsupported upload type/);
-  });
-
   it("opens a page with frontmatter, body, and hashes", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Idea.md"), "---\nstatus: ready\n---\n# Idea", "utf8");

@@ -96,6 +96,7 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
   const loginThrottle = new LoginThrottle();
   const runtime = await WorkspaceRuntime.open({ rootPath: options.workspacePath });
   await runtime.startWatchingWorkspace();
+  const closeEventStreams = new Set<() => void>();
   const server = Fastify({
     logger:
       options.logLevel === "silent"
@@ -146,6 +147,12 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
         message: statusCode >= 500 ? "Internal server error" : error.message
       }
     });
+  });
+
+  server.addHook("preClose", async () => {
+    for (const closeStream of [...closeEventStreams]) {
+      closeStream();
+    }
   });
 
   server.addHook("onClose", async () => {
@@ -389,12 +396,19 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     const heartbeat = setInterval(() => {
       reply.raw.write(": heartbeat\n\n");
     }, 30_000);
-
-    request.raw.on("close", () => {
+    let closed = false;
+    const closeStream = () => {
+      if (closed) return;
+      closed = true;
       clearInterval(heartbeat);
       unsubscribe();
+      closeEventStreams.delete(closeStream);
+      if (!reply.raw.writableEnded) reply.raw.end();
       request.log.info({ workspace: runtime.rootPath }, "events.unsubscribe");
-    });
+    };
+
+    closeEventStreams.add(closeStream);
+    request.raw.once("close", closeStream);
   });
 
   server.get<{ Querystring: { path?: string } }>("/api/page", async (request, reply) => {

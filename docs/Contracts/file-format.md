@@ -49,7 +49,9 @@ The upload limit may be from 1 through 50 MB. Supported extensions are `.avif`, 
 `.ico`, `.jpeg`, `.jpg`, `.pdf`, `.png`, and `.webp`; a workspace can enable any subset, including
 an empty list to disable uploads. Rumi verifies uploaded bytes against the declared file type in
 addition to checking the filename extension. Existing workspace assets remain readable when a type
-is removed from the upload allowlist. Restart the workspace server after changing this configuration.
+is removed from the upload allowlist. Other top-level configuration domains can coexist in the same
+file, while unknown settings inside `uploads` are rejected to catch mistakes. Restart the workspace
+server after changing this configuration.
 
 SQLite index data is rebuildable.
 

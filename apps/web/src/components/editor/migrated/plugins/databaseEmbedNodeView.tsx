@@ -10,7 +10,7 @@ import { Node as ProseMirrorNode } from 'prosemirror-model'
 import { EditorView, NodeView } from 'prosemirror-view'
 import { createRoot, Root } from 'react-dom/client'
 import { DatabaseView } from '../../../database/DatabaseView'
-import { migratedEditorPlatform } from '../platform'
+import { migratedEditorPlatform, subscribeMigratedEditorPlatform } from '../platform'
 
 export function databaseEmbedNodeView(
   node: ProseMirrorNode,
@@ -22,6 +22,7 @@ export function databaseEmbedNodeView(
   dom.setAttribute('contenteditable', 'false')
 
   let root: Root | null = null
+  let currentNode = node
 
   function render(currentNode: ProseMirrorNode) {
     if (!root) {
@@ -31,9 +32,10 @@ export function databaseEmbedNodeView(
     const source = String(currentNode.attrs.source || '')
     root.render(source && platform.api ? (
       <DatabaseView
+        key={source}
         api={platform.api}
         databasePath={source}
-        refreshRevision={0}
+        refreshRevision={platform.databaseRefreshRevision}
         onOpenRecord={(path) => platform.openDocument?.(path)}
         onMessage={(message) => platform.onMessage?.(message)}
       />
@@ -45,15 +47,18 @@ export function databaseEmbedNodeView(
   }
 
   render(node)
+  const unsubscribePlatform = subscribeMigratedEditorPlatform(() => render(currentNode))
 
   return {
     dom,
     update(updatedNode: ProseMirrorNode) {
       if (updatedNode.type !== node.type) return false
+      currentNode = updatedNode
       render(updatedNode)
       return true
     },
     destroy() {
+      unsubscribePlatform()
       if (root) {
         // Defer unmount to avoid React render-in-render issues
         setTimeout(() => root?.unmount(), 0)

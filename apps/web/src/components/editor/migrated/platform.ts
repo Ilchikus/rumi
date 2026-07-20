@@ -7,6 +7,7 @@ export interface MigratedEditorDocument {
 
 export interface MigratedEditorPlatform {
   api?: RumiApiClient | undefined;
+  databaseRefreshRevision: number;
   documentKey: string;
   documents: readonly MigratedEditorDocument[];
   openDocument?: ((path: string) => void) | undefined;
@@ -15,16 +16,25 @@ export interface MigratedEditorPlatform {
 }
 
 let currentPlatform: MigratedEditorPlatform = {
+  databaseRefreshRevision: 0,
   documentKey: "",
   documents: []
 };
 
+const platformListeners = new Set<() => void>();
+
 export function setMigratedEditorPlatform(platform: MigratedEditorPlatform): void {
   currentPlatform = platform;
+  for (const listener of platformListeners) listener();
 }
 
 export function migratedEditorPlatform(): MigratedEditorPlatform {
   return currentPlatform;
+}
+
+export function subscribeMigratedEditorPlatform(listener: () => void): () => void {
+  platformListeners.add(listener);
+  return () => platformListeners.delete(listener);
 }
 
 export function workspaceAssetUrl(src: string): string {

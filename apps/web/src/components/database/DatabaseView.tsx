@@ -73,6 +73,15 @@ const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; labe
   { value: "multi-select", label: "Multi-select" }
 ];
 
+export const DATABASE_RECORD_BATCH_SIZE = 20;
+
+export function databaseRecordsForDisplay<T>(
+  records: readonly T[],
+  visibleRecordLimit: number
+): readonly T[] {
+  return records.slice(0, Math.max(0, visibleRecordLimit));
+}
+
 export interface DatabaseViewProps {
   api: RumiApiClient;
   databasePath: string;
@@ -101,6 +110,7 @@ export function DatabaseView({
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTree, setMoveTree] = useState<WorkspaceNode | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [visibleRecordLimit, setVisibleRecordLimit] = useState(DATABASE_RECORD_BATCH_SIZE);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +164,11 @@ export function DatabaseView({
     () => result?.records.filter((record) => selectedRecordPaths.has(record.path)) ?? [],
     [result?.records, selectedRecordPaths]
   );
+  const displayedRecords = useMemo(
+    () => databaseRecordsForDisplay(result?.records ?? [], visibleRecordLimit),
+    [result?.records, visibleRecordLimit]
+  );
+  const hasMoreRecords = displayedRecords.length < (result?.records.length ?? 0);
   const visibleRecordPaths = useMemo(
     () => result?.records.map((record) => record.path) ?? [],
     [result?.records]
@@ -176,6 +191,7 @@ export function DatabaseView({
     setMoveDialogOpen(false);
     setMoveTree(null);
     setDeleteDialogOpen(false);
+    setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
   }, [databasePath]);
 
   const toggleRecordSelection = useCallback((recordPath: string) => {
@@ -619,6 +635,7 @@ export function DatabaseView({
   );
 
   const toggleSort = useCallback((property: string) => {
+    setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
     setSorts((current) => {
       const existing = current.find((sort) => sort.property === property);
 
@@ -683,7 +700,10 @@ export function DatabaseView({
             className="h-8 max-w-xs"
             placeholder="Filter records"
             aria-label="Filter records"
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
+              setSearch(event.target.value);
+            }}
           />
           <div className="ml-auto flex items-center gap-1.5">
             <Button type="button" size="sm" onClick={() => void createRecord()} disabled={creatingRecord}>
@@ -695,7 +715,7 @@ export function DatabaseView({
       )}
 
       <div
-        className="max-h-[min(60vh,36rem)] w-full min-w-0 max-w-full overflow-auto overscroll-contain"
+        className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
         data-database-table-scroll="true"
       >
         <table className="w-full min-w-[620px] border-collapse text-sm">
@@ -741,7 +761,7 @@ export function DatabaseView({
             </tr>
           </thead>
           <tbody>
-            {result?.records.map((record) => (
+            {displayedRecords.map((record) => (
               <tr
                 key={record.path}
                 className={cn(
@@ -771,7 +791,7 @@ export function DatabaseView({
                   <td key={column} className="border-b border-border px-2 py-1">
                     <PropertyCell
                       property={column}
-                      definition={result.schema.properties[column] ?? { type: "text" }}
+                      definition={result?.schema.properties[column] ?? { type: "text" }}
                       value={record.frontmatter[column]}
                       onChange={(value) => void updateProperty(record, column, value)}
                       onCreateOption={(option) => createOption(column, option)}
@@ -802,6 +822,23 @@ export function DatabaseView({
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading records…</div>
         )}
       </div>
+
+      {!loading && hasMoreRecords && (
+        <div className="mt-3 flex justify-center" data-database-load-more="true">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              setVisibleRecordLimit((current) =>
+                Math.min(current + DATABASE_RECORD_BATCH_SIZE, result?.records.length ?? current)
+              )
+            }
+          >
+            Load more
+          </Button>
+        </div>
+      )}
 
       {addingProperty && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/35 p-2">

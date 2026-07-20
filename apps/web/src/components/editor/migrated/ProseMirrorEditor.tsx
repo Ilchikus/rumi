@@ -52,6 +52,7 @@ export interface RumiDocumentLink {
 
 export interface RumiBlockEditorProps {
   api?: RumiApiClient
+  databaseRefreshRevision?: number
   documentKey: string
   markdown: string
   documents?: readonly RumiDocumentLink[]
@@ -65,6 +66,7 @@ export const ProseMirrorEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEdit
 function ProseMirrorEditor(
   {
     api,
+    databaseRefreshRevision = 0,
     documentKey,
     markdown,
     documents = [],
@@ -99,14 +101,25 @@ function ProseMirrorEditor(
     }))
   }, [documents])
 
-  setMigratedEditorPlatform({
+  useEffect(() => {
+    setMigratedEditorPlatform({
+      api,
+      databaseRefreshRevision,
+      documentKey,
+      documents,
+      openDocument: onOpenDocument,
+      uploadAsset: onUploadAsset,
+      onMessage
+    })
+  }, [
     api,
+    databaseRefreshRevision,
     documentKey,
     documents,
-    openDocument: onOpenDocument,
-    uploadAsset: onUploadAsset,
-    onMessage
-  })
+    onMessage,
+    onOpenDocument,
+    onUploadAsset
+  ])
 
   // Callback to get files (stable reference for plugin)
   const getFiles = useCallback(() => filesRef.current, [])

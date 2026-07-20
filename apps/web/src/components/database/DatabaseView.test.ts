@@ -3,10 +3,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { RumiApiClient } from "@rumi/api-client";
 import type { WorkspaceNode } from "@rumi/contracts";
-import { DatabaseView, databaseRecordMoveDestinations } from "./DatabaseView";
+import {
+  DATABASE_RECORD_BATCH_SIZE,
+  DatabaseView,
+  databaseRecordMoveDestinations,
+  databaseRecordsForDisplay
+} from "./DatabaseView";
 
 describe("database table presentation", () => {
-  it("uses a borderless two-axis scroll frame without a manual refresh action", () => {
+  it("uses a borderless, unrestricted-height horizontal scroll frame without a manual refresh action", () => {
     const markup = renderToStaticMarkup(createElement(DatabaseView, {
       api: {} as RumiApiClient,
       databasePath: "Projects",
@@ -22,8 +27,8 @@ describe("database table presentation", () => {
     expect(markup).not.toContain(">Refresh<");
     expect(section).toContain("w-full min-w-0 max-w-full");
     expect(section).not.toContain("border-y");
-    expect(scrollFrame).toContain("max-h-[min(60vh,36rem)]");
-    expect(scrollFrame).toContain("overflow-auto");
+    expect(scrollFrame).not.toContain("max-h-");
+    expect(scrollFrame).toContain("overflow-x-auto");
     expect(scrollFrame).not.toContain("rounded-md");
     expect(scrollFrame).not.toContain("border-border");
     expect(tableHeader).toContain("sticky top-0 z-10");
@@ -31,6 +36,15 @@ describe("database table presentation", () => {
     expect(selectionHeader).not.toContain("border-r");
     expect(markup).toContain('data-database-selection-column="true"');
     expect(markup).toContain('aria-label="Select all records"');
+  });
+
+  it("reveals database records in batches of twenty", () => {
+    const records = Array.from({ length: 45 }, (_, index) => `record-${index + 1}`);
+
+    expect(DATABASE_RECORD_BATCH_SIZE).toBe(20);
+    expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE)).toEqual(records.slice(0, 20));
+    expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 2)).toEqual(records.slice(0, 40));
+    expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 3)).toEqual(records);
   });
 
   it("offers workspace containers as move destinations and marks the current database", () => {

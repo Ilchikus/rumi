@@ -1942,6 +1942,7 @@ export function App(): ReactElement {
                   <RumiBlockEditor
                     ref={editorRef}
                     api={api}
+                    databaseRefreshRevision={databaseRefreshRevision}
                     documentKey={page.path}
                     markdown={draftBody}
                     documents={editorDocuments}

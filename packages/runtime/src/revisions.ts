@@ -225,6 +225,46 @@ export class RevisionStore {
     });
   }
 
+  async objectsAtOrBelow(inputPath: string): Promise<Record<string, string>> {
+    const target = normalizeWorkspacePath(inputPath);
+    const index = await this.loadPathIndex();
+    return Object.fromEntries(
+      Object.entries(index.byPath).filter(
+        ([contentPath]) => contentPath === target || contentPath.startsWith(`${target}/`)
+      )
+    );
+  }
+
+  async restoreObjects(
+    objects: Record<string, string>,
+    previousRoot: string,
+    restoredRoot: string
+  ): Promise<void> {
+    await this.enqueue(async () => {
+      const previous = normalizeWorkspacePath(previousRoot);
+      const restored = normalizeWorkspacePath(restoredRoot);
+      const index = await this.loadPathIndex();
+
+      for (const [contentPath, objectId] of Object.entries(objects)) {
+        const nextContentPath = movedContentPath(contentPath, previous, restored);
+        index.byPath[nextContentPath] = objectId;
+        await appendJsonLine(this.objectEventsPath, {
+          eventId: `evt_${randomUUID()}`,
+          type: "object.restored",
+          objectId,
+          previousPath: objectPathForContentPath(contentPath),
+          path: objectPathForContentPath(nextContentPath),
+          previousContentPath: contentPath,
+          contentPath: nextContentPath,
+          confidence: "certain",
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      if (Object.keys(objects).length > 0) await this.writePathIndex(index);
+    });
+  }
+
   async flush(contentPath?: string): Promise<void> {
     const normalized = contentPath ? normalizeWorkspacePath(contentPath) : null;
     const pending = [...this.pending.values()].filter(

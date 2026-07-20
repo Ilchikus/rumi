@@ -166,17 +166,6 @@ const LIST_DRAG_OUTDENT_THRESHOLD = 28;
 const BLOCK_HOVER_GUTTER = 72;
 const BLOCK_HOVER_VERTICAL_TOLERANCE = 12;
 
-const HIGHLIGHT_COLORS = [
-  ["yellow", "#fef08a"],
-  ["green", "#bbf7d0"],
-  ["blue", "#bfdbfe"],
-  ["purple", "#ddd6fe"],
-  ["pink", "#fbcfe8"],
-  ["red", "#fecaca"],
-  ["orange", "#fed7aa"],
-  ["gray", "#e5e7eb"]
-] as const;
-
 export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditorProps>(
   function RumiBlockEditor(
     { documentKey, markdown, documents = [], onOpenDocument, onUploadAsset, onDirty },
@@ -206,7 +195,6 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
     const [mentionMenu, setMentionMenu] = useState<MentionMenuState | null>(null);
     const [mentionIndex, setMentionIndex] = useState(0);
     const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null);
-    const [highlightPaletteOpen, setHighlightPaletteOpen] = useState(false);
     const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
     const [tableToolbar, setTableToolbar] = useState<TableToolbarState | null>(null);
     const [activeBlock, setActiveBlock] = useState<ActiveBlockState | null>(null);
@@ -546,7 +534,6 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
         if (target instanceof Element && target.closest("[data-rumi-editor-overlay]")) return;
         setBlockMenu(null);
         setLinkEditor(null);
-        setHighlightPaletteOpen(false);
       };
 
       document.addEventListener("mousemove", handleMouseMove);
@@ -601,25 +588,16 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
       refreshEditorUi(view);
     }, [documentKey, markdown, refreshEditorUi]);
 
-    const applyMark = useCallback((markName: string, attrs?: Record<string, unknown>) => {
+    const applyMark = useCallback((markName: string) => {
       const view = viewRef.current;
       const mark = schema.marks[markName];
 
       if (view && mark) {
-        toggleMark(mark, attrs)(view.state, view.dispatch, view);
+        toggleMark(mark)(view.state, view.dispatch, view);
         view.focus();
         refreshEditorUi(view);
       }
     }, [refreshEditorUi]);
-
-    const clearHighlight = useCallback(() => {
-      const view = viewRef.current;
-      const highlight = schema.marks.highlight;
-      if (!view || !highlight || view.state.selection.empty) return;
-      view.dispatch(view.state.tr.removeMark(view.state.selection.from, view.state.selection.to, highlight));
-      setHighlightPaletteOpen(false);
-      view.focus();
-    }, []);
 
     const runTableCommand = useCallback((command: Command) => {
       const view = viewRef.current;
@@ -1092,34 +1070,11 @@ export const RumiBlockEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEditor
             <ToolbarButton label="Underline" icon={<TextUnderline size={15} />} onClick={() => applyMark("underline")} />
             <ToolbarButton label="Strikethrough" icon={<TextStrikethrough size={15} />} onClick={() => applyMark("strike")} />
             <ToolbarButton label="Inline code" icon={<Code size={15} />} onClick={() => applyMark("code")} />
-            <span className="relative">
-              <ToolbarButton
-                label="Highlight color"
-                icon={<HighlighterCircle size={15} />}
-                onClick={() => setHighlightPaletteOpen((open) => !open)}
-              />
-              {highlightPaletteOpen && (
-                <span className="absolute left-1/2 top-9 z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-background p-1.5 shadow-lg">
-                  {HIGHLIGHT_COLORS.map(([color, value]) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className="h-5 w-5 rounded-full border border-black/10"
-                      style={{ backgroundColor: value }}
-                      title={`${color} highlight`}
-                      aria-label={`${color} highlight`}
-                      onClick={() => {
-                        applyMark("highlight", { color });
-                        setHighlightPaletteOpen(false);
-                      }}
-                    />
-                  ))}
-                  <button type="button" className="h-5 rounded px-1 text-[10px] text-muted-foreground hover:bg-muted" onClick={clearHighlight}>
-                    Clear
-                  </button>
-                </span>
-              )}
-            </span>
+            <ToolbarButton
+              label="Highlight"
+              icon={<HighlighterCircle size={15} />}
+              onClick={() => applyMark("highlight")}
+            />
             <ToolbarButton label="Add or edit link" icon={<LinkSimple size={15} />} onClick={startSelectionLinkEditor} />
           </div>,
           document.body

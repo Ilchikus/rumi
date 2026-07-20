@@ -66,10 +66,12 @@ retains direct owner access to workspace and credential maintenance on the host.
 ## Current Development Deployment
 
 - `dev-docs.rumi.md` routes through the locally managed `rumi-dev-docs` Cloudflare Tunnel.
-- The tunnel reaches the loopback Rumi server on port `3001`. That process owns the API, event
-  stream, authentication boundary, and built official web client from one origin.
-- The Vite source development server remains loopback-only on port `5173`. A separate built preview
-  on port `4173` remains available for LAN development but is no longer in the public request path.
+- The tunnel reaches the loopback Vite source server on port `5173`; Vite proxies `/api` to the
+  password-protected Rumi server on port `3001`.
+- The Vite source server runs from the `codex/finish-rumi-new` worktree. The API process runs from
+  the detached `rumi-new-live` deployment worktree so server changes must be synchronized there and
+  the process restarted before they are visible on DevDocs.
+- A separate built preview on port `4173` remains available for LAN development.
 - Password login refuses non-loopback HTTP. LAN users must use the Cloudflare HTTPS hostname; plain
   HTTP on port `4173` can load the login shell but cannot transmit credentials.
 - API/official client, LAN preview, source development, and tunnel processes run in the `rumi-new-dev` tmux

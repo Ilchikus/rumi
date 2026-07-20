@@ -93,15 +93,21 @@ describe("light ProseMirror Markdown bridge", () => {
     const markdown = serializeLightMarkdown(parseLightMarkdown(source));
 
     expect(markdown).toContain("<u>underlined</u>");
-    expect(markdown).toContain("<mark>highlighted</mark>");
+    expect(markdown).toContain("==highlighted==");
   });
 
-  it("preserves named highlight colors from the old editor syntax", () => {
+  it("normalizes named highlight colors to the default highlight", () => {
     const document = parseLightMarkdown("==blue::important==");
     const text = document.firstChild?.firstChild;
 
-    expect(text?.marks.find((mark) => mark.type.name === "highlight")?.attrs.color).toBe("blue");
-    expect(serializeLightMarkdown(document)).toBe('<mark data-color="blue">important</mark>');
+    expect(text?.marks.find((mark) => mark.type.name === "highlight")?.attrs).toEqual({});
+    expect(serializeLightMarkdown(document)).toBe("==important==");
+  });
+
+  it("does not normalize legacy highlight text inside fenced code", () => {
+    const document = parseLightMarkdown("```txt\n==blue::important==\n```");
+
+    expect(document.firstChild?.textContent).toBe("==blue::important==");
   });
 
   it("preserves fenced code language, images, links, dividers, and blank documents", () => {

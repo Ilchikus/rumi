@@ -5,6 +5,8 @@ import { Schema, Node as PmNode, Fragment } from "prosemirror-model"
 import { setBlockType, wrapIn } from "prosemirror-commands"
 import { multiBlockSelectionKey, selectBlock, deleteSelectedBlocks, duplicateSelectedBlocks } from "./multiBlockSelection"
 import { collapsibleHeadingsKey, findSectionEnd } from "./collapsibleHeadings"
+import { BLOCK_TYPE_OPTIONS, type BlockTypeOption } from "./blockTypePresentation"
+import { listDropIndent } from "../listDropIndent"
 
 export const blockDragHandleKey = new PluginKey("blockDragHandle")
 
@@ -13,33 +15,11 @@ const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14
 const COPY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"></path></svg>`
 const PLUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"></path></svg>`
 
-const MERMAID_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M200,152a31.84,31.84,0,0,0-19.53,6.68l-23.11-18A31.65,31.65,0,0,0,160,128a31.65,31.65,0,0,0-2.64-12.68l23.11-18A31.84,31.84,0,0,0,200,104a32,32,0,1,0-32-32,31.65,31.65,0,0,0,2.64,12.68l-23.11,18a31.92,31.92,0,0,0-39.06,0l-23.11-18A31.65,31.65,0,0,0,88,72a32,32,0,1,0-32,32,31.84,31.84,0,0,0,19.53-6.68l23.11,18A31.65,31.65,0,0,0,96,128a31.65,31.65,0,0,0,2.64,12.68l-23.11,18A31.84,31.84,0,0,0,56,152a32,32,0,1,0,32,32,31.65,31.65,0,0,0-2.64-12.68l23.11-18a31.92,31.92,0,0,0,39.06,0l23.11,18A31.65,31.65,0,0,0,168,184a32,32,0,1,0,32-32Zm0-96a16,16,0,1,1-16,16A16,16,0,0,1,200,56ZM56,88A16,16,0,1,1,72,72,16,16,0,0,1,56,88Zm72,56a16,16,0,1,1,16-16A16,16,0,0,1,128,144ZM56,200a16,16,0,1,1,16-16A16,16,0,0,1,56,200Zm144,0a16,16,0,1,1,16-16A16,16,0,0,1,200,200Z"></path></svg>`
 
 const HOVER_ZONE = 64
 const HANDLE_OFFSET = 28
-
-interface BlockTypeOption {
-  label: string
-  icon: string
-  type: string
-  attrs?: Record<string, unknown>
-}
-
-// Icons synced with slash commands in slashCommands.ts
-const BLOCK_TYPE_OPTIONS: BlockTypeOption[] = [
-  { label: "Text", icon: "Aa", type: "paragraph" },
-  { label: "Heading 1", icon: "H1", type: "heading", attrs: { level: 1 } },
-  { label: "Heading 2", icon: "H2", type: "heading", attrs: { level: 2 } },
-  { label: "Heading 3", icon: "H3", type: "heading", attrs: { level: 3 } },
-  { label: "Bullet List", icon: "•", type: "bullet_item" },
-  { label: "Numbered List", icon: "1.", type: "numbered_item" },
-  { label: "Checkbox", icon: "☑", type: "task_item" },
-  { label: "Quote", icon: "❝", type: "blockquote" },
-  { label: "Code Block", icon: "{ }", type: "code_block" },
-  { label: "Mermaid", icon: MERMAID_SVG, type: "mermaid" },
-  { label: "Table", icon: "⊞", type: "table" },
-  { label: "Divider", icon: "—", type: "horizontal_rule" },
-]
+const ADD_BUTTON_OFFSET = 52
+const AREA_SELECT_DRAG_THRESHOLD = 3
 
 interface HandledBlock {
   pos: number
@@ -50,6 +30,7 @@ interface HandledBlock {
 
 class BlockDragHandleView {
   private handle: HTMLElement
+  private addButton: HTMLElement
   private dropIndicator: HTMLElement
   private headingHighlight: HTMLElement
   private dragGhost: HTMLElement | null = null
@@ -75,10 +56,10 @@ class BlockDragHandleView {
   private isAreaSelecting: boolean = false
   private areaSelectStart: { x: number; y: number } | null = null
   private areaHighlightedBlocks: Set<number> = new Set()
+  private suppressWrapperClick: boolean = false
 
   // Indent-on-drag state (for list items)
   private targetIndent: number = 0
-  private readonly INDENT_STEP_PX = 80
   private readonly MAX_INDENT = 3 // Max 4 levels (0, 1, 2, 3)
   private readonly INDENT_MARGIN_PX = 24 // 1.5em at 16px = 24px per indent level
 
@@ -106,7 +87,7 @@ class BlockDragHandleView {
       .block-context-menu {
         position: fixed;
         z-index: 200;
-        background: hsl(var(--popover));
+        background: #fff;
         border: 1px solid hsl(var(--border));
         border-radius: 8px;
         padding: 4px;
@@ -190,14 +171,15 @@ class BlockDragHandleView {
         position: fixed;
         pointer-events: none;
         z-index: 50;
-        background: hsl(213, 94%, 95%, 0.4);
-        border: 1px solid hsl(222.2, 47.4%, 41.2%);
-        border-radius: 2px;
+        background: hsl(213, 94%, 55%, 0.2);
+        border: 0;
+        border-radius: 4px;
       }
     `
     document.head.appendChild(this.styleEl)
 
     this.handle = this.createHandle()
+    this.addButton = this.createAddButton()
     this.dropIndicator = this.createDropIndicator()
     this.headingHighlight = this.createHeadingHighlight()
 
@@ -205,6 +187,7 @@ class BlockDragHandleView {
 
     const handleParent = this.getEditorWrapper() ?? document.body
     handleParent.appendChild(this.handle)
+    handleParent.appendChild(this.addButton)
     document.body.appendChild(this.dropIndicator)
     document.body.appendChild(this.headingHighlight)
 
@@ -212,15 +195,14 @@ class BlockDragHandleView {
     document.addEventListener("mousedown", this.onDocMouseDown)
     document.addEventListener("keydown", this.onDocKeyDown)
 
-    // Area selection: listen on wrapper for mousedown outside ProseMirror bounds
-    // Use setTimeout to ensure the wrapper is available after React renders
-    setTimeout(() => {
-      const wrapper = this.getEditorWrapper()
-      if (wrapper) {
-        wrapper.addEventListener("mousedown", this.onWrapperMouseDown, true)
-        wrapper.addEventListener("mousemove", this.onWrapperMouseMove)
-      }
-    }, 0)
+    // Area selection: listen on the full editor canvas, including the wide
+    // side gutters and viewport space outside the centered article.
+    const surface = this.getAreaSelectionSurface()
+    if (surface) {
+      surface.addEventListener("mousedown", this.onWrapperMouseDown, true)
+      surface.addEventListener("mousemove", this.onWrapperMouseMove)
+      surface.addEventListener("click", this.onWrapperClick, true)
+    }
 
     if (this.scrollParent) {
       this.scrollParent.addEventListener("scroll", this.onScroll, { passive: true })
@@ -240,6 +222,8 @@ class BlockDragHandleView {
   private createHandle(): HTMLElement {
     const el = document.createElement("button")
     el.type = "button"
+    el.title = "Select and drag block"
+    el.setAttribute("aria-label", "Select and drag block")
     el.style.cssText = `
       position: absolute;
       width: 20px;
@@ -272,6 +256,49 @@ class BlockDragHandleView {
     el.addEventListener("dragstart", this.onDragStart)
     el.addEventListener("dragend", this.onDragEnd)
     el.draggable = true
+
+    return el
+  }
+
+  private createAddButton(): HTMLElement {
+    const el = document.createElement("button")
+    el.type = "button"
+    el.title = "Add block below"
+    el.setAttribute("aria-label", "Add block below")
+    el.style.cssText = `
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      margin: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 4px;
+      user-select: none;
+      z-index: 100;
+      color: hsl(215.4, 16.3%, 46.9%);
+      transition: background 150ms, color 150ms;
+    `
+    el.innerHTML = PLUS_SVG
+
+    el.addEventListener("mouseenter", () => {
+      el.style.background = "hsl(210, 40%, 96.1%)"
+      el.style.color = "hsl(var(--foreground))"
+    })
+    el.addEventListener("mouseleave", () => {
+      el.style.background = "transparent"
+      el.style.color = "hsl(215.4, 16.3%, 46.9%)"
+    })
+    el.addEventListener("mousedown", (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    el.addEventListener("click", this.onAddButtonClick)
 
     return el
   }
@@ -397,9 +424,8 @@ class BlockDragHandleView {
   private handleMouseMove = (e: MouseEvent) => {
     if (this.draggedBlock !== null) return
 
-    // If mouse is over the handle itself, keep current hovered block
-    // This prevents the handle from disappearing when moving from block to handle
-    if (this.handle.contains(e.target as Node)) {
+    // Keep the controls visible while moving between the block, add button, and grip.
+    if (this.handle.contains(e.target as Node) || this.addButton.contains(e.target as Node)) {
       return
     }
 
@@ -528,9 +554,9 @@ class BlockDragHandleView {
         this.hoveredBlockRect = rect
         if (this.scrollParent) {
           const parentRect = this.scrollParent.getBoundingClientRect()
-          this.handle.style.display = rect.bottom < parentRect.top || rect.top > parentRect.bottom
-            ? "none"
-            : "flex"
+          const visible = !(rect.bottom < parentRect.top || rect.top > parentRect.bottom)
+          this.handle.style.display = visible ? "flex" : "none"
+          this.addButton.style.display = visible ? "flex" : "none"
         }
       }
     }
@@ -540,6 +566,7 @@ class BlockDragHandleView {
   // ── Area Selection ──
 
   private editorWrapper: HTMLElement | null = null
+  private areaSelectionSurface: HTMLElement | null = null
 
   private getEditorWrapper(): HTMLElement | null {
     if (this.editorWrapper) return this.editorWrapper
@@ -555,32 +582,46 @@ class BlockDragHandleView {
     return this.view.dom.parentElement
   }
 
-  private isInsideProseMirror(clientX: number, clientY: number): boolean {
-    // Check if position is INSIDE the ProseMirror element bounds (both horizontally and vertically)
-    // Inside PM = text selection zone, Outside PM = area selection zone
-    const pmRect = this.view.dom.getBoundingClientRect()
-    return clientX >= pmRect.left && clientX <= pmRect.right &&
-           clientY >= pmRect.top && clientY <= pmRect.bottom
+  private getAreaSelectionSurface(): HTMLElement | null {
+    if (this.areaSelectionSurface) return this.areaSelectionSurface
+    const canvas = this.view.dom.closest("[data-rumi-editor-canvas]")
+    this.areaSelectionSurface = canvas instanceof HTMLElement ? canvas : this.getEditorWrapper()
+    return this.areaSelectionSurface
+  }
+
+  private isEditorBlockTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Node)) return false
+
+    // A direct hit on .ProseMirror is blank canvas. Descendants are rendered
+    // blocks and keep native ProseMirror text-selection behavior.
+    return target !== this.view.dom && this.view.dom.contains(target)
+  }
+
+  private isAreaSelectionExcludedTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Node)) return false
+    const element = target instanceof Element ? target : target.parentElement
+    return Boolean(element?.closest("[data-rumi-area-selection-exclude]"))
   }
 
   private onWrapperMouseMove = (e: MouseEvent) => {
     // Update cursor based on whether we're outside ProseMirror
     if (this.isAreaSelecting || this.draggedBlock !== null) return
 
-    const wrapper = this.getEditorWrapper()
-    if (!wrapper) return
+    const surface = this.getAreaSelectionSurface()
+    if (!surface) return
 
-    const wrapperRect = wrapper.getBoundingClientRect()
-    const inWrapper = e.clientX >= wrapperRect.left && e.clientX <= wrapperRect.right &&
-                      e.clientY >= wrapperRect.top && e.clientY <= wrapperRect.bottom
+    const surfaceRect = surface.getBoundingClientRect()
+    const inSurface = e.clientX >= surfaceRect.left && e.clientX <= surfaceRect.right &&
+                      e.clientY >= surfaceRect.top && e.clientY <= surfaceRect.bottom
 
-    if (!inWrapper) {
-      wrapper.style.cursor = ""
+    if (!inSurface) {
+      surface.style.cursor = ""
       return
     }
 
-    const insidePM = this.isInsideProseMirror(e.clientX, e.clientY)
-    wrapper.style.cursor = insidePM ? "" : "default"
+    surface.style.cursor = this.isEditorBlockTarget(e.target) || this.isAreaSelectionExcludedTarget(e.target)
+      ? ""
+      : "default"
   }
 
   private onWrapperMouseDown = (e: MouseEvent) => {
@@ -588,45 +629,21 @@ class BlockDragHandleView {
     if (e.button !== 0) return
 
     // Don't interfere with handle interactions
-    if (this.handle.contains(e.target as Node)) return
+    if (this.handle.contains(e.target as Node) || this.addButton.contains(e.target as Node)) return
 
     // Don't interfere if context menu is open
     if (this.contextMenu) return
 
-    // Check if target is inside ProseMirror content using closest()
-    // This is more robust than view.dom.contains() which can fail in edge cases
-    const target = e.target as HTMLElement
-    const isPMContent = target.closest && target.closest('.ProseMirror') !== null
+    // Page title, properties, and database controls are inside the full canvas
+    // but are not part of block marquee selection.
+    if (this.isAreaSelectionExcludedTarget(e.target)) return
 
-    if (isPMContent) {
-      // Inside PM content - clear multi-block selection and let PM handle text selection
-      const pluginState = multiBlockSelectionKey.getState(this.view.state)
-      if (pluginState && pluginState.selectedBlocks && pluginState.selectedBlocks.length > 0) {
-        const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
-          selectedBlocks: [],
-          anchorBlock: null
-        })
-        this.view.dispatch(tr)
-      }
-      return // Let PM handle text selection
-    }
-
-    // Target is outside ProseMirror content (wrapper padding, 90vh area, etc.)
-    // Use geometric check to decide: inside PM bounds = clear selection, outside = area select
-    if (this.isInsideProseMirror(e.clientX, e.clientY)) {
-      // Inside PM bounds geometrically but outside PM DOM - just clear selection
-      const pluginState = multiBlockSelectionKey.getState(this.view.state)
-      if (pluginState && pluginState.selectedBlocks && pluginState.selectedBlocks.length > 0) {
-        const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
-          selectedBlocks: [],
-          anchorBlock: null
-        })
-        this.view.dispatch(tr)
-      }
+    if (this.isEditorBlockTarget(e.target)) {
+      // A rendered block keeps native ProseMirror text selection.
       return
     }
 
-    // Click is outside ProseMirror bounds - this is the area selection zone
+    // Blank ProseMirror canvas and the surrounding editor padding are marquee zones.
     // Clear any existing multi-block selection first
     const pluginState = multiBlockSelectionKey.getState(this.view.state)
     if (pluginState && pluginState.selectedBlocks && pluginState.selectedBlocks.length > 0) {
@@ -644,10 +661,15 @@ class BlockDragHandleView {
     this.isAreaSelecting = true
     this.areaSelectStart = { x: e.clientX, y: e.clientY }
     this.areaHighlightedBlocks.clear()
+    this.suppressWrapperClick = false
 
     // Create selection rectangle
     this.selectionRect = document.createElement("div")
     this.selectionRect.className = "area-select-rect"
+    this.selectionRect.style.left = `${e.clientX}px`
+    this.selectionRect.style.top = `${e.clientY}px`
+    this.selectionRect.style.width = "0"
+    this.selectionRect.style.height = "0"
     document.body.appendChild(this.selectionRect)
 
     // Add mousemove and mouseup listeners
@@ -670,6 +692,10 @@ class BlockDragHandleView {
     const top = Math.min(startY, currentY)
     const width = Math.abs(currentX - startX)
     const height = Math.abs(currentY - startY)
+
+    if (width >= AREA_SELECT_DRAG_THRESHOLD || height >= AREA_SELECT_DRAG_THRESHOLD) {
+      this.suppressWrapperClick = true
+    }
 
     // Update selection rectangle position
     this.selectionRect.style.left = `${left}px`
@@ -770,12 +796,33 @@ class BlockDragHandleView {
     } catch {
       // View might be in invalid state, ignore
     }
+
+    // A click normally follows mouseup and is intercepted by onWrapperClick. If
+    // mouseup happened outside the wrapper, clear the guard on the next task so
+    // it cannot swallow a later, unrelated click.
+    if (this.suppressWrapperClick) {
+      setTimeout(() => { this.suppressWrapperClick = false }, 0)
+    }
+  }
+
+  private onWrapperClick = (event: MouseEvent) => {
+    if (!this.suppressWrapperClick) return
+    this.suppressWrapperClick = false
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   private positionHandle() {
     if (this.hoveredBlock === null) return
     const dom = this.view.nodeDOM(this.hoveredBlock.pos)
     if (!dom || !(dom instanceof HTMLElement)) { this.hideHandle(); return }
+    if (
+      dom.classList.contains("pm-section-collapsed") ||
+      getComputedStyle(dom).display === "none"
+    ) {
+      this.hideHandle()
+      return
+    }
 
     const rect = dom.getBoundingClientRect()
     this.hoveredBlockRect = rect
@@ -784,6 +831,7 @@ class BlockDragHandleView {
       const parentRect = this.scrollParent.getBoundingClientRect()
       if (rect.bottom < parentRect.top || rect.top > parentRect.bottom) {
         this.handle.style.display = "none"
+        this.addButton.style.display = "none"
         return
       }
     }
@@ -791,17 +839,22 @@ class BlockDragHandleView {
     const wrapperRect = this.getEditorWrapper()?.getBoundingClientRect()
     const editorRect = this.view.dom.getBoundingClientRect()
     this.handle.style.display = "flex"
+    this.addButton.style.display = "flex"
     // Keep every block handle on one stable gutter axis. Indentation changes
     // the block content, but it must not move the affordance used to grab it.
     this.handle.style.left = `${editorRect.left - (wrapperRect?.left ?? 0) - HANDLE_OFFSET}px`
     this.handle.style.top = `${rect.top - (wrapperRect?.top ?? 0) + 2}px`
+    this.addButton.style.left = `${editorRect.left - (wrapperRect?.left ?? 0) - ADD_BUTTON_OFFSET}px`
+    this.addButton.style.top = `${rect.top - (wrapperRect?.top ?? 0) + 2}px`
   }
 
   private hideHandle() {
     this.hoveredBlock = null
     this.hoveredBlockRect = null
     this.handle.style.display = "none"
+    this.addButton.style.display = "none"
     this.handle.style.background = "transparent"
+    this.addButton.style.background = "transparent"
   }
 
   // ── Handle click / context menu ──
@@ -831,12 +884,17 @@ class BlockDragHandleView {
       } else if (e.metaKey || e.ctrlKey) {
         selectBlock(this.view, block.pos, "toggle")
       } else {
-        selectBlock(this.view, block.pos, "single")
-        // Also set NodeSelection for single block (drag compatibility)
+        // Select and decorate the block in the same transaction. A second
+        // selection-only transaction would immediately clear the decoration.
         const node = this.view.state.doc.nodeAt(block.pos)
         if (node) {
-          const tr = this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, block.pos))
-          tr.setMeta("multiBlockKeep", true)
+          const tr = this.view.state.tr
+            .setSelection(NodeSelection.create(this.view.state.doc, block.pos))
+            .setMeta(multiBlockSelectionKey, {
+              selectedBlocks: [block.pos],
+              anchorBlock: block.pos
+            })
+            .setMeta("multiBlockKeep", true)
           this.view.dispatch(tr)
         }
       }
@@ -851,6 +909,14 @@ class BlockDragHandleView {
     if (this.hoveredBlock === null) return
     this.menuBlock = this.hoveredBlock
     this.showContextMenu(e.clientX, e.clientY, this.hoveredBlock)
+  }
+
+  private onAddButtonClick = (event: MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (this.hoveredBlock === null) return
+    this.addBlockAfter(this.hoveredBlock.pos)
+    this.hideHandle()
   }
 
   // ── Context Menu ──
@@ -1354,6 +1420,7 @@ class BlockDragHandleView {
     e.dataTransfer.effectAllowed = "move"
     e.dataTransfer.setData("application/x-block-drag", String(block.pos))
     this.handle.style.cursor = "grabbing"
+    this.addButton.style.display = "none"
 
     document.addEventListener("dragover", this.onDragOver)
     document.addEventListener("drop", this.onDrop)
@@ -1388,28 +1455,17 @@ class BlockDragHandleView {
       const isListItem = nodeType === "bullet_item" || nodeType === "numbered_item" || nodeType === "task_item"
 
       if (isListItem) {
-        // Start from the block's original indent (preserve by default)
-        const originalIndent = this.draggedBlock.node.attrs.indent || 0
-        this.targetIndent = originalIndent
-
-        // Find the block before the drop position to determine max allowed indent
-        const prevBlockIndent = this.getPrevBlockIndent(target.insertPos)
-        const maxAllowedIndent = Math.min(prevBlockIndent + 1, this.MAX_INDENT)
-
         const editorRect = this.view.dom.getBoundingClientRect()
-        const relativeX = e.clientX - editorRect.left
-        const midpoint = editorRect.width / 2
-
-        if (relativeX > midpoint && maxAllowedIndent > 0) {
-          // Calculate raw indent from X position
-          const pixelsPastMid = relativeX - midpoint
-          const rawIndent = Math.floor(pixelsPastMid / this.INDENT_STEP_PX) + 1
-          // Clamp to allowed range
-          this.targetIndent = Math.min(rawIndent, maxAllowedIndent)
-        } else if (relativeX <= midpoint) {
-          // Left half of editor = no indent
-          this.targetIndent = 0
-        }
+        const previousBlock = this.getPreviousListBlockGeometry(target.insertPos)
+        this.targetIndent = listDropIndent({
+          pointerX: e.clientX,
+          editorLeft: editorRect.left,
+          editorWidth: editorRect.width,
+          targetBlockLeft: previousBlock?.left ?? editorRect.left,
+          targetBlockWidth: previousBlock?.width ?? editorRect.width,
+          targetBlockIndent: previousBlock?.indent ?? -1,
+          maxIndent: this.MAX_INDENT
+        })
 
         // If same position, only show indicator if indent would change
         if (target.isSamePosition) {
@@ -1466,27 +1522,36 @@ class BlockDragHandleView {
     return result
   }
 
-  // Get the indent level of the block before a given position
-  private getPrevBlockIndent(insertPos: number): number {
+  // The block directly above the drop gap defines alignment and the next
+  // target-relative indentation threshold.
+  private getPreviousListBlockGeometry(insertPos: number): { indent: number; left: number; width: number } | null {
     const doc = this.view.state.doc
-    let prevIndent = -1 // -1 means no previous list item, so max allowed is 0
+    let previous: { indent: number; left: number; width: number } | null = null
 
     // Find the block that ends at or before insertPos
     doc.forEach((node, offset) => {
       const nodeEnd = offset + node.nodeSize
       if (nodeEnd <= insertPos) {
-        // This block is before the insert position
         const typeName = node.type.name
         if (typeName === "bullet_item" || typeName === "numbered_item" || typeName === "task_item") {
-          prevIndent = node.attrs.indent || 0
+          const dom = this.view.nodeDOM(offset)
+          if (dom instanceof HTMLElement) {
+            const rect = dom.getBoundingClientRect()
+            previous = {
+              indent: node.attrs.indent || 0,
+              left: rect.left,
+              width: rect.width
+            }
+          } else {
+            previous = null
+          }
         } else {
-          // Non-list item resets context - can only start at indent 0
-          prevIndent = -1
+          previous = null
         }
       }
     })
 
-    return prevIndent
+    return previous
   }
 
   private getTopLevelDropTarget(clientY: number): { insertPos: number; y: number; isSamePosition?: boolean } | null {
@@ -1571,7 +1636,7 @@ class BlockDragHandleView {
     this.dropIndicator.dataset.dropPos = String(target.insertPos)
     this.dropIndicator.dataset.targetIndent = String(this.targetIndent)
 
-    const indentOffset = this.targetIndent * this.INDENT_STEP_PX
+    const indentOffset = this.targetIndent * this.INDENT_MARGIN_PX
     this.dropIndicator.style.left = `${editorRect.left + indentOffset}px`
     this.dropIndicator.style.width = `${editorRect.width - indentOffset}px`
   }
@@ -1796,6 +1861,7 @@ class BlockDragHandleView {
       this.mouseMoveRafId = null
     }
     this.handle.remove()
+    this.addButton.remove()
     this.dropIndicator.remove()
     this.headingHighlight.remove()
     this.styleEl.remove()
@@ -1811,11 +1877,12 @@ class BlockDragHandleView {
     document.removeEventListener("mousemove", this.onDocMouseMove)
     document.removeEventListener("mousedown", this.onDocMouseDown)
     document.removeEventListener("keydown", this.onDocKeyDown)
-    const wrapper = this.getEditorWrapper()
-    if (wrapper) {
-      wrapper.removeEventListener("mousedown", this.onWrapperMouseDown, true)
-      wrapper.removeEventListener("mousemove", this.onWrapperMouseMove)
-      wrapper.style.cursor = ""
+    const surface = this.getAreaSelectionSurface()
+    if (surface) {
+      surface.removeEventListener("mousedown", this.onWrapperMouseDown, true)
+      surface.removeEventListener("mousemove", this.onWrapperMouseMove)
+      surface.removeEventListener("click", this.onWrapperClick, true)
+      surface.style.cursor = ""
     }
     document.removeEventListener("mousemove", this.onAreaSelectMove)
     document.removeEventListener("mouseup", this.onAreaSelectEnd)

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import Database from "better-sqlite3";
 import type {
   DatabaseRecord,
   FrontmatterRecord,
@@ -29,35 +28,48 @@ interface IndexedDocumentRow {
   modified_at: number;
 }
 
-interface CountRow {
-  count: number;
+interface PersistedWorkspaceIndex {
+  format: 1;
+  builtAt: string | null;
+  documents: IndexedDocumentRow[];
 }
 
 export class WorkspaceIndex {
   private readonly rootPath: string;
-  private readonly database: Database.Database;
+  private readonly storagePath: string;
+  private readonly documents: Map<string, IndexedDocumentRow>;
+  private builtAt: string | null;
   private buildPromise: Promise<number> | null = null;
+  private persistPromise: Promise<void> = Promise.resolve();
 
-  private constructor(rootPath: string, database: Database.Database) {
+  private constructor(
+    rootPath: string,
+    storagePath: string,
+    persisted: PersistedWorkspaceIndex | null
+  ) {
     this.rootPath = rootPath;
-    this.database = database;
-    this.initializeSchema();
+    this.storagePath = storagePath;
+    this.documents = new Map(
+      (persisted?.documents ?? []).map((document) => [document.path, document])
+    );
+    this.builtAt = persisted?.builtAt ?? null;
   }
 
   static async open(rootPath: string): Promise<WorkspaceIndex> {
     const resolvedRoot = path.resolve(rootPath);
     const internalPath = path.join(resolvedRoot, ".rumi");
     await fs.mkdir(internalPath, { recursive: true });
-    const database = new Database(path.join(internalPath, "index.sqlite"));
-    return new WorkspaceIndex(resolvedRoot, database);
+    const indexPath = path.join(internalPath, "index.json");
+    const persisted = await readPersistedIndex(indexPath);
+    const workspaceIndex = new WorkspaceIndex(resolvedRoot, indexPath, persisted);
+    if (!persisted) {
+      await workspaceIndex.persist();
+    }
+    return workspaceIndex;
   }
 
   async ensureBuilt(): Promise<number> {
-    const marker = this.database
-      .prepare("SELECT value FROM metadata WHERE key = 'last_rebuild'")
-      .get() as { value: string } | undefined;
-
-    return marker ? this.documentCount() : this.rebuild();
+    return this.builtAt ? this.documentCount() : this.rebuild();
   }
 
   async rebuild(): Promise<number> {
@@ -82,7 +94,7 @@ export class WorkspaceIndex {
     });
 
     if (!stat) {
-      this.removePath(relPath);
+      await this.removePath(relPath);
       return;
     }
 
@@ -90,6 +102,7 @@ export class WorkspaceIndex {
       const files = await collectMarkdownFiles(this.rootPath, relPath);
       const rows = await readRows(this.rootPath, files);
       this.writeRows(rows);
+      await this.persist();
       return;
     }
 
@@ -97,28 +110,28 @@ export class WorkspaceIndex {
 
     if (row) {
       this.writeRows([row]);
+      await this.persist();
     }
   }
 
-  removePath(inputPath: string): void {
+  async removePath(inputPath: string): Promise<void> {
     const relPath = normalizeWorkspacePath(inputPath);
-    const pattern = `${escapeLike(relPath)}/%`;
-    const paths = this.database
-      .prepare("SELECT path FROM documents WHERE path = ? OR path LIKE ? ESCAPE '\\'")
-      .all(relPath, pattern) as Array<{ path: string }>;
-    const removeDocument = this.database.prepare("DELETE FROM documents WHERE path = ?");
-    const removeSearch = this.database.prepare("DELETE FROM documents_fts WHERE path = ?");
-    const transaction = this.database.transaction(() => {
-      for (const row of paths) {
-        removeSearch.run(row.path);
-        removeDocument.run(row.path);
+    const descendantPrefix = relPath ? `${relPath}/` : "";
+
+    for (const documentPath of this.documents.keys()) {
+      if (
+        documentPath === relPath ||
+        (descendantPrefix && documentPath.startsWith(descendantPrefix))
+      ) {
+        this.documents.delete(documentPath);
       }
-    });
-    transaction();
+    }
+
+    await this.persist();
   }
 
   async movePath(previousPath: string, nextPath: string): Promise<void> {
-    this.removePath(previousPath);
+    await this.removePath(previousPath);
     await this.indexPath(nextPath);
   }
 
@@ -131,59 +144,22 @@ export class WorkspaceIndex {
     }
 
     const normalized = query.toLocaleLowerCase();
-    const contains = `%${escapeLike(normalized)}%`;
-    const prefix = `${escapeLike(normalized)}%`;
-    const exact = normalized;
     const requestedKinds = (request.kinds ?? []).filter(
       (kind): kind is PageDocumentKind => kind === "page" || kind === "folder" || kind === "database"
     );
-    const kindClause = requestedKinds.length > 0
-      ? `AND kind IN (${requestedKinds.map(() => "?").join(", ")})`
-      : "";
+    const requestedKindSet = new Set(requestedKinds);
     const limit = Math.min(Math.max(request.limit ?? 50, 1), 200);
-    const rows = this.database
-      .prepare(`
-        SELECT path, kind, title, body,
-          CASE
-            WHEN lower(title) = ? THEN 0
-            WHEN lower(title) LIKE ? ESCAPE '\\' THEN 1
-            WHEN lower(path) LIKE ? ESCAPE '\\' THEN 2
-            WHEN lower(title) LIKE ? ESCAPE '\\' THEN 3
-            WHEN lower(path) LIKE ? ESCAPE '\\' THEN 4
-            WHEN lower(frontmatter_json) LIKE ? ESCAPE '\\' THEN 5
-            ELSE 6
-          END AS score
-        FROM documents
-        WHERE (
-          lower(title) LIKE ? ESCAPE '\\'
-          OR lower(path) LIKE ? ESCAPE '\\'
-          OR lower(frontmatter_json) LIKE ? ESCAPE '\\'
-          OR lower(body) LIKE ? ESCAPE '\\'
-        )
-        ${kindClause}
-        ORDER BY score ASC, length(title) ASC, title COLLATE NOCASE ASC
-        LIMIT ?
-      `)
-      .all(
-        exact,
-        prefix,
-        prefix,
-        contains,
-        contains,
-        contains,
-        contains,
-        contains,
-        contains,
-        contains,
-        ...requestedKinds,
-        limit
-      ) as Array<{
-        path: string;
-        kind: PageDocumentKind;
-        title: string;
-        body: string;
-        score: number;
-      }>;
+    const rows = [...this.documents.values()]
+      .filter((row) => requestedKindSet.size === 0 || requestedKindSet.has(row.kind))
+      .map((row) => ({ ...row, score: searchScore(row, normalized) }))
+      .filter((row) => row.score !== null)
+      .sort((left, right) =>
+        left.score! - right.score! ||
+        left.title.length - right.title.length ||
+        compareTitles(left.title, right.title) ||
+        left.path.localeCompare(right.path)
+      )
+      .slice(0, limit) as Array<IndexedDocumentRow & { score: number }>;
     const items: SearchWorkspaceResultItem[] = rows.map((row) => ({
       path: row.path,
       title: row.title,
@@ -197,19 +173,9 @@ export class WorkspaceIndex {
   async databaseRecords(databasePath: string): Promise<DatabaseRecord[]> {
     await this.ensureBuilt();
     const normalized = normalizeWorkspacePath(databasePath);
-    const rows = this.database
-      .prepare(`
-        SELECT path, title, frontmatter_json, content_hash
-        FROM documents
-        WHERE parent_path = ? AND kind = 'page'
-        ORDER BY title COLLATE NOCASE ASC
-      `)
-      .all(normalized) as Array<{
-        path: string;
-        title: string;
-        frontmatter_json: string;
-        content_hash: string;
-      }>;
+    const rows = [...this.documents.values()]
+      .filter((row) => row.parent_path === normalized && row.kind === "page")
+      .sort((left, right) => compareTitles(left.title, right.title) || left.path.localeCompare(right.path));
 
     return rows.map((row) => ({
       path: row.path,
@@ -220,91 +186,47 @@ export class WorkspaceIndex {
   }
 
   documentCount(): number {
-    const row = this.database.prepare("SELECT count(*) AS count FROM documents").get() as CountRow;
-    return row.count;
+    return this.documents.size;
   }
 
   close(): void {
-    this.database.close();
-  }
-
-  private initializeSchema(): void {
-    this.database.pragma("journal_mode = WAL");
-    this.database.pragma("synchronous = NORMAL");
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      ) STRICT;
-
-      CREATE TABLE IF NOT EXISTS documents (
-        path TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        title TEXT NOT NULL,
-        parent_path TEXT NOT NULL,
-        frontmatter_json TEXT NOT NULL,
-        body TEXT NOT NULL,
-        content_hash TEXT NOT NULL,
-        modified_at INTEGER NOT NULL
-      ) STRICT;
-
-      CREATE INDEX IF NOT EXISTS documents_parent_path_idx ON documents(parent_path);
-      CREATE INDEX IF NOT EXISTS documents_kind_idx ON documents(kind);
-
-      CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-        path UNINDEXED,
-        title,
-        frontmatter,
-        body,
-        tokenize = 'unicode61'
-      );
-    `);
+    // Every mutation is persisted before it resolves, so there is no native handle to close.
   }
 
   private async rebuildNow(): Promise<number> {
     const files = await collectMarkdownFiles(this.rootPath, "");
-    const clear = this.database.transaction(() => {
-      this.database.prepare("DELETE FROM documents_fts").run();
-      this.database.prepare("DELETE FROM documents").run();
-    });
-    clear();
+    this.documents.clear();
 
     for (let offset = 0; offset < files.length; offset += 32) {
       const rows = await readRows(this.rootPath, files.slice(offset, offset + 32));
       this.writeRows(rows);
     }
 
-    this.database
-      .prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('last_rebuild', ?)")
-      .run(new Date().toISOString());
+    this.builtAt = new Date().toISOString();
+    await this.persist();
     return this.documentCount();
   }
 
   private writeRows(rows: IndexedDocumentRow[]): void {
-    const upsert = this.database.prepare(`
-      INSERT INTO documents(path, kind, title, parent_path, frontmatter_json, body, content_hash, modified_at)
-      VALUES (@path, @kind, @title, @parent_path, @frontmatter_json, @body, @content_hash, @modified_at)
-      ON CONFLICT(path) DO UPDATE SET
-        kind = excluded.kind,
-        title = excluded.title,
-        parent_path = excluded.parent_path,
-        frontmatter_json = excluded.frontmatter_json,
-        body = excluded.body,
-        content_hash = excluded.content_hash,
-        modified_at = excluded.modified_at
-    `);
-    const removeSearch = this.database.prepare("DELETE FROM documents_fts WHERE path = ?");
-    const insertSearch = this.database.prepare(
-      "INSERT INTO documents_fts(path, title, frontmatter, body) VALUES (?, ?, ?, ?)"
-    );
-    const transaction = this.database.transaction(() => {
-      for (const row of rows) {
-        upsert.run(row);
-        removeSearch.run(row.path);
-        insertSearch.run(row.path, row.title, row.frontmatter_json, row.body);
-      }
+    for (const row of rows) {
+      this.documents.set(row.path, row);
+    }
+  }
+
+  private async persist(): Promise<void> {
+    const payload: PersistedWorkspaceIndex = {
+      format: 1,
+      builtAt: this.builtAt,
+      documents: [...this.documents.values()].sort((left, right) => left.path.localeCompare(right.path))
+    };
+    const serialized = `${JSON.stringify(payload)}\n`;
+    const temporaryPath = `${this.storagePath}.${process.pid}.tmp`;
+    const scheduled = this.persistPromise.then(async () => {
+      await fs.writeFile(temporaryPath, serialized, "utf8");
+      await fs.rename(temporaryPath, this.storagePath);
     });
-    transaction();
+    this.persistPromise = scheduled.catch(() => undefined);
+    await scheduled;
   }
 
   private resolveAbsolutePath(relPath: string): string {
@@ -354,6 +276,26 @@ async function collectMarkdownFiles(rootPath: string, startPath: string): Promis
 async function readRows(rootPath: string, paths: string[]): Promise<IndexedDocumentRow[]> {
   const rows = await Promise.all(paths.map((relPath) => readRow(rootPath, relPath)));
   return rows.filter((row): row is IndexedDocumentRow => row !== null);
+}
+
+async function readPersistedIndex(indexPath: string): Promise<PersistedWorkspaceIndex | null> {
+  const serialized = await fs.readFile(indexPath, "utf8").catch((error: unknown) => {
+    if (isMissingPathError(error)) {
+      return null;
+    }
+    throw error;
+  });
+
+  if (serialized === null) {
+    return null;
+  }
+
+  try {
+    const value = JSON.parse(serialized) as unknown;
+    return isPersistedWorkspaceIndex(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readRow(rootPath: string, relPath: string): Promise<IndexedDocumentRow | null> {
@@ -411,8 +353,54 @@ function matchingSnippet(body: string, query: string): string {
   return `${start > 0 ? "…" : ""}${snippet}${start + 170 < normalizedBody.length ? "…" : ""}`;
 }
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+function searchScore(row: IndexedDocumentRow, query: string): number | null {
+  const title = row.title.toLocaleLowerCase();
+  const documentPath = row.path.toLocaleLowerCase();
+  const frontmatter = row.frontmatter_json.toLocaleLowerCase();
+  const body = row.body.toLocaleLowerCase();
+
+  if (title === query) return 0;
+  if (title.startsWith(query)) return 1;
+  if (documentPath.startsWith(query)) return 2;
+  if (title.includes(query)) return 3;
+  if (documentPath.includes(query)) return 4;
+  if (frontmatter.includes(query)) return 5;
+  if (body.includes(query)) return 6;
+  return null;
+}
+
+function compareTitles(left: string, right: string): number {
+  return left.toLocaleLowerCase().localeCompare(right.toLocaleLowerCase()) || left.localeCompare(right);
+}
+
+function isPersistedWorkspaceIndex(value: unknown): value is PersistedWorkspaceIndex {
+  if (!isRecord(value) || value.format !== 1 || !Array.isArray(value.documents)) {
+    return false;
+  }
+
+  if (value.builtAt !== null && typeof value.builtAt !== "string") {
+    return false;
+  }
+
+  return value.documents.every(isIndexedDocumentRow);
+}
+
+function isIndexedDocumentRow(value: unknown): value is IndexedDocumentRow {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    (value.kind === "page" || value.kind === "folder" || value.kind === "database") &&
+    typeof value.title === "string" &&
+    typeof value.parent_path === "string" &&
+    typeof value.frontmatter_json === "string" &&
+    typeof value.body === "string" &&
+    typeof value.content_hash === "string" &&
+    typeof value.modified_at === "number"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function hashText(value: string): string {

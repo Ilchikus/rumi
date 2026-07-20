@@ -18,7 +18,7 @@ Search title, path, frontmatter, and body through the server-owned persistent in
 
 ## Delivered
 
-- SQLite document index under `.rumi/index.sqlite` with canonical Markdown remaining authoritative.
+- Persisted document index under `.rumi/index.json` with canonical Markdown remaining authoritative.
 - Rebuild and incremental runtime paths shared by commands and watcher reconciliation.
 - Exact-title, title-prefix, path, frontmatter, and body ranking.
 - Typed HTTP API and API client method.

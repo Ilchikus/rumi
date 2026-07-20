@@ -2,13 +2,13 @@
 status: verify
 type: feature
 milestone: M04
-owner_layer: editor
 coverage:
   - markdown
   - api
   - ui-smoke
-created: "2026-06-22"
-updated: "2026-06-23"
+created: 2026-06-22
+updated: 2026-06-23
+owner_layer: editor
 ---
 # M04-001 Editor Open Save Flow
 
@@ -48,8 +48,11 @@ Connect light ProseMirror editor state to server-backed page open/save.
 
 ## Progress
 
+
 Light ProseMirror now replaces the temporary textarea surface. The web app keeps Markdown/frontmatter as the runtime/API contract, marks the page dirty from ProseMirror transactions, and serializes Markdown only when saving or preserving dirty state across moves.
 
+
 The editor surface now presents each file as one page: its canonical filename supplies the title, YAML frontmatter is rendered as property rows, and the Markdown body remains the ProseMirror document. Body changes save in the background after a short idle delay; revision tracking preserves edits made while a save is in flight.
+
 
 The web client remembers the logical sidebar node and resolved page path per workspace, restoring normal, folder, and database pages after a refresh. Stale saved selections are discarded when their node no longer exists.

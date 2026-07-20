@@ -22,7 +22,7 @@ properties:
     type: select
     options:
       - name: foundation
-        color: sky
+        color: blue
       - name: feature
         color: emerald
       - name: refactor
@@ -103,10 +103,6 @@ views:
       - updated
   - name: Ready
     type: table
-    filters:
-      - property: status
-        op: equals
-        value: ready
     columns:
       - milestone
       - owner_layer

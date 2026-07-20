@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 areas:
   - database
   - files
@@ -7,7 +7,7 @@ areas:
   - editor
 impact: high
 created: "2026-07-18"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # Links Before Database Relations
 
@@ -102,6 +102,16 @@ cannot be expressed as a derived reverse view.
 - Offline or ambiguous move: preserve content and surface a repair choice.
 - Derived backlinks never need a reciprocal file write.
 
+The runtime now performs this repair after the durable rename or move has completed. The command
+returns after moving the target and refreshing its search entry; scanning and rewriting referring
+Markdown continues as tracked background work. Normal Markdown destinations, Wikilinks, reference
+definitions, HTML `href` values, and quoted YAML link strings are repaired outside code examples.
+Each changed page is checkpointed before the repair and reindexed afterward.
+
+The official editor writes normal Markdown links for generated `@` mentions. When a generated label
+exactly matches the old filename title, repair updates that label to the new title. Deliberate custom
+labels and Wikilink aliases are preserved.
+
 ## Delivery Order
 
 1. Internal link parsing, autocomplete, navigation, backlinks, and broken-link reporting.
@@ -111,13 +121,12 @@ cannot be expressed as a derived reverse view.
 
 ## Current Branch Boundary
 
-Relation parsing, editing, filtering, and rollups are intentionally not implemented in this branch.
-The current database parser reports unsupported property names and schema writes preserve their raw
-YAML definitions, so a manually authored future property is not destroyed by the current client.
+Typed database relation editing, relation-aware filtering, and rollups are intentionally not
+implemented in this branch. The current database parser reports unsupported property names and
+schema writes preserve their raw YAML definitions, so a manually authored future property is not
+destroyed by the current client.
 
 ## Open Questions
 
-- Should the official editor write Wikilinks or normal Markdown links in body content by default?
 - Should a target database be required, or may a relation target any page while still adding
   cardinality and relation UI?
-- Should link repair rewrite labels when the target title changes, or preserve user-authored labels?

@@ -15,7 +15,7 @@ import {
 } from "prosemirror-commands"
 import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
-import { moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
+import { duplicateBlocks, moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
 
@@ -59,6 +59,29 @@ function arrowDownFromHorizontalRule(schema: Schema): Command {
         tr = state.tr.setSelection(TextSelection.create(state.doc, afterPos + 1))
       }
       dispatch(tr.scrollIntoView())
+    }
+    return true
+  }
+}
+
+export function removeEmptyParagraphBlock(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    if (!(selection instanceof TextSelection) || !selection.empty) return false
+    const { $from } = selection
+    if (
+      $from.depth !== 1 ||
+      $from.parent.type !== schema.nodes.paragraph ||
+      $from.parent.content.size !== 0 ||
+      state.doc.childCount <= 1
+    ) return false
+
+    if (dispatch) {
+      const blockStart = $from.before(1)
+      const transaction = state.tr.delete(blockStart, blockStart + $from.parent.nodeSize)
+      const nextPosition = Math.min(blockStart, transaction.doc.content.size)
+      transaction.setSelection(TextSelection.near(transaction.doc.resolve(nextPosition), 1))
+      dispatch(transaction.scrollIntoView())
     }
     return true
   }
@@ -112,7 +135,11 @@ function buildKeymap(schema: Schema) {
   // platform rather than Mod so macOS matches Windows and Linux here.
   keys["Ctrl-Shift-ArrowUp"] = moveBlocks("up")
   keys["Ctrl-Shift-ArrowDown"] = moveBlocks("down")
+  keys["Mod-d"] = duplicateBlocks
+  keys["Mod-D"] = duplicateBlocks
   keys["Mod-a"] = selectAllBlocksInStages
+  keys["Backspace"] = removeEmptyParagraphBlock(schema)
+  keys["Delete"] = removeEmptyParagraphBlock(schema)
 
   // Flat list item types
   const flatListItemTypes = [

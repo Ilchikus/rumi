@@ -5,8 +5,8 @@ areas:
   - database
   - index
 impact: high
-created: "2026-06-22"
-updated: "2026-06-22"
+created: 2026-06-22
+updated: 2026-06-22
 ---
 # Files Are Canonical
 
@@ -34,5 +34,6 @@ This keeps the "file over app" ideology intact:
 - Postgres is not the first local source-of-truth.
 
 ## Later
+
 
 Richer storage can be explored later through the server boundary, but the first rebuild should preserve plain-file compatibility.

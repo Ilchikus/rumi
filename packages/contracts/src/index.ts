@@ -212,6 +212,33 @@ export interface DeleteNodeRequest {
   recursive?: boolean;
 }
 
+export type TrashItemKind = "page" | "folder" | "database" | "asset" | "file";
+
+export interface TrashItem {
+  id: string;
+  name: string;
+  kind: TrashItemKind;
+  originalPath: string;
+  deletedAt: string;
+}
+
+export interface TrashListResult {
+  items: TrashItem[];
+}
+
+export interface RestoreTrashItemRequest {
+  id: string;
+}
+
+export interface RestoreTrashItemResult {
+  status: "ok";
+  item: TrashItem;
+  path: string;
+  originalPath: string;
+  restoredToOriginalPath: boolean;
+  events: RumiEvent[];
+}
+
 export interface WorkspaceMutationResult {
   status: "ok";
   path: string;
@@ -285,6 +312,10 @@ export interface RumiEvent {
   name: RumiEventName;
   path?: string;
   previousPath?: string;
+  referenceRepair?: {
+    previousPath: string;
+    nextPath: string;
+  };
   version?: string;
   contentHash?: string;
   changedBy?: string;
@@ -320,6 +351,7 @@ export type RevisionReason =
   | "baseline"
   | "idle-checkpoint"
   | "manual-checkpoint"
+  | "before-reference-repair"
   | "before-delete"
   | "before-restore"
   | "restore";

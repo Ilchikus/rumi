@@ -353,17 +353,6 @@ const nodes: { [key: string]: NodeSpec } = {
   }
 }
 
-const highlightColors: Record<string, string> = {
-  yellow: "#fef08a",
-  green: "#bbf7d0",
-  blue: "#bfdbfe",
-  purple: "#ddd6fe",
-  pink: "#fbcfe8",
-  red: "#fecaca",
-  orange: "#fed7aa",
-  gray: "#e5e7eb"
-}
-
 const marks: { [key: string]: MarkSpec } = {
   bold: {
     parseDOM: [
@@ -418,23 +407,9 @@ const marks: { [key: string]: MarkSpec } = {
   },
 
   highlight: {
-    attrs: {
-      color: { default: "yellow" }
-    },
-    parseDOM: [{
-      tag: "mark",
-      getAttrs(dom: HTMLElement) {
-        const bg = dom.style.backgroundColor
-        for (const [name, hex] of Object.entries(highlightColors)) {
-          if (bg === hex) return { color: name }
-        }
-        return { color: "yellow" }
-      }
-    }],
-    toDOM(node) {
-      const color = node.attrs.color || "yellow"
-      const bgColor = highlightColors[color] || highlightColors.yellow
-      return ["mark", { style: `background-color: ${bgColor}` }, 0]
+    parseDOM: [{ tag: "mark" }],
+    toDOM() {
+      return ["mark", 0]
     }
   },
 
@@ -456,5 +431,4 @@ const marks: { [key: string]: MarkSpec } = {
   }
 }
 
-export { highlightColors }
 export const schema = new Schema({ nodes, marks })

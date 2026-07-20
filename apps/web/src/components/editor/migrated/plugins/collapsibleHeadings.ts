@@ -191,10 +191,45 @@ class HeadingView implements NodeView {
     this.contentDOM = document.createElement(`h${level}`)
     this.contentDOM.className = `heading-content heading-level-${level}`
 
+    this.dom.addEventListener("mousedown", this.onHeadingRowMouseDown)
+
     this.caretButton.innerHTML = CARET_SVG
 
     this.dom.appendChild(this.contentDOM)
     this.dom.appendChild(this.caretButton)
+  }
+
+  private onHeadingRowMouseDown = (event: MouseEvent) => {
+    if (event.button !== 0 || this.caretButton.contains(event.target as Node)) return
+
+    const textRange = document.createRange()
+    textRange.selectNodeContents(this.contentDOM)
+    const renderedTextRects = Array.from(textRange.getClientRects())
+    const overRenderedText = renderedTextRects.some((rect) =>
+      event.clientX >= rect.left && event.clientX <= rect.right &&
+      event.clientY >= rect.top && event.clientY <= rect.bottom
+    )
+
+    // Native ProseMirror positioning remains exact over the glyphs. The flex
+    // row beside a heading is outside contentDOM, though, and otherwise maps
+    // back to the start of the node instead of the visual end of its text.
+    if (overRenderedText) return
+
+    const contentRect = this.contentDOM.getBoundingClientRect()
+    if (
+      event.clientX < contentRect.left ||
+      event.clientY < contentRect.top ||
+      event.clientY > contentRect.bottom
+    ) return
+
+    const pos = this.getPos()
+    if (pos === undefined) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const end = pos + 1 + this.node.content.size
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc, end)))
+    this.view.focus()
   }
 
   update(node: PmNode, decorations: readonly Decoration[]): boolean {
@@ -212,6 +247,10 @@ class HeadingView implements NodeView {
 
   ignoreMutation(mutation: MutationRecord): boolean {
     return this.caretButton.contains(mutation.target as Node)
+  }
+
+  destroy(): void {
+    this.dom.removeEventListener("mousedown", this.onHeadingRowMouseDown)
   }
 }
 

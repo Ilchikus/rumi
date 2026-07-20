@@ -31,7 +31,7 @@ API tests should protect shape, not duplicate every runtime behavior test.
 
 Current command groups include workspace/tree/page mutation, database schema/record/query, indexed
 search, Rumi revision checkpoint/list/content/restore, workspace asset upload/read, authentication,
-and normalized events.
+portable Trash list/restore, and normalized events.
 
 Opening a Markdown record directly inside a database includes its database path, schema, and schema
 version in the page response. This lets any client render typed record properties without querying
@@ -42,12 +42,36 @@ command; the client does not write `.db.md` directly.
 relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted image/PDF formats from
 safe workspace paths. The client never receives a raw workspace filesystem path.
 
+`POST /api/nodes/delete` moves the requested user-content payload to workspace-local Trash.
+`GET /api/trash` lists recoverable items and their original relative paths.
+`POST /api/trash/restore` accepts a trash item ID and returns both the original and actual restored
+path; the actual path differs when collision-safe restore is required.
+
+Create, rename, move, asset upload, and restore commands never overwrite an occupied destination.
+They return the actual selected path, using `Name (1)`, `Name (2)`, and later parenthesized suffixes
+when the requested sibling name already exists.
+
 ## Official Client Serving
 
 The server may serve the built official web client from the same origin. This is a distribution
 adapter only: custom clients can use the API without the web build, and `--api-only` keeps the server
 headless. Non-API browser routes fall back to the client entry point; unknown `/api/*` routes retain
 structured JSON errors.
+
+The official client uses same-origin History API routes without reloading its shell:
+
+```text
+/<workspace folder>/<extensionless page>
+/trash
+```
+
+Pages, folders, databases, and database records follow their real workspace hierarchy without type
+prefixes. Route segments are lowercase, replace whitespace with a single `-`, preserve ordinary
+`-` and `_` characters, and hide `.md`. If sibling names would produce the same slug because of
+spacing, punctuation, case, or page/directory overlap, the router adds the first available numeric
+suffix (`-2`, `-3`, and so on). `/trash` remains reserved for application Trash, so a top-level
+workspace item named Trash is disambiguated the same way. The server's SPA fallback makes these
+URLs refreshable and directly shareable.
 
 ## Authentication
 

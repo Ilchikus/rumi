@@ -3,7 +3,7 @@ status: draft
 area: events
 owner: server
 created: "2026-06-22"
-updated: "2026-06-23"
+updated: "2026-07-20"
 ---
 # Server Events
 
@@ -38,6 +38,23 @@ page.changed {
 ```
 
 Clients use events to invalidate the right queries, not to reconstruct filesystem truth.
+
+Background reference repair publishes `page.changed` for every referring page it rewrites, with
+`changedBy: "reference-repair"` and:
+
+```text
+referenceRepair: { previousPath, nextPath }
+affects: ["body", "frontmatter", "links", "search"]
+```
+
+An open clean page refetches normally. An open dirty page applies the same deterministic reference
+rewrite to its local draft and advances its base version, avoiding a false conflict or loss of local
+editing.
+
+Moving content to Trash publishes the existing `page.deleted` invalidation event. Restoring from
+Trash publishes `workspace.treeChanged` with the restored path, original path in `previousPath`, and
+`changedBy: "trash.restore"`. Clients refresh both the workspace tree and Trash listing for these
+events.
 
 ## Transport
 

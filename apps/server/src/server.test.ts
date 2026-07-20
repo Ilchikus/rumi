@@ -109,7 +109,7 @@ describe("Rumi server API", () => {
 
     expect(first.statusCode).toBe(200);
     expect(first.json()).toMatchObject({ status: "saved", path: ".assets/diagram.png" });
-    expect(second.json()).toMatchObject({ status: "saved", path: ".assets/diagram-2.png" });
+    expect(second.json()).toMatchObject({ status: "saved", path: ".assets/diagram (1).png" });
     expect(await fs.readFile(path.join(root, ".assets", "diagram.png"))).toEqual(payload);
 
     const unsafe = await server.inject({
@@ -209,6 +209,18 @@ describe("Rumi server API", () => {
     });
     expect(createPage.statusCode).toBe(200);
 
+    const duplicatePage = await server.inject({
+      method: "POST",
+      url: "/api/pages",
+      payload: {
+        parentPath: "",
+        name: "Idea",
+        markdownBody: "# Duplicate"
+      }
+    });
+    expect(duplicatePage.statusCode).toBe(200);
+    expect(duplicatePage.json()).toMatchObject({ path: "Idea (1).md" });
+
     const createFolder = await server.inject({
       method: "POST",
       url: "/api/folders",
@@ -249,6 +261,26 @@ describe("Rumi server API", () => {
     expect(deleteNode.statusCode).toBe(200);
 
     await expect(fs.stat(path.join(root, "Archive", "Moved idea.md"))).rejects.toThrow();
+
+    const trash = await server.inject({ method: "GET", url: "/api/trash" });
+    expect(trash.statusCode).toBe(200);
+    expect(trash.json()).toMatchObject({
+      items: [{ originalPath: "Archive/Moved idea.md", kind: "page" }]
+    });
+
+    const trashItemId = (trash.json() as { items: Array<{ id: string }> }).items[0]!.id;
+    const restore = await server.inject({
+      method: "POST",
+      url: "/api/trash/restore",
+      payload: { id: trashItemId }
+    });
+    expect(restore.statusCode).toBe(200);
+    expect(restore.json()).toMatchObject({
+      path: "Archive/Moved idea.md",
+      originalPath: "Archive/Moved idea.md",
+      restoredToOriginalPath: true
+    });
+    await expect(fs.readFile(path.join(root, "Archive", "Moved idea.md"), "utf8")).resolves.toBe("# Idea");
     await server.close();
   });
 

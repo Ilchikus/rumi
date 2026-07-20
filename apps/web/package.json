@@ -13,6 +13,7 @@
     "@radix-ui/react-dropdown-menu": "^2.1.18",
     "@rumi/api-client": "workspace:*",
     "@rumi/contracts": "workspace:*",
+    "@rumi/markdown": "workspace:*",
     "@rumi/workspace-format": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

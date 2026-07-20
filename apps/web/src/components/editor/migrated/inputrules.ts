@@ -7,7 +7,6 @@ import {
 } from "prosemirror-inputrules"
 import { NodeType, MarkType, Schema } from "prosemirror-model"
 import { TextSelection } from "prosemirror-state"
-import { highlightColors } from "./schema"
 
 // Heading input rules: # , ## , ###
 function headingRule(nodeType: NodeType, maxLevel: number) {
@@ -162,19 +161,9 @@ export function buildInputRules(schema: Schema) {
     rules.push(markInputRule(/`([^`]+)`$/, schema.marks.code))
   }
 
-  // Highlight: ==text== (yellow default) or ==color::text==
+  // Highlight: ==text==
   if (schema.marks.highlight) {
-    // Colored highlight: ==color::text==
-    rules.push(markInputRule(
-      /==(\w+)::([^=]+)==$/,
-      schema.marks.highlight,
-      match => {
-        const color = match[1].toLowerCase()
-        return highlightColors[color] ? { color } : { color: "yellow" }
-      }
-    ))
-    // Default yellow highlight: ==text==
-    rules.push(markInputRule(/==([^=:]+)==$/, schema.marks.highlight))
+    rules.push(markInputRule(/==([^=]+)==$/, schema.marks.highlight))
   }
 
   // Link: [text](url)

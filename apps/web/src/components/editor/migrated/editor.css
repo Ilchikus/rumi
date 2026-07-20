@@ -2,7 +2,7 @@
 .prosemirror-editor-wrapper {
   position: relative;
   min-height: 100%;
-  padding-bottom: 90vh;
+  padding-bottom: 20vh;
   cursor: text;
 }
 
@@ -40,6 +40,16 @@
   margin-left: -8px;
   margin-right: -8px;
   box-sizing: content-box;
+}
+
+/* Separate paragraph blocks visibly; hard breaks remain within one compact block. */
+.prosemirror-editor .ProseMirror > p {
+  margin-top: 0;
+  margin-bottom: 1em;
+}
+
+.prosemirror-editor .ProseMirror > p:last-child {
+  margin-bottom: 0;
 }
 
 
@@ -104,14 +114,12 @@
   opacity: 0;
   cursor: pointer;
   user-select: none;
-  transition: opacity 0.15s, background-color 0.1s;
 }
 
 .heading-caret svg {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  transition: transform 0.15s;
   transform: rotate(0deg);
 }
 
@@ -133,31 +141,16 @@
   background: hsl(var(--muted));
 }
 
-/* Section collapse animation.
-   max-height must be numeric in the base state so CSS can transition
-   in both directions (collapse and expand). 300px covers typical
-   paragraph/list/heading blocks; for taller content the animation
-   clips earlier but is still smooth for common cases. */
-.prosemirror-editor .ProseMirror > * {
-  overflow: hidden;
-  max-height: 300px;
-  transition: max-height 0.15s ease, margin-top 0.15s ease, margin-bottom 0.15s ease;
+.prosemirror-editor .pm-section-collapsed {
+  display: none !important;
+  visibility: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
-/* Override for heading blocks — they need more height room */
-.prosemirror-editor .ProseMirror > .heading-block,
-.prosemirror-editor .ProseMirror > .mermaid-block,
-.prosemirror-editor .ProseMirror > figure,
-.prosemirror-editor .ProseMirror > .code-block-wrapper,
-.prosemirror-editor .ProseMirror > table {
-  max-height: 2000px;
-}
-
-.pm-section-collapsed {
-  max-height: 0 !important;
-  overflow: hidden !important;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
+.prosemirror-editor .pm-section-collapsed .code-block-toolbar {
+  display: none !important;
 }
 
 .prosemirror-editor .ProseMirror strong {
@@ -274,12 +267,22 @@
 }
 
 /* Tables */
+.prosemirror-editor .ProseMirror > .tableWrapper {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(60vh, 36rem);
+  margin: 0 0 0.75em 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .prosemirror-editor .ProseMirror table {
   border-collapse: collapse;
-  margin: 0 0 0.75em 0;
+  margin: 0;
   width: 100%;
   table-layout: fixed;
-  overflow: hidden;
 }
 
 .prosemirror-editor .ProseMirror th,
@@ -451,6 +454,11 @@
 
 .prosemirror-editor .ProseMirror a:hover {
   color: hsl(222.2 47.4% 31.2%);
+}
+
+.prosemirror-editor.rumi-native-context-link .ProseMirror a {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Task lists */
@@ -627,6 +635,7 @@
 
 /* Highlight mark */
 .prosemirror-editor .ProseMirror mark {
+  background-color: #fef08a;
   border-radius: 0.2em;
   padding: 0.1em 0.2em;
 }
@@ -634,35 +643,35 @@
 /* Slash commands menu */
 .slash-commands-menu {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .slash-command-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
   cursor: pointer;
+  color: hsl(var(--popover-foreground));
   transition: background-color 0.1s;
 }
 
 .slash-command-item:hover,
 .slash-command-item.selected {
-  background-color: hsl(210, 40%, 96.1%);
+  background-color: hsl(var(--accent));
 }
 
 .slash-command-icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  min-width: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: hsl(210, 40%, 96.1%);
-  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: hsl(222.2, 47.4%, 41.2%);
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
 }
 
 .slash-command-content {
@@ -670,13 +679,13 @@
 }
 
 .slash-command-name {
-  font-weight: 500;
-  color: hsl(222.2, 84%, 4.9%);
+  font-weight: 400;
+  color: hsl(var(--popover-foreground));
 }
 
 .slash-command-description {
-  font-size: 12px;
-  color: hsl(215.4, 16.3%, 46.9%);
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* Selection toolbar */
@@ -688,13 +697,8 @@
   background-color: hsl(210, 40%, 96.1%) !important;
 }
 
-.highlight-btn:hover,
-.chevron-btn:hover {
+.highlight-btn:hover {
   background-color: hsl(210, 40%, 96.1%) !important;
-}
-
-.color-option:hover {
-  border-color: hsl(214.3, 31.8%, 81.4%) !important;
 }
 
 /* Placeholder when editor is empty */

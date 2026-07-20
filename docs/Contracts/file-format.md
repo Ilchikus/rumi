@@ -19,6 +19,7 @@ Avoid:
 Accepted Rumi-specific files:
 
 ```text
+<workspace-root-name>.index.md
 Folder/Folder.index.md
 Database/Database.db.md
 .assets/
@@ -26,6 +27,10 @@ Database/Database.db.md
 ```
 
 `.db.md` and `.index.md` are canonical Rumi workspace objects, not cache files.
+The root-level `<workspace-root-name>.index.md` is the workspace homepage: it is represented by the
+workspace root node, hidden as a separate sidebar child, and opens at `/`.
+For compatibility with existing Markdown folders, a plain root-level `index.md` is also recognized
+as the homepage when the workspace-named companion is absent.
 
 SQLite index data is rebuildable.
 

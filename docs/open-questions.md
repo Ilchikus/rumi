@@ -6,7 +6,6 @@ These questions do not block the first runtime slice.
 
 - Should `.rumi/` live inside the workspace or app data for local mode?
 - Should `.rumi/` be ignored by Git and external sync by default?
-- Should safe delete use `.rumi/trash/` from day one?
 - Should snapshots arrive before or after the first web UI?
 
 Current bias:
@@ -14,6 +13,7 @@ Current bias:
 - Keep `.rumi/` inside workspace for transparency and portability.
 - Hide `.rumi/` from user-facing tree.
 - Treat `.rumi/` contents as rebuildable or operational unless explicitly documented.
+- Use `.rumi/trash/` for portable safe deletion and preserve it as recoverable workspace state.
 
 ## References
 

@@ -30,15 +30,20 @@ describe("workspace format", () => {
   it("classifies pages, assets, and internal paths", () => {
     expect(classifyFilePath("Notes/Idea.md")).toBe("page");
     expect(classifyFilePath(".assets/photo.jpg")).toBe("asset");
-    expect(classifyFilePath(".rumi/index.sqlite")).toBe("internal");
+    expect(classifyFilePath(".rumi/index.json")).toBe("internal");
     expect(classifyFilePath("node_modules/react/index.js")).toBe("internal");
-    expect(isHiddenFromTree(".rumi/index.sqlite")).toBe(true);
+    expect(isHiddenFromTree(".rumi/index.json")).toBe(true);
     expect(isHiddenFromTree(".assets/photo.jpg")).toBe(true);
     expect(isHiddenFromTree("node_modules/react/index.js")).toBe(true);
+    expect(isHiddenFromTree("package.json")).toBe(true);
+    expect(isHiddenFromTree("package-lock.json")).toBe(true);
+    expect(isHiddenFromTree("Notes/package.json")).toBe(true);
   });
 
   it("sanitizes portable workspace names", () => {
     expect(sanitizeWorkspaceName("test/page").sanitized).toBe("test⧸page");
+    expect(sanitizeWorkspaceName("My--Page").sanitized).toBe("My--Page");
+    expect(sanitizeWorkspaceName("dash-name_under_score").sanitized).toBe("dash-name_under_score");
     expect(sanitizeWorkspaceName("bad:name?.md")).toMatchObject({
       sanitized: "bad name .md",
       replacedUnsafeChars: true

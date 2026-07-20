@@ -6,7 +6,7 @@ areas:
   - editor
 impact: high
 created: "2026-06-22"
-updated: "2026-06-23"
+updated: "2026-07-20"
 ---
 # Frontend Stack
 
@@ -36,3 +36,10 @@ The neutral-first color rule keeps the UI quiet and inspectable while the produc
 - Tailwind config should stay in CommonJS (`tailwind.config.cjs`) for now. The TS Tailwind config worked in production build but caused Vite dev/PostCSS config loading issues.
 - Prefer Phosphor icons for the official web client unless a missing icon or local convention makes another icon source a better fit.
 - Sidebar entity icons use neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
+- Keep browser routing inside the persistent React shell with the native History API. Workspace
+  paths remain canonical and appear without artificial page/folder/database prefixes. URL slugs
+  are lowercase, hide `.md`, and map whitespace to a single hyphen. Existing hyphens and underscores
+  remain valid filename characters. When sibling items collapse to the same slug because of spacing,
+  punctuation, case, or page/directory overlap, deterministic `-2`, `-3`, and later suffixes keep
+  every route distinct. The server owns the SPA deep-link fallback and continues returning structured
+  errors for unknown API routes.

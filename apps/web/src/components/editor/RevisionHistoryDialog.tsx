@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
 import { FloppyDisk } from "@phosphor-icons/react/dist/csr/FloppyDisk";
@@ -14,6 +14,8 @@ import {
   DialogHeader,
   DialogTitle
 } from "../ui/dialog";
+import { createLineDiff, summarizeLineDiff } from "../../lib/lineDiff";
+import type { LineDiffEntry, LineDiffSummary } from "../../lib/lineDiff";
 import { cn } from "../../lib/utils";
 
 export interface RevisionHistoryDialogProps {
@@ -41,6 +43,11 @@ export function RevisionHistoryDialog({
   const [selected, setSelected] = useState<RevisionContentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const diff = useMemo(
+    () => selected ? createLineDiff(selected.markdown, currentMarkdown()) : [],
+    [currentMarkdown, selected]
+  );
+  const diffSummary = useMemo(() => summarizeLineDiff(diff), [diff]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,7 +82,7 @@ export function RevisionHistoryDialog({
     try {
       await api.checkpointNow({ path, reason: "manual-checkpoint" });
       await load();
-      onMessage("Snapshot created.");
+      onMessage("");
     } catch (error) {
       onMessage(errorMessage(error));
     }
@@ -92,7 +99,7 @@ export function RevisionHistoryDialog({
       await api.restoreRevision({ revisionId: selected.revision.revisionId });
       await onRestored();
       onOpenChange(false);
-      onMessage("Revision restored. The previous current version was snapshotted first.");
+      onMessage("");
     } catch (error) {
       onMessage(errorMessage(error));
     } finally {
@@ -102,7 +109,7 @@ export function RevisionHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(94vw,1050px)]">
+      <DialogContent className="h-[calc(100dvh-2rem)] max-h-[46rem] w-[calc(100vw-2rem)] max-w-[78rem] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ClockCounterClockwise size={19} />
@@ -113,7 +120,7 @@ export function RevisionHistoryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-[28rem] grid-cols-[15rem_minmax(0,1fr)] overflow-hidden rounded-md border border-border">
+        <div className="grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-md border border-border">
           <aside className="overflow-y-auto border-r border-border bg-muted/30 p-1.5">
             <Button
               type="button"
@@ -153,12 +160,9 @@ export function RevisionHistoryDialog({
             )}
           </aside>
 
-          <div className="min-w-0 overflow-auto p-3">
+          <div className="min-h-0 min-w-0 overflow-hidden">
             {selected ? (
-              <div className="grid min-w-[640px] grid-cols-2 gap-3">
-                <RevisionPane label="Current" markdown={currentMarkdown()} />
-                <RevisionPane label="Selected snapshot" markdown={selected.markdown} />
-              </div>
+              <RevisionDiff entries={diff} summary={diffSummary} revision={selected.revision} />
             ) : (
               <div className="grid h-full place-items-center text-sm text-muted-foreground">
                 Select a snapshot to compare.
@@ -167,33 +171,107 @@ export function RevisionHistoryDialog({
           </div>
         </div>
 
-        {dirty && (
-          <p className="text-sm text-muted-foreground">
-            The current page still has unsaved edits. Let autosave finish before restoring.
-          </p>
-        )}
+        <div className="grid gap-2">
+          {dirty && (
+            <p className="text-sm text-muted-foreground">
+              The current page still has unsaved edits. Let autosave finish before restoring.
+            </p>
+          )}
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-          <Button type="button" disabled={!selected || dirty || restoring} onClick={() => void restore()}>
-            {restoring ? "Restoring" : "Restore selected"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button type="button" disabled={!selected || dirty || restoring} onClick={() => void restore()}>
+              {restoring ? "Restoring" : "Restore selected"}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RevisionPane({ label, markdown }: { label: string; markdown: string }): ReactElement {
+function RevisionDiff({
+  entries,
+  summary,
+  revision
+}: {
+  entries: LineDiffEntry[];
+  summary: LineDiffSummary;
+  revision: RevisionEntry;
+}): ReactElement {
   return (
-    <section className="min-w-0">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
-      <pre className="min-h-[24rem] overflow-auto whitespace-pre-wrap rounded-md bg-muted/60 p-3 text-xs leading-5">
-        {markdown || "(empty document)"}
-      </pre>
+    <section className="flex h-full min-h-0 min-w-0 flex-col" aria-label="Revision code diff">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium">Selected snapshot → Current</h3>
+          <p className="truncate text-xs text-muted-foreground">
+            {reasonLabel(revision.reason)} · {formatRevisionDate(revision.createdAt)}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1 text-[11px]" aria-label="Diff summary">
+          <DiffCount marker="+" count={summary.added} label="added" />
+          <DiffCount marker="−" count={summary.removed} label="removed" />
+          <DiffCount marker="=" count={summary.unchanged} label="unchanged" />
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto bg-background">
+        <div className="w-max min-w-full font-mono text-xs leading-5" role="table" aria-label="Line changes">
+          <div
+            className="sticky top-0 z-10 grid grid-cols-[3rem_3rem_1.75rem_minmax(20rem,1fr)] border-b border-border bg-muted text-[10px] uppercase tracking-wide text-muted-foreground"
+            role="row"
+          >
+            <span className="px-2 py-1 text-right" role="columnheader">Old</span>
+            <span className="px-2 py-1 text-right" role="columnheader">New</span>
+            <span className="py-1 text-center" role="columnheader">Change</span>
+            <span className="px-2 py-1" role="columnheader">Source</span>
+          </div>
+
+          {entries.length > 0 ? entries.map((entry, index) => (
+            <div
+              key={`${index}-${entry.kind}`}
+              className={cn(
+                "grid grid-cols-[3rem_3rem_1.75rem_minmax(20rem,1fr)] border-b border-border/40",
+                entry.kind === "added" && "bg-neutral-200/70 text-foreground",
+                entry.kind === "removed" && "bg-neutral-100 text-muted-foreground",
+                entry.kind === "unchanged" && "bg-background text-foreground"
+              )}
+              role="row"
+            >
+              <DiffLineNumber value={entry.oldLineNumber} />
+              <DiffLineNumber value={entry.newLineNumber} />
+              <span className="select-none border-r border-border/60 text-center font-semibold" role="cell">
+                {entry.kind === "added" ? "+" : entry.kind === "removed" ? "−" : " "}
+                <span className="sr-only">{entry.kind}</span>
+              </span>
+              <span className="whitespace-pre px-2" role="cell">{entry.text || " "}</span>
+            </div>
+          )) : (
+            <p className="p-6 text-center font-sans text-sm text-muted-foreground">
+              The snapshot and current page are both empty.
+            </p>
+          )}
+        </div>
+      </div>
     </section>
+  );
+}
+
+function DiffCount({ marker, count, label }: { marker: string; count: number; label: string }): ReactElement {
+  return (
+    <span className="rounded border border-border bg-background px-1.5 py-0.5 text-muted-foreground">
+      <span className="font-mono font-semibold text-foreground">{marker}{count}</span> {label}
+    </span>
+  );
+}
+
+function DiffLineNumber({ value }: { value: number | null }): ReactElement {
+  return (
+    <span className="select-none border-r border-border/60 bg-muted/40 px-2 text-right text-muted-foreground" role="cell">
+      {value ?? ""}
+    </span>
   );
 }
 

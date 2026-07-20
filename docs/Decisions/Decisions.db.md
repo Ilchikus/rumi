@@ -69,10 +69,6 @@ views:
       - updated
   - name: Accepted
     type: table
-    filters:
-      - property: status
-        op: equals
-        value: accepted
     columns:
       - areas
       - impact

@@ -17,6 +17,8 @@ import type {
   QueryDatabaseResult,
   RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreTrashItemRequest,
+  RestoreTrashItemResult,
   RestoreRevisionRequest,
   RevisionContentResult,
   RevisionEntry,
@@ -26,6 +28,7 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
+  TrashListResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -260,6 +263,18 @@ export class RumiApiClient {
 
   async deleteNode(request: DeleteNodeRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/nodes/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async listTrash(): Promise<TrashListResult> {
+    return this.request<TrashListResult>("/api/trash");
+  }
+
+  async restoreTrashItem(request: RestoreTrashItemRequest): Promise<RestoreTrashItemResult> {
+    return this.request<RestoreTrashItemResult>("/api/trash/restore", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretRight } from "@phosphor-icons/react/dist/csr/CaretRight";
@@ -58,9 +57,10 @@ interface SidebarProps {
   tree: WorkspaceNode | null;
   selection: SidebarSelection | null;
   loadState: "idle" | "loading" | "error";
+  trashCount: number;
+  trashOpen: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  onRefresh: () => void;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
@@ -69,6 +69,7 @@ interface SidebarProps {
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
+  onOpenTrash: () => void;
 }
 
 type CreateKind = "page" | "folder" | "database";
@@ -102,9 +103,10 @@ export function Sidebar({
   tree,
   selection,
   loadState,
+  trashCount,
+  trashOpen,
   collapsed,
   onToggleCollapsed,
-  onRefresh,
   onPrefetchNode,
   onOpenNode,
   onCreatePage,
@@ -112,7 +114,8 @@ export function Sidebar({
   onCreateDatabase,
   onRenameNode,
   onMoveNode,
-  onDeleteNode
+  onDeleteNode,
+  onOpenTrash
 }: SidebarProps): ReactElement {
   const initializedExpansion = useRef(false);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
@@ -243,18 +246,25 @@ export function Sidebar({
   }, []);
 
   return (
-    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-muted/35 text-foreground">
+    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-muted/35 text-foreground">
       <header className="border-b border-border p-3">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Workspace</p>
-            <h1 className="truncate text-lg font-semibold">{workspaceName}</h1>
-          </div>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="min-w-0">
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-2 rounded-md text-left transition-opacity hover:opacity-70 disabled:cursor-default disabled:hover:opacity-100"
+              disabled={!tree}
+              title={tree ? `Open ${workspaceName}` : undefined}
+              onClick={() => {
+                if (tree) onOpenNode(tree);
+              }}
+            >
+              <img src="/rumi-logo.svg" alt="" className="h-6 w-6 shrink-0" />
+              <span className="truncate text-lg font-semibold">{workspaceName}</span>
+            </button>
+          </h1>
           <div className="flex shrink-0 gap-1">
             <RootCreateMenu onCreate={startCreate} />
-            <Button type="button" size="icon" variant="ghost" onClick={onRefresh} title="Refresh">
-              <ArrowsClockwise size={17} />
-            </Button>
             <Button
               type="button"
               size="icon"
@@ -312,6 +322,26 @@ export function Sidebar({
           </p>
         )}
       </div>
+
+      <footer className="border-t border-border p-2">
+        <button
+          type="button"
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
+            trashOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          )}
+          aria-current={trashOpen ? "page" : undefined}
+          onClick={onOpenTrash}
+        >
+          <span className="grid h-5 w-5 shrink-0 place-items-center"><Trash size={17} /></span>
+          <span className="min-w-0 flex-1 truncate">Trash</span>
+          {trashCount > 0 && (
+            <span className="min-w-5 rounded-full bg-muted px-1.5 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground">
+              {trashCount > 99 ? "99+" : trashCount}
+            </span>
+          )}
+        </button>
+      </footer>
 
       {floatingMenu && (
         <FloatingSidebarMenu
@@ -703,13 +733,13 @@ function NodeMenuItems({
       <DropdownMenuSeparator />
       <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(node)}>
         <Trash size={16} />
-        Delete
+        Move to Trash
       </DropdownMenuItem>
     </>
   );
 }
 
-function MoveNodeDialog({
+export function MoveNodeDialog({
   tree,
   node,
   busy,
@@ -823,7 +853,7 @@ function MoveNodeDialog({
   );
 }
 
-function DeleteNodeDialog({
+export function DeleteNodeDialog({
   node,
   busy,
   onOpenChange,
@@ -842,15 +872,15 @@ function DeleteNodeDialog({
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive">
               <WarningCircle size={18} weight="fill" />
             </span>
-            <AlertDialogTitle>Delete item</AlertDialogTitle>
+            <AlertDialogTitle>Move item to Trash</AlertDialogTitle>
           </div>
           <AlertDialogDescription>
             {node ? (
               <>
-                Delete <span className="font-medium text-foreground">{node.path}</span>? This cannot be undone.
+                Move <span className="font-medium text-foreground">{node.path}</span> to Trash? You can restore it later.
               </>
             ) : (
-              "Delete this item? This cannot be undone."
+              "Move this item to Trash? You can restore it later."
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -864,7 +894,7 @@ function DeleteNodeDialog({
               void onConfirm();
             }}
           >
-            {busy ? "Deleting" : "Delete"}
+            {busy ? "Moving" : "Move to Trash"}
           </AlertDialogActionButton>
         </AlertDialogFooter>
       </AlertDialogContent>

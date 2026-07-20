@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { setLocalPassword, startRumiServer } from "@rumi/server";
 import { WorkspaceRuntime } from "@rumi/runtime";
+import cliPackage from "../package.json" with { type: "json" };
 
 const program = new Command();
 
-program.name("rumi").description("Rumi workspace server CLI").version("0.0.0");
+program.name("rumi").description("Rumi workspace server CLI").version(cliPackage.version);
 
 program
   .command("auth")
@@ -223,7 +226,7 @@ program
 
 program
   .command("serve")
-  .argument("<workspace>", "Workspace directory")
+  .argument("[workspace]", "Workspace directory", ".")
   .option("--host <host>", "Host to bind", "127.0.0.1")
   .option("--port <port>", "Port to bind", "3000")
   .option("--verbose", "Print key workspace/API events")
@@ -247,6 +250,8 @@ program
     apiOnly?: boolean;
   }) => {
     const authMode = resolveAuthMode(options.auth);
+    const packagedWebRoot =
+      !options.apiOnly && !options.webRoot ? await resolvePackagedWebRoot() : undefined;
     const started = await startRumiServer({
       workspacePath: workspace,
       host: options.host,
@@ -257,6 +262,8 @@ program
         ? { webRoot: false }
         : options.webRoot
           ? { webRoot: options.webRoot }
+          : packagedWebRoot
+            ? { webRoot: packagedWebRoot }
           : {}),
       auth:
         authMode === "password"
@@ -303,6 +310,12 @@ function resolveAuthMode(value: string): "none" | "password" {
   }
 
   return value;
+}
+
+async function resolvePackagedWebRoot(): Promise<string | undefined> {
+  const webRootUrl = new URL("./web/", import.meta.url);
+  const indexStat = await fs.stat(new URL("index.html", webRootUrl)).catch(() => null);
+  return indexStat?.isFile() ? fileURLToPath(webRootUrl) : undefined;
 }
 
 async function readPasswordFromStdin(): Promise<string> {

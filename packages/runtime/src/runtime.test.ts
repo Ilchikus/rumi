@@ -37,16 +37,21 @@ describe("WorkspaceRuntime", () => {
 
   it("reads a tree and hides Rumi internals", async () => {
     const root = await tempWorkspace();
+    const rootIndexName = `${path.basename(root)}.index.md`;
     await fs.mkdir(path.join(root, "Projects"), { recursive: true });
     await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
+    await fs.writeFile(path.join(root, rootIndexName), "# Home", "utf8");
     await fs.writeFile(path.join(root, "Projects", "Projects.index.md"), "# Projects", "utf8");
     await fs.writeFile(path.join(root, "Projects", "Idea.md"), "# Idea", "utf8");
-    await fs.writeFile(path.join(root, ".rumi", "index.sqlite"), "", "utf8");
+    await fs.writeFile(path.join(root, ".rumi", "index.json"), "", "utf8");
+    await fs.writeFile(path.join(root, "package.json"), "{}", "utf8");
+    await fs.writeFile(path.join(root, "package-lock.json"), "{}", "utf8");
 
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
     const tree = await runtime.getTree();
 
     expect(tree.kind).toBe("workspace");
+    expect(tree.companionPath).toBe(rootIndexName);
     expect(tree.children?.map((child) => child.name)).toEqual(["Projects"]);
     expect(tree.children?.[0]).toMatchObject({
       name: "Projects",
@@ -68,7 +73,7 @@ describe("WorkspaceRuntime", () => {
     const asset = await runtime.readAsset(first.path);
 
     expect(first.path).toBe(".assets/diagram.png");
-    expect(second.path).toBe(".assets/diagram-2.png");
+    expect(second.path).toBe(".assets/diagram (1).png");
     expect(asset).toMatchObject({ fileName: "diagram.png", contentType: "image/png" });
     expect(asset.data).toEqual(bytes);
     expect(events.map((entry) => entry.event.name)).toEqual(["asset.changed", "asset.changed"]);
@@ -106,6 +111,41 @@ describe("WorkspaceRuntime", () => {
       path: "Projects/Projects.index.md",
       kind: "folder",
       markdownBody: "# Projects"
+    });
+  });
+
+  it("opens the workspace root through its index companion", async () => {
+    const root = await tempWorkspace();
+    const rootIndexName = `${path.basename(root)}.index.md`;
+    await fs.writeFile(path.join(root, rootIndexName), "# Home", "utf8");
+
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await expect(runtime.openPage("")).resolves.toMatchObject({
+      path: rootIndexName,
+      kind: "folder",
+      markdownBody: "# Home"
+    });
+    await expect(runtime.openPage(rootIndexName)).resolves.toMatchObject({
+      path: rootIndexName,
+      kind: "folder",
+      markdownBody: "# Home"
+    });
+  });
+
+  it("uses a plain root index.md as the editable workspace home", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "index.md"), "Root folder contents", "utf8");
+
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const tree = await runtime.getTree();
+
+    expect(tree.companionPath).toBe("index.md");
+    expect(tree.children?.some((child) => child.path === "index.md")).toBe(false);
+    await expect(runtime.openPage("")).resolves.toMatchObject({
+      path: "index.md",
+      kind: "folder",
+      markdownBody: "Root folder contents"
     });
   });
 
@@ -199,6 +239,10 @@ describe("WorkspaceRuntime", () => {
       frontmatter: { status: "ready" },
       markdownBody: "# Roadmap"
     });
+    await runtime.createPage({
+      parentPath: "",
+      name: "Empty note"
+    });
     await runtime.createFolder({
       parentPath: "",
       name: "Projects"
@@ -207,9 +251,61 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.readFile(path.join(root, "Roadmap.md"), "utf8")).resolves.toBe(
       "---\nstatus: ready\n---\n# Roadmap"
     );
+    await expect(fs.readFile(path.join(root, "Empty note.md"), "utf8")).resolves.toBe("");
     await expect(fs.readFile(path.join(root, "Projects", "Projects.index.md"), "utf8")).resolves.toBe(
-      "# Projects\n"
+      ""
     );
+  });
+
+  it("adds parenthesized numbers when create, rename, and move destinations already exist", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    const firstPage = await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "First" });
+    const secondPage = await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "Second" });
+    const thirdPage = await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "Third" });
+    expect([firstPage.path, secondPage.path, thirdPage.path]).toEqual([
+      "Note.md",
+      "Note (1).md",
+      "Note (2).md"
+    ]);
+    await expect(fs.readFile(path.join(root, "Note.md"), "utf8")).resolves.toBe("First");
+    await expect(fs.readFile(path.join(root, "Note (1).md"), "utf8")).resolves.toBe("Second");
+
+    const firstFolder = await runtime.createFolder({ parentPath: "", name: "Projects" });
+    const secondFolder = await runtime.createFolder({ parentPath: "", name: "Projects" });
+    expect([firstFolder.path, secondFolder.path]).toEqual(["Projects", "Projects (1)"]);
+    await expect(
+      fs.stat(path.join(root, "Projects (1)", "Projects (1).index.md"))
+    ).resolves.toBeDefined();
+
+    const firstDatabase = await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    const secondDatabase = await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    expect([firstDatabase.path, secondDatabase.path]).toEqual(["Tasks", "Tasks (1)"]);
+    await expect(
+      fs.stat(path.join(root, "Tasks (1)", "Tasks (1).db.md"))
+    ).resolves.toBeDefined();
+
+    const firstRecord = await runtime.createDatabaseRecord({ databasePath: "Tasks", name: "Todo" });
+    const secondRecord = await runtime.createDatabaseRecord({ databasePath: "Tasks", name: "Todo" });
+    expect([firstRecord.path, secondRecord.path]).toEqual([
+      "Tasks/Todo.md",
+      "Tasks/Todo (1).md"
+    ]);
+
+    await runtime.createPage({ parentPath: "", name: "Other", markdownBody: "Other" });
+    const renamed = await runtime.renameNode({ path: "Other.md", newName: "Note" });
+    expect(renamed.path).toBe("Note (3).md");
+    await expect(fs.readFile(path.join(root, renamed.path), "utf8")).resolves.toBe("Other");
+
+    await runtime.createPage({ parentPath: "Projects", name: "Shared", markdownBody: "Source" });
+    await runtime.createPage({ parentPath: "Projects (1)", name: "Shared", markdownBody: "Existing" });
+    const moved = await runtime.moveNode({
+      path: "Projects/Shared.md",
+      newParentPath: "Projects (1)"
+    });
+    expect(moved.path).toBe("Projects (1)/Shared (1).md");
+    await expect(fs.readFile(path.join(root, moved.path), "utf8")).resolves.toBe("Source");
   });
 
   it("uses portable sanitized names for create and rename commands", async () => {
@@ -231,15 +327,18 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.readFile(path.join(root, "other⧸name.md"), "utf8")).resolves.toBe("# Test");
   });
 
-  it("renames pages and folder companion files", async () => {
+  it("renames pages, directories, and their folder or database companion files", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Old.md"), "# Old", "utf8");
     await fs.mkdir(path.join(root, "Projects"), { recursive: true });
     await fs.writeFile(path.join(root, "Projects", "Projects.index.md"), "# Projects", "utf8");
+    await fs.mkdir(path.join(root, "Tasks"), { recursive: true });
+    await fs.writeFile(path.join(root, "Tasks", "Tasks.db.md"), "# Tasks", "utf8");
 
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
     await runtime.renameNode({ path: "Old.md", newName: "New" });
     await runtime.renameNode({ path: "Projects", newName: "Archive" });
+    await runtime.renameNode({ path: "Tasks", newName: "Work" });
 
     await expect(fs.readFile(path.join(root, "New.md"), "utf8")).resolves.toBe("# Old");
     await expect(fs.stat(path.join(root, "Old.md"))).rejects.toThrow();
@@ -247,6 +346,94 @@ describe("WorkspaceRuntime", () => {
       "# Projects"
     );
     await expect(fs.stat(path.join(root, "Archive", "Projects.index.md"))).rejects.toThrow();
+    await expect(fs.readFile(path.join(root, "Work", "Work.db.md"), "utf8")).resolves.toBe(
+      "# Tasks"
+    );
+    await expect(fs.stat(path.join(root, "Work", "Tasks.db.md"))).rejects.toThrow();
+  });
+
+  it("repairs links and mentions in the background after a rename", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Old.md"), "# Old", "utf8");
+    await fs.writeFile(
+      path.join(root, "References.md"),
+      [
+        "---",
+        'related: "[[Old]]"',
+        "---",
+        "[Old](Old.md)",
+        "[Custom label](Old.md#details)",
+        "`[Old](Old.md)`"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.rebuildIndex();
+    const events: RumiEventEnvelope[] = [];
+    runtime.events.subscribe((event) => events.push(event));
+
+    const renamed = await runtime.renameNode({ path: "Old.md", newName: "New" });
+    expect(renamed.path).toBe("New.md");
+    await expect(fs.stat(path.join(root, "New.md"))).resolves.toBeDefined();
+
+    await runtime.flushBackgroundTasks();
+
+    await expect(fs.readFile(path.join(root, "References.md"), "utf8")).resolves.toBe(
+      [
+        "---",
+        'related: "[[New]]"',
+        "---",
+        "[New](New.md)",
+        "[Custom label](New.md#details)",
+        "`[Old](Old.md)`"
+      ].join("\n")
+    );
+    expect(events.some(({ event }) =>
+      event.name === "page.changed" &&
+      event.path === "References.md" &&
+      event.changedBy === "reference-repair"
+    )).toBe(true);
+    const search = await runtime.searchWorkspace({ query: "New.md" });
+    expect(search.items.some((result) => result.path === "References.md")).toBe(true);
+  });
+
+  it("repairs references to the actual parenthesized path selected for a duplicate rename", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Old.md"), "# Old", "utf8");
+    await fs.writeFile(path.join(root, "New.md"), "# Existing", "utf8");
+    await fs.writeFile(path.join(root, "References.md"), "[Old](Old.md) and [[Old]]", "utf8");
+
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const renamed = await runtime.renameNode({ path: "Old.md", newName: "New" });
+    expect(renamed.path).toBe("New (1).md");
+
+    await runtime.flushBackgroundTasks();
+    await expect(fs.readFile(path.join(root, "References.md"), "utf8")).resolves.toBe(
+      "[New (1)](New%20(1).md) and [[New (1)]]"
+    );
+    await expect(fs.readFile(path.join(root, "New.md"), "utf8")).resolves.toBe("# Existing");
+    await expect(fs.readFile(path.join(root, "New (1).md"), "utf8")).resolves.toBe("# Old");
+  });
+
+  it("repairs references in a document that moves during the background scan", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Old.md"), "# Old", "utf8");
+    await fs.mkdir(path.join(root, "Projects"));
+    await fs.writeFile(
+      path.join(root, "Projects", "Projects.index.md"),
+      "[Old](Old.md)",
+      "utf8"
+    );
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await runtime.renameNode({ path: "Old.md", newName: "New" });
+    await runtime.renameNode({ path: "Projects", newName: "Archive" });
+    await runtime.flushBackgroundTasks();
+
+    await expect(
+      fs.readFile(path.join(root, "Archive", "Archive.index.md"), "utf8")
+    ).resolves.toBe("[New](New.md)");
   });
 
   it("moves and deletes nodes", async () => {
@@ -263,6 +450,72 @@ describe("WorkspaceRuntime", () => {
 
     await runtime.deleteNode({ path: "Archive/Note.md" });
     await expect(fs.stat(path.join(root, "Archive", "Note.md"))).rejects.toThrow();
+  });
+
+  it("moves every workspace item type to portable Trash and restores without overwriting", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "# Original" });
+    await runtime.createFolder({ parentPath: "", name: "Projects", markdownBody: "# Projects" });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    const asset = await runtime.saveAsset("diagram.png", Buffer.from([137, 80, 78, 71]));
+
+    await runtime.deleteNode({ path: "Note.md" });
+    await runtime.deleteNode({ path: "Projects", recursive: true });
+    await runtime.deleteNode({ path: "Tasks", recursive: true });
+    await runtime.deleteNode({ path: asset.path });
+
+    const trash = await runtime.listTrash();
+    expect(trash.items.map((item) => [item.originalPath, item.kind])).toEqual(
+      expect.arrayContaining([
+        ["Note.md", "page"],
+        ["Projects", "folder"],
+        ["Tasks", "database"],
+        [".assets/diagram.png", "asset"]
+      ])
+    );
+    await expect(fs.stat(path.join(root, ".rumi", "trash"))).resolves.toBeDefined();
+
+    await fs.writeFile(path.join(root, "Note.md"), "# Replacement", "utf8");
+    const noteItem = trash.items.find((item) => item.originalPath === "Note.md");
+    const databaseItem = trash.items.find((item) => item.originalPath === "Tasks");
+    const folderItem = trash.items.find((item) => item.originalPath === "Projects");
+    const assetItem = trash.items.find((item) => item.originalPath === ".assets/diagram.png");
+    expect(noteItem && databaseItem && folderItem && assetItem).toBeTruthy();
+
+    const restoredNote = await runtime.restoreTrashItem({ id: noteItem!.id });
+    expect(restoredNote).toMatchObject({
+      originalPath: "Note.md",
+      path: "Note (1).md",
+      restoredToOriginalPath: false
+    });
+    await expect(fs.readFile(path.join(root, "Note.md"), "utf8")).resolves.toBe("# Replacement");
+    await expect(fs.readFile(path.join(root, restoredNote.path), "utf8")).resolves.toContain("# Original");
+
+    await fs.mkdir(path.join(root, "Tasks"));
+    const restoredDatabase = await runtime.restoreTrashItem({ id: databaseItem!.id });
+    expect(restoredDatabase.path).toBe("Tasks (1)");
+    await expect(
+      fs.stat(path.join(root, "Tasks (1)", "Tasks (1).db.md"))
+    ).resolves.toBeDefined();
+
+    await runtime.restoreTrashItem({ id: folderItem!.id });
+    await runtime.restoreTrashItem({ id: assetItem!.id });
+    await expect(fs.stat(path.join(root, "Projects", "Projects.index.md"))).resolves.toBeDefined();
+    await expect(fs.readFile(path.join(root, ".assets", "diagram.png"))).resolves.toEqual(
+      Buffer.from([137, 80, 78, 71])
+    );
+    expect((await runtime.listTrash()).items).toEqual([]);
+  });
+
+  it("rejects attempts to trash the workspace root or Rumi internals", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await expect(runtime.deleteNode({ path: "", recursive: true })).rejects.toThrow(/workspace root/);
+    await expect(runtime.deleteNode({ path: ".rumi", recursive: true })).rejects.toThrow(/\.rumi internals/);
+    await expect(fs.stat(root)).resolves.toBeDefined();
+    await expect(fs.stat(path.join(root, ".rumi", "index.json"))).resolves.toBeDefined();
   });
 
   it("creates a folder-backed database and records through runtime commands", async () => {
@@ -627,7 +880,11 @@ describe("WorkspaceRuntime", () => {
       "body"
     ]);
     expect(result.items.map((item) => item.score)).toEqual([0, 1, 3, 6]);
-    await expect(fs.stat(path.join(root, ".rumi", "index.sqlite"))).resolves.toBeDefined();
+    await expect(fs.stat(path.join(root, ".rumi", "index.json"))).resolves.toBeDefined();
+
+    const reopenedRuntime = await WorkspaceRuntime.open({ rootPath: root });
+    const reopenedResult = await reopenedRuntime.searchWorkspace({ query: "age" });
+    expect(reopenedResult).toEqual(result);
   });
 
   it("updates the search index before publishing reconciled external edits", async () => {

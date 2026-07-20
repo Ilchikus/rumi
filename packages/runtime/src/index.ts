@@ -24,6 +24,8 @@ import type {
   QueryDatabaseResult,
   RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreTrashItemRequest,
+  RestoreTrashItemResult,
   RestoreRevisionRequest,
   RevisionContentResult,
   RevisionEntry,
@@ -34,6 +36,7 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
+  TrashListResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -59,6 +62,11 @@ import {
   queryDatabaseRecords
 } from "./database";
 import { RevisionStore } from "./revisions";
+import {
+  planWorkspaceReferenceRepairs,
+  rewriteMarkdownReferences
+} from "./reference-repair";
+import { WorkspaceTrash } from "./trash";
 import { WorkspaceIndex } from "./workspace-index";
 
 export interface WorkspaceRuntimeOptions {
@@ -110,13 +118,16 @@ export class WorkspaceRuntime {
   readonly name: string;
   readonly events = new RuntimeEventBus();
   private readonly revisions: RevisionStore;
+  private readonly trash: WorkspaceTrash;
   private readonly workspaceIndex: WorkspaceIndex;
+  private readonly backgroundTasks = new Set<Promise<void>>();
   private workspaceWatcher: WorkspaceWatcher | null = null;
 
   private constructor(rootPath: string, workspaceIndex: WorkspaceIndex) {
     this.rootPath = rootPath;
     this.name = path.basename(rootPath);
     this.revisions = new RevisionStore({ rootPath });
+    this.trash = new WorkspaceTrash(rootPath);
     this.workspaceIndex = workspaceIndex;
   }
 
@@ -177,14 +188,12 @@ export class WorkspaceRuntime {
     if (!contentType) throw new Error(`Unsupported asset type: ${extension || "unknown"}`);
 
     await fs.mkdir(this.resolveAbsolutePath(".assets"), { recursive: true });
-    const stem = path.posix.basename(cleanedName, extension);
-    let index = 1;
-    let relPath = path.posix.join(".assets", `${stem}${extension}`);
-
-    while (await fileExists(this.resolveAbsolutePath(relPath))) {
-      index += 1;
-      relPath = path.posix.join(".assets", `${stem}-${index}${extension}`);
-    }
+    const desiredPath = path.posix.join(".assets", cleanedName);
+    const relPath = await availableWorkspacePath(
+      desiredPath,
+      false,
+      this.resolveAbsolutePath.bind(this)
+    );
 
     await fs.writeFile(this.resolveAbsolutePath(relPath), data, { flag: "wx" });
     const event: RumiEvent = {
@@ -287,15 +296,19 @@ export class WorkspaceRuntime {
   async createPage(request: CreatePageRequest): Promise<WorkspaceMutationResult> {
     const parentPath = normalizeWorkspacePath(request.parentPath);
     const pageName = ensureMarkdownName(cleanWorkspaceName(request.name));
-    const relPath = normalizeWorkspacePath(path.posix.join(parentPath, pageName));
+    const desiredPath = normalizeWorkspacePath(path.posix.join(parentPath, pageName));
+    const relPath = await availableWorkspacePath(
+      desiredPath,
+      false,
+      this.resolveAbsolutePath.bind(this)
+    );
     const absolutePath = this.resolveAbsolutePath(relPath);
 
     await ensureParentDirectory(absolutePath);
-    await failIfExists(absolutePath);
     await fs.writeFile(
       absolutePath,
       serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
-      "utf8"
+      { encoding: "utf8", flag: "wx" }
     );
     await this.revisions.checkpoint(
       relPath,
@@ -313,14 +326,18 @@ export class WorkspaceRuntime {
   async createFolder(request: CreateFolderRequest): Promise<WorkspaceMutationResult> {
     const parentPath = normalizeWorkspacePath(request.parentPath);
     const folderName = cleanWorkspaceName(request.name);
-    const relPath = normalizeWorkspacePath(path.posix.join(parentPath, folderName));
+    const desiredPath = normalizeWorkspacePath(path.posix.join(parentPath, folderName));
+    const relPath = await availableWorkspacePath(
+      desiredPath,
+      true,
+      this.resolveAbsolutePath.bind(this)
+    );
     const absolutePath = this.resolveAbsolutePath(relPath);
 
-    await failIfExists(absolutePath);
     await fs.mkdir(absolutePath, { recursive: false });
 
     const indexPath = folderIndexPathForDirectory(relPath);
-    await fs.writeFile(this.resolveAbsolutePath(indexPath), request.markdownBody ?? `# ${folderName}\n`, "utf8");
+    await fs.writeFile(this.resolveAbsolutePath(indexPath), request.markdownBody ?? "", "utf8");
     await this.revisions.checkpoint(
       indexPath,
       await fs.readFile(this.resolveAbsolutePath(indexPath), "utf8"),
@@ -337,10 +354,14 @@ export class WorkspaceRuntime {
   async createDatabase(request: CreateDatabaseRequest): Promise<WorkspaceMutationResult> {
     const parentPath = normalizeWorkspacePath(request.parentPath);
     const databaseName = cleanWorkspaceName(request.name);
-    const relPath = normalizeWorkspacePath(path.posix.join(parentPath, databaseName));
+    const desiredPath = normalizeWorkspacePath(path.posix.join(parentPath, databaseName));
+    const relPath = await availableWorkspacePath(
+      desiredPath,
+      true,
+      this.resolveAbsolutePath.bind(this)
+    );
     const absolutePath = this.resolveAbsolutePath(relPath);
 
-    await failIfExists(absolutePath);
     await fs.mkdir(absolutePath, { recursive: false });
 
     const configPath = databaseConfigPathForDirectory(relPath);
@@ -387,16 +408,21 @@ export class WorkspaceRuntime {
   ): Promise<WorkspaceMutationResult> {
     const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
     const requestedName = request.name ? cleanWorkspaceName(request.name) : null;
-    const recordPath = requestedName
-      ? normalizeWorkspacePath(path.posix.join(config.databasePath, ensureMarkdownName(requestedName)))
-      : await this.nextUntitledRecordPath(config.databasePath);
+    const desiredPath = normalizeWorkspacePath(path.posix.join(
+      config.databasePath,
+      requestedName ? ensureMarkdownName(requestedName) : "Untitled.md"
+    ));
+    const recordPath = await availableWorkspacePath(
+      desiredPath,
+      false,
+      this.resolveAbsolutePath.bind(this)
+    );
     const absolutePath = this.resolveAbsolutePath(recordPath);
 
-    await failIfExists(absolutePath);
     await fs.writeFile(
       absolutePath,
       serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
-      "utf8"
+      { encoding: "utf8", flag: "wx" }
     );
     await this.revisions.checkpoint(
       recordPath,
@@ -840,10 +866,19 @@ export class WorkspaceRuntime {
     const parentPath = path.posix.dirname(oldPath) === "." ? "" : path.posix.dirname(oldPath);
     const newName = cleanWorkspaceName(request.newName);
     const finalName = stat.isFile() && oldPath.toLowerCase().endsWith(".md") ? ensureMarkdownName(newName) : newName;
-    const newPath = normalizeWorkspacePath(path.posix.join(parentPath, finalName));
+    const desiredPath = normalizeWorkspacePath(path.posix.join(parentPath, finalName));
+
+    if (desiredPath === oldPath) {
+      return { status: "ok", path: oldPath, previousPath: oldPath, events: [] };
+    }
+
+    const newPath = await availableWorkspacePath(
+      desiredPath,
+      stat.isDirectory(),
+      this.resolveAbsolutePath.bind(this)
+    );
     const absoluteNewPath = this.resolveAbsolutePath(newPath);
 
-    await failIfExists(absoluteNewPath);
     await fs.rename(absoluteOldPath, absoluteNewPath);
 
     if (stat.isDirectory()) {
@@ -853,8 +888,9 @@ export class WorkspaceRuntime {
     await this.revisions.move(oldPath, newPath);
     await this.workspaceIndex.movePath(oldPath, newPath);
 
-    const result = mutationResult("page.moved", newPath, ["tree"], oldPath);
+    const result = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
     this.publishResultEvents(result);
+    this.scheduleReferenceRepair(oldPath, newPath);
     return result;
   }
 
@@ -863,49 +899,93 @@ export class WorkspaceRuntime {
     const newParentPath = normalizeWorkspacePath(request.newParentPath);
     const absoluteOldPath = this.resolveAbsolutePath(oldPath);
     const stat = await fs.stat(absoluteOldPath);
-    const newPath = normalizeWorkspacePath(path.posix.join(newParentPath, path.posix.basename(oldPath)));
-    const absoluteNewPath = this.resolveAbsolutePath(newPath);
+    const desiredPath = normalizeWorkspacePath(path.posix.join(newParentPath, path.posix.basename(oldPath)));
 
-    if (oldPath === newPath) {
-      const result = mutationResult("page.moved", newPath, ["tree"], oldPath);
+    if (oldPath === desiredPath) {
+      const result = mutationResult("page.moved", desiredPath, ["tree"], oldPath);
       this.publishResultEvents(result);
       return result;
     }
 
-    if (stat.isDirectory() && (newPath.startsWith(`${oldPath}/`) || newPath === oldPath)) {
+    if (stat.isDirectory() && desiredPath.startsWith(`${oldPath}/`)) {
       throw new Error("Cannot move a folder into itself");
     }
 
+    const newPath = await availableWorkspacePath(
+      desiredPath,
+      stat.isDirectory(),
+      this.resolveAbsolutePath.bind(this)
+    );
+    const absoluteNewPath = this.resolveAbsolutePath(newPath);
     await fs.mkdir(path.dirname(absoluteNewPath), { recursive: true });
-    await failIfExists(absoluteNewPath);
     await fs.rename(absoluteOldPath, absoluteNewPath);
+    if (stat.isDirectory() && path.posix.basename(oldPath) !== path.posix.basename(newPath)) {
+      await renameDirectoryCompanionAfterDirectoryRename(
+        newPath,
+        path.posix.basename(oldPath),
+        this.resolveAbsolutePath.bind(this)
+      );
+    }
     await this.revisions.move(oldPath, newPath);
     await this.workspaceIndex.movePath(oldPath, newPath);
 
-    const result = mutationResult("page.moved", newPath, ["tree"], oldPath);
+    const result = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
     this.publishResultEvents(result);
+    this.scheduleReferenceRepair(oldPath, newPath);
     return result;
   }
 
   async deleteNode(request: DeleteNodeRequest): Promise<WorkspaceMutationResult> {
     const relPath = normalizeWorkspacePath(request.path);
+    if (!relPath || relPath === "." || relPath.split("/")[0]?.toLocaleLowerCase() === ".rumi") {
+      throw new Error("The workspace root and .rumi internals cannot be moved to Trash");
+    }
     const absolutePath = this.resolveAbsolutePath(relPath);
     const stat = await fs.stat(absolutePath);
 
-    await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
-
-    if (stat.isDirectory()) {
-      await fs.rm(absolutePath, { recursive: request.recursive ?? false });
-    } else {
-      await fs.unlink(absolutePath);
+    if (stat.isDirectory() && !request.recursive) {
+      throw new Error("Deleting a folder or database requires recursive confirmation");
     }
 
+    await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
+    const revisionObjects = await this.revisions.objectsAtOrBelow(relPath);
+    await this.trash.move(relPath, revisionObjects);
     await this.revisions.markDeleted(relPath);
-    this.workspaceIndex.removePath(relPath);
+    await this.workspaceIndex.removePath(relPath);
 
     const result = mutationResult("page.deleted", relPath, ["tree"]);
     this.publishResultEvents(result);
     return result;
+  }
+
+  async listTrash(): Promise<TrashListResult> {
+    return { items: await this.trash.list() };
+  }
+
+  async restoreTrashItem(request: RestoreTrashItemRequest): Promise<RestoreTrashItemResult> {
+    const restored = await this.trash.restore(request.id);
+    await this.revisions.restoreObjects(
+      restored.revisionObjects,
+      restored.item.originalPath,
+      restored.path
+    );
+    await this.workspaceIndex.indexPath(restored.path);
+    const event: RumiEvent = {
+      name: "workspace.treeChanged",
+      path: restored.path,
+      previousPath: restored.item.originalPath,
+      changedBy: "trash.restore",
+      affects: ["tree", "search", "database", "asset"]
+    };
+    this.events.publish(event);
+    return {
+      status: "ok",
+      item: restored.item,
+      path: restored.path,
+      originalPath: restored.item.originalPath,
+      restoredToOriginalPath: restored.path === restored.item.originalPath,
+      events: [event]
+    };
   }
 
   async rebuildIndex(): Promise<{ status: "ok"; indexedAt: string; documentCount: number }> {
@@ -935,9 +1015,14 @@ export class WorkspaceRuntime {
 
   async stopWatchingWorkspace(): Promise<void> {
     await this.workspaceWatcher?.stop();
+    await this.flushBackgroundTasks();
     await this.revisions.flush();
     this.workspaceIndex.close();
     this.workspaceWatcher = null;
+  }
+
+  async flushBackgroundTasks(): Promise<void> {
+    await Promise.all([...this.backgroundTasks]);
   }
 
   async checkpointNow(request: CheckpointRequest): Promise<RevisionEntry> {
@@ -1015,8 +1100,11 @@ export class WorkspaceRuntime {
     const normalized = normalizeWorkspacePath(relPath);
     const directoryName = normalized === "" ? this.name : path.posix.basename(normalized);
     const dbCompanion = normalized === "" ? null : databaseConfigPathForDirectory(normalized);
-    const indexCompanion = normalized === "" ? null : folderIndexPathForDirectory(normalized);
+    const rootIndexCandidates = normalized === "" ? rootIndexPaths(this.name) : [];
     const entryNames = new Set(entries.map((entry) => entry.name));
+    const indexCompanion = normalized === ""
+      ? rootIndexCandidates.find((candidate) => entryNames.has(candidate)) ?? null
+      : folderIndexPathForDirectory(normalized);
     const hasDbCompanion = dbCompanion ? entryNames.has(path.posix.basename(dbCompanion)) : false;
     const hasIndexCompanion = indexCompanion ? entryNames.has(path.posix.basename(indexCompanion)) : false;
     const kind: WorkspaceNodeKind =
@@ -1030,7 +1118,11 @@ export class WorkspaceRuntime {
         continue;
       }
 
-      if (childPath === dbCompanion || childPath === indexCompanion) {
+      if (
+        childPath === dbCompanion ||
+        childPath === indexCompanion ||
+        rootIndexCandidates.includes(childPath)
+      ) {
         continue;
       }
 
@@ -1068,8 +1160,25 @@ export class WorkspaceRuntime {
     const relPath = normalizeWorkspacePath(inputPath);
     const absolutePath = this.resolveAbsolutePath(relPath);
     const stat = await fs.stat(absolutePath);
+    const rootIndexCandidates = rootIndexPaths(this.name);
+    let rootIndexPath: string | null = null;
+
+    for (const candidate of rootIndexCandidates) {
+      if (await fileExists(this.resolveAbsolutePath(candidate))) {
+        rootIndexPath = candidate;
+        break;
+      }
+    }
 
     if (stat.isDirectory()) {
+      if (relPath === "") {
+        if (rootIndexPath) {
+          return { path: rootIndexPath, kind: "folder" };
+        }
+
+        throw new Error("Workspace root has no Rumi index page");
+      }
+
       const dbConfig = databaseConfigPathForDirectory(relPath);
       const indexPath = folderIndexPathForDirectory(relPath);
 
@@ -1082,6 +1191,10 @@ export class WorkspaceRuntime {
       }
 
       throw new Error(`Directory has no Rumi page companion: ${relPath}`);
+    }
+
+    if (rootIndexCandidates.includes(relPath)) {
+      return { path: relPath, kind: "folder" };
     }
 
     const fileKind = classifyFilePath(relPath);
@@ -1116,21 +1229,6 @@ export class WorkspaceRuntime {
   private publishResultEvents(result: WorkspaceMutationResult): void {
     for (const event of result.events) {
       this.events.publish(event);
-    }
-  }
-
-  private async nextUntitledRecordPath(databasePath: string): Promise<string> {
-    let index = 1;
-
-    while (true) {
-      const name = index === 1 ? "Untitled.md" : `Untitled ${index}.md`;
-      const recordPath = normalizeWorkspacePath(path.posix.join(databasePath, name));
-
-      if (!(await fileExists(this.resolveAbsolutePath(recordPath)))) {
-        return recordPath;
-      }
-
-      index += 1;
     }
   }
 
@@ -1180,6 +1278,63 @@ export class WorkspaceRuntime {
     }
   }
 
+  private scheduleReferenceRepair(previousPath: string, nextPath: string): void {
+    let trackedTask: Promise<void>;
+    trackedTask = this.repairReferencesAfterMove(previousPath, nextPath)
+      .catch((error: unknown) => {
+        console.error(
+          `Rumi could not finish reference repair after moving ${previousPath} to ${nextPath}:`,
+          error
+        );
+      })
+      .finally(() => {
+        this.backgroundTasks.delete(trackedTask);
+      });
+    this.backgroundTasks.add(trackedTask);
+  }
+
+  private async repairReferencesAfterMove(previousPath: string, nextPath: string): Promise<void> {
+    // A second pass catches a file that was itself moved while the first scan was running.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const repairs = await planWorkspaceReferenceRepairs(this.rootPath, previousPath, nextPath);
+
+      for (const planned of repairs) {
+        const absolutePath = this.resolveAbsolutePath(planned.path);
+        const currentMarkdown = await fs.readFile(absolutePath, "utf8").catch((error: unknown) => {
+          if (isNodeError(error) && error.code === "ENOENT") return null;
+          throw error;
+        });
+        if (currentMarkdown === null) continue;
+
+        const rewritten = currentMarkdown === planned.previousMarkdown
+          ? { markdown: planned.markdown, referenceCount: planned.referenceCount }
+          : rewriteMarkdownReferences(currentMarkdown, previousPath, nextPath, planned.path);
+        if (rewritten.referenceCount === 0 || rewritten.markdown === currentMarkdown) continue;
+
+        await this.revisions.checkpoint(
+          planned.path,
+          currentMarkdown,
+          "before-reference-repair",
+          "runtime"
+        );
+        await fs.writeFile(absolutePath, rewritten.markdown, "utf8");
+        await this.workspaceIndex.indexPath(planned.path);
+        this.revisions.noteActivity(planned.path, rewritten.markdown, "runtime");
+
+        const contentHash = hashText(rewritten.markdown);
+        this.events.publish({
+          name: "page.changed",
+          path: planned.path,
+          referenceRepair: { previousPath, nextPath },
+          version: contentHash,
+          contentHash,
+          changedBy: "reference-repair",
+          affects: ["body", "frontmatter", "links", "search"]
+        });
+      }
+    }
+  }
+
   private async getWorkspaceWatcher(): Promise<WorkspaceWatcher> {
     if (!this.workspaceWatcher) {
       this.workspaceWatcher = await WorkspaceWatcher.create({
@@ -1201,7 +1356,7 @@ export class WorkspaceRuntime {
       if (event.name === "page.changed" && event.path) {
         await this.workspaceIndex.indexPath(event.path);
       } else if (event.name === "page.deleted" && event.path) {
-        this.workspaceIndex.removePath(event.path);
+        await this.workspaceIndex.removePath(event.path);
       } else if (event.name === "page.moved" && event.path && event.previousPath) {
         await this.workspaceIndex.movePath(event.previousPath, event.path);
       }
@@ -1285,19 +1440,49 @@ async function ensureParentDirectory(filePath: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
 
-async function failIfExists(filePath: string): Promise<void> {
-  const exists = await fs
+async function availableWorkspacePath(
+  desiredPath: string,
+  isDirectory: boolean,
+  resolveAbsolutePath: (relPath: string) => string
+): Promise<string> {
+  const normalized = normalizeWorkspacePath(desiredPath);
+  if (!(await pathExists(resolveAbsolutePath(normalized)))) return normalized;
+
+  const directory = path.posix.dirname(normalized);
+  const basename = path.posix.basename(normalized);
+  const extension = isDirectory ? "" : path.posix.extname(basename);
+  const stem = extension ? basename.slice(0, -extension.length) : basename;
+  let index = 1;
+
+  while (true) {
+    const candidateName = `${stem} (${index})${extension}`;
+    const candidate = directory === "." ? candidateName : path.posix.join(directory, candidateName);
+    if (!(await pathExists(resolveAbsolutePath(candidate)))) return candidate;
+    index += 1;
+  }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  return fs
     .stat(filePath)
     .then(() => true)
     .catch((error: unknown) => {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return false;
-      }
+      if (isNodeError(error) && error.code === "ENOENT") return false;
       throw error;
     });
+}
+
+function rootIndexPaths(workspaceName: string): string[] {
+  return [`${workspaceName}.index.md`, "index.md"];
+}
+
+async function failIfExists(filePath: string): Promise<void> {
+  const exists = await pathExists(filePath);
 
   if (exists) {
-    throw new Error(`Path already exists: ${filePath}`);
+    const error = new Error(`Path already exists: ${filePath}`) as Error & { statusCode: number };
+    error.statusCode = 409;
+    throw error;
   }
 }
 

@@ -96,12 +96,8 @@ const marks = commonMarkSchema.spec.marks
     toDOM: () => ["u", 0]
   } satisfies MarkSpec)
   .addToEnd("highlight", {
-    attrs: { color: { default: "yellow" } },
-    parseDOM: [{
-      tag: "mark",
-      getAttrs: (dom) => ({ color: (dom as HTMLElement).getAttribute("data-color") ?? "yellow" })
-    }],
-    toDOM: (mark) => ["mark", { "data-color": mark.attrs.color ?? "yellow" }, 0]
+    parseDOM: [{ tag: "mark" }],
+    toDOM: () => ["mark", 0]
   } satisfies MarkSpec);
 
 export const lightEditorSchema = new Schema({ nodes, marks });
@@ -196,11 +192,8 @@ const lightMarkdownSerializer = new MarkdownSerializer(
     strike: { open: "~~", close: "~~", mixable: true, expelEnclosingWhitespace: true },
     underline: { open: "<u>", close: "</u>", mixable: true },
     highlight: {
-      open(_state, mark) {
-        const color = String(mark.attrs.color ?? "yellow");
-        return color === "yellow" ? "<mark>" : `<mark data-color=\"${color}\">`;
-      },
-      close: "</mark>",
+      open: "==",
+      close: "==",
       mixable: true
     }
   }
@@ -209,9 +202,7 @@ const lightMarkdownSerializer = new MarkdownSerializer(
 export function parseLightMarkdown(markdown: string): ProseMirrorNode {
   const normalized = markdown
     .replace(/<u>(.*?)<\/u>/gis, "++$1++")
-    .replace(/<mark\s+data-color=(?:"([^"]*)"|'([^']*)')>(.*?)<\/mark>/gis, (_match, doubleQuoted, singleQuoted, content) =>
-      `==${String(doubleQuoted ?? singleQuoted ?? "yellow")}::${String(content)}==`
-    )
+    .replace(/<mark\s+data-color=(?:"[^"]*"|'[^']*')>(.*?)<\/mark>/gis, "==$1==")
     .replace(/<mark>(.*?)<\/mark>/gis, "==$1==");
   return transformSpecialBlocks(addTaskItemAttributes(lightMarkdownParser.parse(normalized || "")));
 }
@@ -328,11 +319,12 @@ function installDelimitedMark(markdown: MarkdownIt, tokenName: string, delimiter
 
     if (!silent) {
       const rawContent = state.src.slice(contentStart, close);
-      const colored = tokenName === "highlight" ? /^([A-Za-z]+)::([\s\S]+)$/u.exec(rawContent) : null;
-      const open = state.push(`${tokenName}_open`, tokenName, 1);
-      if (colored?.[1]) open.meta = { color: colored[1].toLocaleLowerCase() };
+      const legacyHighlight = tokenName === "highlight"
+        ? /^[A-Za-z]+::([\s\S]+)$/u.exec(rawContent)
+        : null;
+      state.push(`${tokenName}_open`, tokenName, 1);
       const text = state.push("text", "", 0);
-      text.content = colored?.[2] ?? rawContent;
+      text.content = legacyHighlight?.[1] ?? rawContent;
       state.push(`${tokenName}_close`, tokenName, -1);
     }
 

@@ -21,6 +21,18 @@ const TREE_HIDDEN_SEGMENTS = new Set([
   "build",
   "coverage"
 ]);
+const TREE_HIDDEN_FILES = new Set([
+  ".npmrc",
+  ".pnp.cjs",
+  ".pnp.loader.mjs",
+  "bun.lock",
+  "bun.lockb",
+  "npm-shrinkwrap.json",
+  "package-lock.json",
+  "package.json",
+  "pnpm-lock.yaml",
+  "yarn.lock"
+]);
 
 export function normalizeWorkspacePath(input: string): string {
   const raw = input.replace(/\\/g, "/").trim();
@@ -106,7 +118,11 @@ export function isInternalPath(relPath: string): boolean {
 }
 
 export function isHiddenFromTree(relPath: string): boolean {
-  return splitWorkspacePath(relPath).some((segment) => TREE_HIDDEN_SEGMENTS.has(segment));
+  const segments = splitWorkspacePath(relPath);
+  return (
+    segments.some((segment) => TREE_HIDDEN_SEGMENTS.has(segment)) ||
+    TREE_HIDDEN_FILES.has(segments.at(-1) ?? "")
+  );
 }
 
 export function isMarkdownPath(relPath: string): boolean {

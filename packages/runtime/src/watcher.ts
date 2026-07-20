@@ -48,6 +48,8 @@ export class WorkspaceWatcher {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private reconcileInFlight = false;
   private reconcileAgain = false;
+  private activeWatcherReconcile: Promise<void> | null = null;
+  private stopped = false;
 
   private constructor(options: WorkspaceWatcherOptions, snapshot: WorkspaceSnapshot) {
     this.rootPath = options.rootPath;
@@ -62,10 +64,12 @@ export class WorkspaceWatcher {
   }
 
   async start(): Promise<void> {
+    this.stopped = false;
     await this.refreshDirectoryWatchers();
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -76,6 +80,7 @@ export class WorkspaceWatcher {
     }
 
     this.directoryWatchers.clear();
+    await this.activeWatcherReconcile;
   }
 
   async reconcile(): Promise<WorkspaceReconcileResult> {
@@ -93,13 +98,21 @@ export class WorkspaceWatcher {
   }
 
   private scheduleReconcile(): void {
+    if (this.stopped) return;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
 
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      void this.reconcileFromWatcher();
+      if (this.stopped) return;
+      const activeReconcile = this.reconcileFromWatcher();
+      this.activeWatcherReconcile = activeReconcile;
+      void activeReconcile.finally(() => {
+        if (this.activeWatcherReconcile === activeReconcile) {
+          this.activeWatcherReconcile = null;
+        }
+      });
     }, this.debounceMs);
   }
 
@@ -115,7 +128,7 @@ export class WorkspaceWatcher {
       do {
         this.reconcileAgain = false;
         await this.reconcile();
-      } while (this.reconcileAgain);
+      } while (this.reconcileAgain && !this.stopped);
     } finally {
       this.reconcileInFlight = false;
     }
@@ -130,6 +143,7 @@ export class WorkspaceWatcher {
   }
 
   private async refreshDirectoryWatchers(): Promise<void> {
+    if (this.stopped) return;
     const nextDirectories = new Set(
       [...this.snapshot.values()]
         .filter((entry) => entry.kind === "directory")

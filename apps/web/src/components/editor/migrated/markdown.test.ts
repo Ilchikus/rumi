@@ -28,7 +28,20 @@ describe("live editor Markdown round trips", () => {
     expect(serializeMarkdown(parsed)).toBe("[https://rumi.md](https://rumi.md)\n")
   })
 
-  it("preserves Rumi underline and highlight marks", () => {
+  it("renders workspace links whose file paths contain unescaped spaces", () => {
+    const markdown = "An internal document link points to the [inner](test folder/inner/inner.index.md)\n"
+    const parsed = parseMarkdown(markdown, schema)
+    const linkedText = parsed.firstChild?.content.content.find((node) => node.text === "inner")
+
+    expect(linkedText?.marks.find((mark) => mark.type.name === "link")?.attrs.href)
+      .toBe("test folder/inner/inner.index.md")
+    expect(serializeMarkdown(parsed)).toBe(
+      "An internal document link points to the [inner](<test folder/inner/inner.index.md>)\n"
+    )
+    expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("preserves underline and one canonical yellow highlight mark", () => {
     const markdown = [
       "Before __underlined__ ==highlighted== ==green::green highlight== and --legacy strike-- after.",
       ""
@@ -49,6 +62,11 @@ describe("live editor Markdown round trips", () => {
       ["legacy strike", ["strikethrough"]],
       [" after.", []]
     ])
+    expect(serializeMarkdown(parsed)).toContain("==highlighted== ==green highlight==")
+    expect(serializeMarkdown(parsed)).not.toContain("==green::")
+    expect(markedText.filter((node) => node.marks.some((mark) => mark.type.name === "highlight"))
+      .every((node) => Object.keys(node.marks.find((mark) => mark.type.name === "highlight")?.attrs ?? {}).length === 0))
+      .toBe(true)
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
   })
 

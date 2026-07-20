@@ -9,7 +9,7 @@ import {
   type Transaction
 } from "prosemirror-state"
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view"
-import { Schema } from "prosemirror-model"
+import { Fragment, Schema } from "prosemirror-model"
 
 export interface MultiBlockSelectionState {
   selectedBlocks: number[]
@@ -141,6 +141,50 @@ export function moveBlocks(direction: BlockMoveDirection): Command {
   }
 }
 
+export function createDuplicateBlocksTransaction(state: EditorState): Transaction | null {
+  const blocks = topLevelBlocks(state)
+  const pluginState = multiBlockSelectionKey.getState(state)
+  const selectedByPlugin = pluginState?.selectedBlocks ?? []
+  const currentPos = currentTopLevelBlockPos(state)
+  const requestedPositions = selectedByPlugin.length > 0
+    ? [...new Set(selectedByPlugin)].sort((left, right) => left - right)
+    : currentPos === null ? [] : [currentPos]
+  const selected = requestedPositions
+    .map((pos) => blocks.find((block) => block.pos === pos))
+    .filter((block): block is TopLevelBlock => Boolean(block))
+
+  if (selected.length === 0) return null
+
+  const last = selected[selected.length - 1]
+  const insertPos = last.pos + last.node.nodeSize
+  const copies = selected.map((block) => block.node.copy(block.node.content))
+  const duplicatedPositions: number[] = []
+  let nextPos = insertPos
+
+  for (const copy of copies) {
+    duplicatedPositions.push(nextPos)
+    nextPos += copy.nodeSize
+  }
+
+  const transaction = state.tr
+    .insert(insertPos, Fragment.fromArray(copies))
+    .setMeta(multiBlockSelectionKey, {
+      selectedBlocks: duplicatedPositions,
+      anchorBlock: duplicatedPositions[0] ?? null
+    })
+    .setMeta("multiBlockKeep", true)
+
+  transaction.setSelection(NodeSelection.create(transaction.doc, insertPos))
+  return transaction.scrollIntoView()
+}
+
+export const duplicateBlocks: Command = (state, dispatch) => {
+  const transaction = createDuplicateBlocksTransaction(state)
+  if (!transaction) return false
+  dispatch?.(transaction)
+  return true
+}
+
 export const selectAllBlocksInStages: Command = (state, dispatch) => {
   const blocks = topLevelBlocks(state)
   if (blocks.length === 0) return false
@@ -203,35 +247,9 @@ export function deleteSelectedBlocks(view: EditorView) {
 }
 
 export function duplicateSelectedBlocks(view: EditorView) {
-  const pluginState = multiBlockSelectionKey.getState(view.state)
-  if (!pluginState || !pluginState.selectedBlocks || pluginState.selectedBlocks.length === 0) return
-
-  let tr = view.state.tr
-
-  // Sort positions in ascending order so we duplicate in document order
-  const sorted = [...pluginState.selectedBlocks].sort((a, b) => a - b)
-
-  // Find the last selected block to insert after it
-  const lastPos = sorted[sorted.length - 1]
-  const lastNode = view.state.doc.nodeAt(lastPos)
-  if (!lastNode) return
-
-  let insertPos = lastPos + lastNode.nodeSize
-  const newPositions: number[] = []
-
-  // Insert duplicates of all selected blocks after the last one
-  for (const pos of sorted) {
-    const node = view.state.doc.nodeAt(pos)
-    if (!node) continue
-    const mappedInsertPos = tr.mapping.map(insertPos)
-    tr = tr.insert(mappedInsertPos, node.copy(node.content))
-    newPositions.push(mappedInsertPos)
-    insertPos = mappedInsertPos + node.nodeSize
-  }
-
-  // Select the duplicated blocks
-  tr.setMeta(multiBlockSelectionKey, { selectedBlocks: newPositions, anchorBlock: newPositions[0] || null })
-  view.dispatch(tr)
+  const transaction = createDuplicateBlocksTransaction(view.state)
+  if (!transaction) return
+  view.dispatch(transaction)
   view.focus()
 }
 

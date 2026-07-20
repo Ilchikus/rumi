@@ -1,6 +1,11 @@
 import { parse, stringify } from "yaml";
 import type { FrontmatterRecord } from "@rumi/contracts";
 
+export {
+  rewriteMarkdownReferences,
+  type RewrittenReferences
+} from "./references";
+
 export interface ParsedMarkdownFile {
   frontmatter: FrontmatterRecord;
   body: string;

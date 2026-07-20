@@ -3,7 +3,7 @@ status: draft
 area: runtime
 owner: runtime
 created: 2026-06-22
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 # Runtime Commands
 
@@ -29,6 +29,8 @@ renameDatabaseProperty
 renameNode
 moveNode
 deleteNode
+listTrash
+restoreTrashItem
 queryDatabase
 updateRecordProperty
 searchWorkspace
@@ -48,7 +50,24 @@ Commands own side effects:
 - Event emission.
 - Conflict detection.
 - Snapshot checkpoints for canonical Markdown content.
-- Collision-safe `.assets/` names and asset events.
+- Collision-safe create, rename, move, restore, and `.assets/` names. Occupied destinations receive
+  the next available parenthesized suffix (`Name (1)`, `Name (2)`, and so on) and current content is
+  never overwritten.
+- Portable safe deletion under `.rumi/trash/`, original-path metadata, collision-safe restore, and
+  revision-object continuity.
+
+`deleteNode` never permanently removes user content. Folder and database deletion still requires
+recursive confirmation, then the complete payload is moved atomically into Trash. `listTrash`
+returns display metadata without exposing internal payload paths. `restoreTrashItem` recreates
+missing parents, never overwrites an occupied path, updates indexes, and publishes
+`workspace.treeChanged` after the restored payload is durable.
+
+`renameNode` and `moveNode` choose an available destination, then update the target's filesystem
+path, revision identity, and search entry before returning the actual path. They run reference repair
+as tracked background work so large workspaces do not block the client. Repair covers known Markdown
+links and mentions in body and frontmatter, preserves custom labels, checkpoints each page before
+rewriting it, refreshes its search entry, and publishes `page.changed` with
+`changedBy: "reference-repair"`.
 
 ## Event Bus
 

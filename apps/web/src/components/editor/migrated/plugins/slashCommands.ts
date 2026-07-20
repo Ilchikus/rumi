@@ -4,10 +4,10 @@ import { Decoration, DecorationSet, EditorView } from "prosemirror-view"
 import { Schema } from "prosemirror-model"
 import { setBlockType, wrapIn } from "prosemirror-commands"
 import { chooseAndUploadAsset, reportEditorError } from "../platform"
+import { BLOCK_TYPE_ICONS } from "./blockTypePresentation"
 
 const FILE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,82.34l-44-44A8,8,0,0,0,164,36H72A20,20,0,0,0,52,56V200a20,20,0,0,0,20,20H184a20,20,0,0,0,20-20V88A8,8,0,0,0,213.66,82.34ZM172,63.31,188.69,80H172ZM188,200a4,4,0,0,1-4,4H72a4,4,0,0,1-4-4V56a4,4,0,0,1,4-4h84V88a8,8,0,0,0,8,8h24Z"></path></svg>`
 const IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Zm48,68a8,8,0,0,1-8,8H72a8,8,0,0,1-6.65-12.44l24-36a8,8,0,0,1,12.46-.81L126.4,153l34.93-46.58a8,8,0,0,1,12.73-.15l40,48A8,8,0,0,1,212,168Z"></path></svg>`
-const MERMAID_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M200,152a31.84,31.84,0,0,0-19.53,6.68l-23.11-18A31.65,31.65,0,0,0,160,128a31.65,31.65,0,0,0-2.64-12.68l23.11-18A31.84,31.84,0,0,0,200,104a32,32,0,1,0-32-32,31.65,31.65,0,0,0,2.64,12.68l-23.11,18a31.92,31.92,0,0,0-39.06,0l-23.11-18A31.65,31.65,0,0,0,88,72a32,32,0,1,0-32,32,31.84,31.84,0,0,0,19.53-6.68l23.11,18A31.65,31.65,0,0,0,96,128a31.65,31.65,0,0,0,2.64,12.68l-23.11,18A31.84,31.84,0,0,0,56,152a32,32,0,1,0,32,32,31.65,31.65,0,0,0-2.64-12.68l23.11-18a31.92,31.92,0,0,0,39.06,0l23.11,18A31.65,31.65,0,0,0,168,184a32,32,0,1,0,32-32Zm0-96a16,16,0,1,1-16,16A16,16,0,0,1,200,56ZM56,88A16,16,0,1,1,72,72,16,16,0,0,1,56,88Zm72,56a16,16,0,1,1,16-16A16,16,0,0,1,128,144ZM56,200a16,16,0,1,1,16-16A16,16,0,0,1,56,200Zm144,0a16,16,0,1,1,16-16A16,16,0,0,1,200,200Z"></path></svg>`
 const CARET_RIGHT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"></path></svg>`
 
 export const slashCommandsPluginKey = new PluginKey("slashCommands")
@@ -20,7 +20,7 @@ interface SlashCommand {
   execute: (view: EditorView) => void
 }
 
-function createCommands(schema: Schema): SlashCommand[] {
+export function createCommands(schema: Schema): SlashCommand[] {
   const commands: SlashCommand[] = []
 
   if (schema.nodes.heading) {
@@ -28,7 +28,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Heading 1",
       aliases: ["h1", "heading1", "#"],
       description: "Large section heading",
-      icon: "H1",
+      icon: BLOCK_TYPE_ICONS.heading1,
       execute: (view) => {
         const { state, dispatch } = view
         setBlockType(schema.nodes.heading, { level: 1 })(state, dispatch)
@@ -39,7 +39,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Heading 2",
       aliases: ["h2", "heading2", "##"],
       description: "Medium section heading",
-      icon: "H2",
+      icon: BLOCK_TYPE_ICONS.heading2,
       execute: (view) => {
         const { state, dispatch } = view
         setBlockType(schema.nodes.heading, { level: 2 })(state, dispatch)
@@ -50,7 +50,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Heading 3",
       aliases: ["h3", "heading3", "###"],
       description: "Small section heading",
-      icon: "H3",
+      icon: BLOCK_TYPE_ICONS.heading3,
       execute: (view) => {
         const { state, dispatch } = view
         setBlockType(schema.nodes.heading, { level: 3 })(state, dispatch)
@@ -64,7 +64,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Bullet Item",
       aliases: ["bullet", "ul", "unordered", "list"],
       description: "Create a bullet list item",
-      icon: "•",
+      icon: BLOCK_TYPE_ICONS.bulletList,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -82,7 +82,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Numbered Item",
       aliases: ["numbered", "ol", "ordered", "number"],
       description: "Create a numbered list item",
-      icon: "1.",
+      icon: BLOCK_TYPE_ICONS.numberedList,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -100,7 +100,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Task Item",
       aliases: ["todo", "task", "checkbox", "checklist"],
       description: "Create a task with checkbox",
-      icon: "☑",
+      icon: BLOCK_TYPE_ICONS.checkbox,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -118,7 +118,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Quote",
       aliases: ["quote", "blockquote"],
       description: "Create a block quote",
-      icon: "❝",
+      icon: BLOCK_TYPE_ICONS.quote,
       execute: (view) => {
         const { state, dispatch } = view
         wrapIn(schema.nodes.blockquote)(state, dispatch)
@@ -153,7 +153,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Code Block",
       aliases: ["code", "codeblock", "pre"],
       description: "Create a code block",
-      icon: "{ }",
+      icon: BLOCK_TYPE_ICONS.codeBlock,
       execute: (view) => {
         const { state, dispatch } = view
         setBlockType(schema.nodes.code_block)(state, dispatch)
@@ -167,7 +167,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Mermaid Diagram",
       aliases: ["mermaid", "diagram", "flowchart", "sequence", "chart"],
       description: "Insert a Mermaid diagram",
-      icon: MERMAID_SVG,
+      icon: BLOCK_TYPE_ICONS.mermaid,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -188,7 +188,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Database",
       aliases: ["database", "db", "embed"],
       description: "Embed a database view",
-      icon: "⊞",
+      icon: BLOCK_TYPE_ICONS.table,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -205,7 +205,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Table",
       aliases: ["table", "grid"],
       description: "Insert a table",
-      icon: "⊞",
+      icon: BLOCK_TYPE_ICONS.table,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -275,7 +275,7 @@ function createCommands(schema: Schema): SlashCommand[] {
       name: "Divider",
       aliases: ["divider", "hr", "line", "separator"],
       description: "Create a horizontal divider",
-      icon: "—",
+      icon: BLOCK_TYPE_ICONS.divider,
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
@@ -481,10 +481,10 @@ export function slashCommandsPlugin(schema: Schema) {
       container.style.cssText = `
         position: absolute;
         z-index: 1000;
-        background: white;
-        border: 1px solid hsl(214.3, 31.8%, 91.4%);
+        background: #fff;
+        border: 1px solid hsl(var(--border));
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
         min-width: 220px;
         max-height: 340px;
         overflow: hidden;
@@ -498,14 +498,14 @@ export function slashCommandsPlugin(schema: Schema) {
       header.className = "slash-commands-header"
       header.style.cssText = `
         padding: 8px 12px;
-        border-bottom: 1px solid hsl(214.3, 31.8%, 91.4%);
+        border-bottom: 1px solid hsl(var(--border));
       `
 
       const label = document.createElement("div")
       label.textContent = "Type to filter..."
       label.style.cssText = `
         font-size: 11px;
-        color: hsl(215.4, 16.3%, 46.9%);
+        color: hsl(var(--muted-foreground));
         margin-bottom: 4px;
       `
 
@@ -513,7 +513,7 @@ export function slashCommandsPlugin(schema: Schema) {
       searchDisplay.className = "slash-search-display"
       searchDisplay.style.cssText = `
         font-size: 14px;
-        color: hsl(222.2, 84%, 4.9%);
+        color: hsl(var(--foreground));
         min-height: 20px;
         display: flex;
         align-items: center;
@@ -528,7 +528,7 @@ export function slashCommandsPlugin(schema: Schema) {
         display: inline-block;
         width: 1px;
         height: 16px;
-        background: hsl(222.2, 84%, 4.9%);
+        background: hsl(var(--foreground));
         margin-left: 1px;
         animation: blink 1s infinite;
       `

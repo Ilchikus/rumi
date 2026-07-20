@@ -7,6 +7,8 @@ import type {
   PageDatabaseContext
 } from "@rumi/contracts";
 import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
+import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
@@ -50,6 +52,10 @@ export interface PagePropertiesProps {
     newName: string
   ) => Promise<boolean>;
   onDeleteDatabaseOption?: (property: string, option: string) => Promise<boolean>;
+  onCreateDatabaseProperty?: (
+    property: string,
+    type: DatabasePropertyType
+  ) => Promise<boolean>;
   onRenameDatabaseProperty?: (property: string, newName: string) => Promise<boolean>;
   onChangeDatabasePropertyType?: (
     property: string,
@@ -194,6 +200,7 @@ export function PageProperties({
   onChangeDatabaseOptionColor,
   onRenameDatabaseOption,
   onDeleteDatabaseOption,
+  onCreateDatabaseProperty,
   onRenameDatabaseProperty,
   onChangeDatabasePropertyType,
   onDeleteDatabaseProperty
@@ -206,6 +213,8 @@ export function PageProperties({
   const properties = propertyNames.map((name) => [name, frontmatter[name]] as const);
   const editable = Boolean(onChange);
   const [addingProperty, setAddingProperty] = useState(false);
+  const [propertiesExpanded, setPropertiesExpanded] = useState(true);
+  const canCreateProperty = editable && (!database || Boolean(onCreateDatabaseProperty));
 
   if (!editable && properties.length === 0) {
     return null;
@@ -239,30 +248,26 @@ export function PageProperties({
   };
 
   return (
-    <section className="mt-8" aria-labelledby="page-properties-heading">
-      <div className="mb-2 flex min-h-7 items-center justify-between gap-3">
-        <h2
-          id="page-properties-heading"
-          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
-          Properties
-        </h2>
-        {editable && !database && !addingProperty && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 text-muted-foreground"
-            disabled={disabled}
-            onClick={() => setAddingProperty(true)}
-          >
-            <Plus size={13} aria-hidden="true" />
-            Add property
-          </Button>
-        )}
-      </div>
-
+    <section className="group/properties relative mt-8" aria-label="Page properties">
       {properties.length > 0 && (
+        <button
+          type="button"
+          aria-expanded={propertiesExpanded}
+          tabIndex={propertiesExpanded ? -1 : undefined}
+          className={propertiesExpanded
+            ? "pointer-events-none mb-1 flex h-7 items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/properties:pointer-events-auto group-hover/properties:opacity-100"
+            : "mb-2 flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+          }
+          onClick={() => setPropertiesExpanded((expanded) => !expanded)}
+        >
+          {propertiesExpanded
+            ? <CaretUp size={13} aria-hidden="true" />
+            : <CaretDown size={13} aria-hidden="true" />}
+          {propertiesExpanded ? "Hide properties" : "Show properties"}
+        </button>
+      )}
+
+      {propertiesExpanded && properties.length > 0 && (
         <dl className="space-y-1">
           {properties.map(([name, value]) => (
             <PropertyRow
@@ -316,14 +321,38 @@ export function PageProperties({
         </dl>
       )}
 
-      {editable && !database && addingProperty && (
+      {propertiesExpanded && canCreateProperty && !addingProperty && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="mt-1 h-7 text-muted-foreground"
+          disabled={disabled}
+          onClick={() => setAddingProperty(true)}
+        >
+          <Plus size={13} aria-hidden="true" />
+          Create new property
+        </Button>
+      )}
+
+      {propertiesExpanded && canCreateProperty && addingProperty && (
         <AddPropertyRow
           existingNames={properties.map(([name]) => name)}
+          kindOptions={database ? DATABASE_PROPERTY_KIND_OPTIONS : PROPERTY_KIND_OPTIONS}
           disabled={disabled}
           onCancel={() => setAddingProperty(false)}
-          onAdd={(name, kind) => {
-            onChange?.({ ...frontmatter, [name]: createPagePropertyValue(kind) });
+          onAdd={async (name, kind) => {
+            if (database) {
+              const created = await onCreateDatabaseProperty?.(
+                name,
+                kind as DatabasePropertyType
+              );
+              if (!created) return false;
+            } else {
+              onChange?.({ ...frontmatter, [name]: createPagePropertyValue(kind as PagePropertyKind) });
+            }
             setAddingProperty(false);
+            return true;
           }}
         />
       )}
@@ -1019,22 +1048,30 @@ function JsonEditor({ value, disabled, onChange, onFinish }: JsonEditorProps): R
 
 interface AddPropertyRowProps {
   existingNames: string[];
+  kindOptions: ReadonlyArray<{ value: PropertyEditorKind; label: string }>;
   disabled: boolean;
-  onAdd: (name: string, kind: PagePropertyKind) => void;
+  onAdd: (name: string, kind: PropertyEditorKind) => Promise<boolean>;
   onCancel: () => void;
 }
 
-function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropertyRowProps): ReactElement {
+function AddPropertyRow({
+  existingNames,
+  kindOptions,
+  disabled,
+  onAdd,
+  onCancel
+}: AddPropertyRowProps): ReactElement {
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<PagePropertyKind>("text");
+  const [kind, setKind] = useState<PropertyEditorKind>("text");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
 
-  const submit = () => {
+  const submit = async () => {
     const normalizedName = name.trim();
     if (!normalizedName) {
       setError("Enter a property name.");
@@ -1046,7 +1083,9 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
       return;
     }
 
-    onAdd(normalizedName, kind);
+    setSubmitting(true);
+    const added = await onAdd(normalizedName, kind);
+    if (!added) setSubmitting(false);
   };
 
   return (
@@ -1058,7 +1097,7 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
           aria-invalid={error ? true : undefined}
           className={propertyInputClassName}
           value={name}
-          disabled={disabled}
+          disabled={disabled || submitting}
           placeholder="Property name"
           onChange={(event) => {
             setName(event.currentTarget.value);
@@ -1067,7 +1106,7 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              submit();
+              void submit();
             } else if (event.key === "Escape") {
               onCancel();
             }
@@ -1079,21 +1118,21 @@ function AddPropertyRow({ existingNames, disabled, onAdd, onCancel }: AddPropert
         aria-label="New property type"
         className="h-7 w-full rounded border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         value={kind}
-        disabled={disabled}
-        onChange={(event) => setKind(event.currentTarget.value as PagePropertyKind)}
+        disabled={disabled || submitting}
+        onChange={(event) => setKind(event.currentTarget.value as PropertyEditorKind)}
       >
-        {PROPERTY_KIND_OPTIONS.map((option) => (
+        {kindOptions.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
       </select>
       <div className="flex gap-1">
-        <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onCancel}>
+        <Button type="button" size="sm" variant="ghost" disabled={disabled || submitting} onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="button" size="sm" disabled={disabled} onClick={submit}>
-          Add
+        <Button type="button" size="sm" disabled={disabled || submitting} onClick={() => void submit()}>
+          {submitting ? "Creating…" : "Create"}
         </Button>
       </div>
     </div>

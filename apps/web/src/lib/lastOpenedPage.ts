@@ -1,7 +1,7 @@
 import type { WorkspaceNode } from "@rumi/contracts";
 
 const LAST_OPENED_PAGE_KEY_PREFIX = "rumi-new-last-opened-page";
-const RESTORABLE_KINDS = new Set<WorkspaceNode["kind"]>(["page", "folder", "database"]);
+const RESTORABLE_KINDS = new Set<WorkspaceNode["kind"]>(["workspace", "page", "folder", "database"]);
 
 export interface LastOpenedPage {
   nodePath: string;
@@ -30,11 +30,11 @@ export function readLastOpenedPage(
 
     if (
       typeof value.nodePath !== "string" ||
-      !value.nodePath ||
       typeof value.openPath !== "string" ||
       !value.openPath ||
       !value.kind ||
-      !RESTORABLE_KINDS.has(value.kind)
+      !RESTORABLE_KINDS.has(value.kind) ||
+      (value.kind === "workspace" ? value.nodePath !== "" : !value.nodePath)
     ) {
       return null;
     }

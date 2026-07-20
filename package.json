@@ -5,8 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@9.10.0",
   "scripts": {
-    "build": "corepack pnpm --filter @rumi/web build",
+    "build": "corepack pnpm --filter @rumi/web build && corepack pnpm --filter @rumi-md/server build:bundle",
     "check": "corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
+    "check:server-package": "corepack pnpm --filter @rumi-md/server release:check",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

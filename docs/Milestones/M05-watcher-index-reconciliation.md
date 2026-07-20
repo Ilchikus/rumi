@@ -21,7 +21,7 @@ Make external file edits safe and visible.
 
 - Server-side watcher.
 - Debounced reconciliation.
-- SQLite index updates.
+- Persisted index updates.
 - Normalized events.
 - `rumi reconcile`.
 - `rumi index`.
@@ -29,8 +29,8 @@ Make external file edits safe and visible.
 ## Progress
 
 The server watcher debounces raw file events into normalized Rumi events for external edits, creates,
-deletes, and likely moves. A persistent SQLite index under `.rumi/index.sqlite` is rebuilt on open or
-command and updated before reconciled events are published. Search and database queries read the
+deletes, and likely moves. A persistent JavaScript index under `.rumi/index.json` is rebuilt on open
+or command and updated before reconciled events are published. Search and database queries read the
 server-owned index; runtime tests cover watcher-to-index synchronization and repeatable rebuilds.
 
 ## Exit Criteria

@@ -19,6 +19,7 @@ import type {
   QueryDatabaseRequest,
   RenameDatabasePropertyRequest,
   RenameNodeRequest,
+  RestoreTrashItemRequest,
   RestoreRevisionRequest,
   RumiEventEnvelope,
   SavePageRequest,
@@ -607,6 +608,18 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     return result;
   });
 
+  server.get("/api/trash", async () => runtime.listTrash());
+
+  server.post<{ Body: RestoreTrashItemRequest }>("/api/trash/restore", async (request) => {
+    request.log.info({ trashItemId: request.body.id }, "trash.restore");
+    const result = await runtime.restoreTrashItem(request.body);
+    request.log.info(
+      { trashItemId: request.body.id, originalPath: result.originalPath, path: result.path },
+      "trash.restore.ok"
+    );
+    return result;
+  });
+
   return {
     server,
     runtime,
@@ -827,6 +840,10 @@ function isLoginRequest(value: unknown): value is AuthLoginRequest {
 function errorStatusCode(error: Error): number {
   if ("statusCode" in error && typeof error.statusCode === "number") {
     return error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+  }
+
+  if ("code" in error && (error.code === "EEXIST" || error.code === "ENOTEMPTY")) {
+    return 409;
   }
 
   return 500;

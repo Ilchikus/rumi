@@ -5,6 +5,7 @@ import { Schema, Mark } from "prosemirror-model"
 import { openEditorHref } from "../platform"
 
 export const linkPluginKey = new PluginKey("link")
+const NATIVE_CONTEXT_LINK_CLASS = "rumi-native-context-link"
 
 // URL detection regex
 const URL_REGEX = /^(https?:\/\/|www\.)[^\s]+$/i
@@ -20,9 +21,33 @@ export function linkPlugin(schema: Schema) {
     key: linkPluginKey,
 
     props: {
+      handleDOMEvents: {
+        mousedown(view, event) {
+          const link = closestLink(event.target)
+          if (!link || !isNativeContextMenuGesture(event)) return false
+
+          // Keep secondary-click exclusively for the browser's native link
+          // menu. Preventing the mousedown default stops ProseMirror/browser
+          // word selection without cancelling the later contextmenu event.
+          temporarilyDisableLinkSelection(view)
+          event.preventDefault()
+          return true
+        },
+        contextmenu(view, event) {
+          const link = closestLink(event.target)
+          if (!link) return false
+
+          // Some browsers perform editable-text selection as the context menu
+          // opens rather than on mousedown. Keep the anchor non-selectable for
+          // that default action, but deliberately leave the event unhandled so
+          // the native browser link menu opens.
+          temporarilyDisableLinkSelection(view)
+          return false
+        }
+      },
+
       handleClick(view, pos, event) {
-        const target = event.target as HTMLElement
-        const link = target.closest("a")
+        const link = closestLink(event.target)
 
         if (link) {
           event.preventDefault()
@@ -286,6 +311,21 @@ export function linkPlugin(schema: Schema) {
       }
     }
   })
+}
+
+function closestLink(target: EventTarget | null): Element | null {
+  const candidate = target as { closest?: (selector: string) => Element | null } | null
+  return typeof candidate?.closest === "function" ? candidate.closest("a") : null
+}
+
+function isNativeContextMenuGesture(event: MouseEvent): boolean {
+  return event.button === 2 || (event.button === 0 && event.ctrlKey)
+}
+
+function temporarilyDisableLinkSelection(view: EditorView): void {
+  const editorContainer = view.dom.closest(".prosemirror-editor") ?? view.dom
+  editorContainer.classList.add(NATIVE_CONTEXT_LINK_CLASS)
+  globalThis.setTimeout(() => editorContainer.classList.remove(NATIVE_CONTEXT_LINK_CLASS), 0)
 }
 
 function showEditPopover(view: EditorView, linkData: { href: string; from: number; to: number }, schema: Schema) {

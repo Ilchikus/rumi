@@ -1,14 +1,52 @@
 {
-  "name": "@rumi/cli",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@rumi-md/server",
+  "version": "0.1.2",
+  "description": "File-native Rumi workspace server and command-line interface",
   "type": "module",
   "bin": {
-    "rumi": "./src/index.ts"
+    "rumi": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "build": "corepack pnpm --filter @rumi/web build && corepack pnpm run build:bundle",
+    "build:bundle": "node ./scripts/build.mjs",
+    "package:smoke": "node ./scripts/package-smoke.mjs",
+    "release:check": "corepack pnpm run build && corepack pnpm run package:smoke",
+    "prepack": "corepack pnpm run release:check"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ilchikus/rumi.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Ilchikus/rumi/issues"
+  },
+  "homepage": "https://github.com/Ilchikus/rumi#readme",
+  "keywords": [
+    "rumi",
+    "markdown",
+    "workspace",
+    "knowledge-base",
+    "self-hosted"
+  ],
   "dependencies": {
-    "@rumi/runtime": "workspace:*",
-    "@rumi/server": "workspace:*",
-    "commander": "^12.1.0"
+    "@fastify/static": "^9.3.0",
+    "commander": "^12.1.0",
+    "fastify": "^5.1.0",
+    "pino-pretty": "^13.1.2",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }

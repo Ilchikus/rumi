@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-06-23"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # M07-001 Rumi Block Editor Preset
 
@@ -55,3 +55,28 @@ navigation, asset URLs/uploads, messages, and the new database API. The flat-lis
 kept during this parity phase and still serializes to nested Markdown. Database relations remain out
 of scope pending Decision 019. Unit/roundtrip tests, production build, and real-browser drag,
 indent, gutter-handle, slash-menu, and autosave checks cover the migrated integration.
+
+Oversized table blocks keep a content-column-width parent and scroll internally on both axes rather
+than widening the editor or the page. A focused style contract and a real-browser overflow check
+cover the wrapper width, capped height, and independent horizontal and vertical scroll positions.
+
+List drag indentation uses geometry from the actual drop context: the first level begins after 30%
+of the editor width, while nesting below an already-indented target begins after 20% of that target
+block's own remaining width. The drop indicator uses the same 1.5em-per-level offset as rendered
+list items, and focused tests protect the boundary and maximum-depth behavior.
+
+Command-D is a block-level duplicate command: an explicit single/multi-block selection wins, and a
+text cursor falls back to its containing top-level block. Duplicates become the active block
+selection and remain one undoable transaction. Mermaid now uses the regular Phosphor Flow Arrow SVG
+through the canonical icon source shared by the handle and slash menus.
+
+Full-page and embedded database tables now share the default editor article width and the same
+bounded two-axis overflow behavior. Their shared view has no manual refresh action, outer rounded
+border, section-level top/bottom separators, or last-row bottom rule. Component coverage protects
+the presentation contract, and a real-browser check confirms the full database and normal page both
+use an 820px article at desktop width.
+
+Database tables also share one record-selection model in both placements: a leading checkbox selects
+one record, the header checkbox selects all currently visible records, and a contextual action strip
+offers exactly Duplicate, Move, and Delete. Duplicate creates canonical Markdown records through the
+database command, Move uses workspace container destinations, and Delete uses the recoverable Trash.

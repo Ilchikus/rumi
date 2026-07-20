@@ -2,13 +2,8 @@
 import { Plugin, PluginKey, TextSelection, NodeSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { Schema, MarkType } from "prosemirror-model"
-import { toggleMark } from "prosemirror-commands"
-import { highlightColors } from "../schema"
 
 export const selectionToolbarPluginKey = new PluginKey("selectionToolbar")
-
-// Store the last used highlight color
-let lastHighlightColor = "yellow"
 
 function isMarkActive(state: any, markType: MarkType): boolean {
   const { from, $from, to, empty } = state.selection
@@ -18,44 +13,7 @@ function isMarkActive(state: any, markType: MarkType): boolean {
   return state.doc.rangeHasMark(from, to, markType)
 }
 
-function getActiveHighlightColor(state: any, markType: MarkType): string | null {
-  const { from, $from, to, empty } = state.selection
-  if (empty) {
-    const marks = state.storedMarks || $from.marks()
-    const highlightMark = marks.find((m: any) => m.type === markType)
-    return highlightMark?.attrs.color || null
-  }
-
-  let color: string | null = null
-  state.doc.nodesBetween(from, to, (node: any) => {
-    const mark = node.marks?.find((m: any) => m.type === markType)
-    if (mark) {
-      color = mark.attrs.color
-      return false
-    }
-  })
-  return color
-}
-
-// Helper to apply mark and collapse selection (hides toolbar)
-function applyMarkAndClose(view: EditorView, markType: MarkType, attrs?: Record<string, unknown>) {
-  const { from, to } = view.state.selection
-  let tr = view.state.tr.addMark(from, to, markType.create(attrs))
-  // Collapse selection to end
-  tr = tr.setSelection(TextSelection.create(tr.doc, to))
-  view.dispatch(tr)
-  view.focus()
-}
-
-function removeMarkAndClose(view: EditorView, markType: MarkType) {
-  const { from, to } = view.state.selection
-  let tr = view.state.tr.removeMark(from, to, markType)
-  tr = tr.setSelection(TextSelection.create(tr.doc, to))
-  view.dispatch(tr)
-  view.focus()
-}
-
-function toggleMarkAndClose(view: EditorView, markType: MarkType, attrs?: Record<string, unknown>) {
+function toggleMarkAndClose(view: EditorView, markType: MarkType) {
   const { from, to } = view.state.selection
   const hasMarkInRange = view.state.doc.rangeHasMark(from, to, markType)
 
@@ -63,7 +21,7 @@ function toggleMarkAndClose(view: EditorView, markType: MarkType, attrs?: Record
   if (hasMarkInRange) {
     tr = tr.removeMark(from, to, markType)
   } else {
-    tr = tr.addMark(from, to, markType.create(attrs))
+    tr = tr.addMark(from, to, markType.create())
   }
   tr = tr.setSelection(TextSelection.create(tr.doc, to))
   view.dispatch(tr)
@@ -134,23 +92,18 @@ export function selectionToolbarPlugin(schema: Schema) {
         container.appendChild(button)
       })
 
-      // Highlight button with color picker
+      // Highlight is intentionally binary: default yellow or no highlight.
       if (schema.marks.highlight) {
-        // Separator
         const separator = document.createElement("div")
         separator.style.cssText = `width: 1px; height: 20px; background: hsl(214.3, 31.8%, 91.4%); margin: 0 4px;`
         container.appendChild(separator)
 
-        const highlightContainer = document.createElement("div")
-        highlightContainer.style.cssText = `display: flex; align-items: center; position: relative;`
-
-        // Main highlight button
         const highlightBtn = document.createElement("button")
         highlightBtn.className = "toolbar-button highlight-btn"
         highlightBtn.title = "Highlight (⌘⇧H)"
         highlightBtn.style.cssText = `
           width: 28px; height: 28px; border: none; background: transparent;
-          border-radius: 4px 0 0 4px; cursor: pointer; font-size: 14px; font-weight: 600;
+          border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;
           color: hsl(222.2, 84%, 4.9%); display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 1px;
         `
@@ -161,117 +114,17 @@ export function selectionToolbarPlugin(schema: Schema) {
 
         const colorBar = document.createElement("div")
         colorBar.className = "highlight-color-bar"
-        colorBar.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: ${highlightColors[lastHighlightColor]};`
+        colorBar.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: #fef08a;`
 
         highlightBtn.appendChild(letterA)
         highlightBtn.appendChild(colorBar)
 
         highlightBtn.addEventListener("mousedown", (e) => {
           e.preventDefault()
-          const markType = schema.marks.highlight
-          const activeColor = getActiveHighlightColor(editorView.state, markType)
-
-          if (activeColor === lastHighlightColor) {
-            // Same color - remove
-            removeMarkAndClose(editorView, markType)
-          } else if (activeColor) {
-            // Different color - change
-            const { from, to } = editorView.state.selection
-            let tr = editorView.state.tr
-              .removeMark(from, to, markType)
-              .addMark(from, to, markType.create({ color: lastHighlightColor }))
-            tr = tr.setSelection(TextSelection.create(tr.doc, to))
-            editorView.dispatch(tr)
-            editorView.focus()
-          } else {
-            // No highlight - apply
-            applyMarkAndClose(editorView, markType, { color: lastHighlightColor })
-          }
+          toggleMarkAndClose(editorView, schema.marks.highlight)
         })
 
-        // Chevron button
-        const chevronBtn = document.createElement("button")
-        chevronBtn.className = "toolbar-button chevron-btn"
-        chevronBtn.title = "Choose highlight color"
-        chevronBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-        chevronBtn.style.cssText = `
-          width: 18px; height: 28px; border: none; background: transparent;
-          border-radius: 0 4px 4px 0; cursor: pointer; display: flex;
-          align-items: center; justify-content: center; color: hsl(215.4, 16.3%, 46.9%);
-          border-left: 1px solid hsl(214.3, 31.8%, 91.4%);
-        `
-
-        // Color picker
-        const colorPicker = document.createElement("div")
-        colorPicker.className = "highlight-color-picker"
-        colorPicker.style.cssText = `
-          position: absolute; top: 100%; right: 0; margin-top: 4px;
-          background: white; border: 1px solid hsl(214.3, 31.8%, 91.4%);
-          border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-          padding: 8px; display: none; grid-template-columns: repeat(4, 1fr);
-          gap: 6px; width: 120px;
-        `
-
-        Object.entries(highlightColors).forEach(([name, color]) => {
-          const colorBtn = document.createElement("button")
-          colorBtn.className = "color-option"
-          colorBtn.dataset.color = name
-          colorBtn.title = name.charAt(0).toUpperCase() + name.slice(1)
-          colorBtn.style.cssText = `
-            width: 24px; height: 24px; border: 2px solid transparent;
-            background: ${color}; border-radius: 4px; cursor: pointer;
-          `
-
-          colorBtn.addEventListener("mousedown", (e) => {
-            e.preventDefault()
-            e.stopPropagation()
-
-            lastHighlightColor = name
-            colorBar.style.background = color
-            colorPicker.style.display = "none"
-
-            const markType = schema.marks.highlight
-            const activeColor = getActiveHighlightColor(editorView.state, markType)
-
-            if (activeColor === name) {
-              // Same color - remove
-              removeMarkAndClose(editorView, markType)
-            } else if (activeColor) {
-              // Different color - change
-              const { from, to } = editorView.state.selection
-              let tr = editorView.state.tr
-                .removeMark(from, to, markType)
-                .addMark(from, to, markType.create({ color: name }))
-              tr = tr.setSelection(TextSelection.create(tr.doc, to))
-              editorView.dispatch(tr)
-              editorView.focus()
-            } else {
-              // No highlight - apply
-              applyMarkAndClose(editorView, markType, { color: name })
-            }
-          })
-
-          colorPicker.appendChild(colorBtn)
-        })
-
-        chevronBtn.addEventListener("mousedown", (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          const isVisible = colorPicker.style.display === "grid"
-          colorPicker.style.display = isVisible ? "none" : "grid"
-
-          if (!isVisible) {
-            colorPicker.querySelectorAll(".color-option").forEach((btn) => {
-              const el = btn as HTMLElement
-              el.style.borderColor = el.dataset.color === lastHighlightColor ? "hsl(222.2, 47.4%, 41.2%)" : "transparent"
-            })
-          }
-        })
-
-        highlightContainer.appendChild(highlightBtn)
-        highlightContainer.appendChild(chevronBtn)
-        highlightContainer.appendChild(colorPicker)
-        container.appendChild(highlightContainer)
+        container.appendChild(highlightBtn)
       }
 
       // Link button
@@ -389,9 +242,7 @@ export function selectionToolbarPlugin(schema: Schema) {
         const { selection } = state
         const { empty, from, to } = selection
 
-        // Close color picker and link popup on any update
-        const colorPicker = container.querySelector(".highlight-color-picker") as HTMLElement
-        if (colorPicker) colorPicker.style.display = "none"
+        // Close the link popup on any update
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
         if (linkPopup) linkPopup.style.display = "none"
 
@@ -428,10 +279,6 @@ export function selectionToolbarPlugin(schema: Schema) {
         if (highlightBtn && schema.marks.highlight) {
           const markType = schema.marks.highlight
           highlightBtn.style.background = isMarkActive(state, markType) ? "hsl(210, 40%, 96.1%)" : "transparent"
-
-          const activeColor = getActiveHighlightColor(state, markType)
-          const bar = highlightBtn.querySelector(".highlight-color-bar") as HTMLElement
-          if (bar) bar.style.background = highlightColors[activeColor || lastHighlightColor] || highlightColors.yellow
         }
 
         // Update link button
@@ -442,14 +289,10 @@ export function selectionToolbarPlugin(schema: Schema) {
         }
       }
 
-      // Close toolbar and picker on outside click (capture phase to catch all clicks)
+      // Close the toolbar on outside click (capture phase to catch all clicks)
       const handleOutsideClick = (e: MouseEvent) => {
         // If click is inside the toolbar, let it handle normally
         if (container.contains(e.target as Node)) return
-
-        // Close color picker
-        const picker = container.querySelector(".highlight-color-picker") as HTMLElement
-        if (picker) picker.style.display = "none"
 
         // Close link popup
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement

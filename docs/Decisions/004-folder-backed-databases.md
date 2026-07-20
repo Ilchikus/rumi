@@ -40,7 +40,7 @@ A database is a real workspace object:
 - `.db.md` frontmatter stores schema/views.
 - Record frontmatter stores values.
 - Select and multi-select option catalogs belong to the database schema; records store only selected
-  strings or string lists.
+strings or string lists.
 - Ordinary pages keep portable YAML text and list values. They do not expose schema-backed select
-  types unless a future page-schema concept is designed explicitly.
+types unless a future page-schema concept is designed explicitly.
 - Smart/query views can be added later as a second concept.

@@ -53,8 +53,6 @@ The milestone database is the source of structured planning:
 
 Later, after the basic runtime is boring:
 
-- Safe delete or `.rumi/trash/`.
-- Snapshots/revisions.
 - Smart query views.
 - Docker image.
 - Homebrew/Linuxbrew packaging.

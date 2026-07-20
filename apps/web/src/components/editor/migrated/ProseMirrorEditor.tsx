@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
 import { cn } from "../../../lib/utils"
+import type { Node as ProseMirrorNode } from "prosemirror-model"
 import { EditorState, TextSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import "prosemirror-view/style/prosemirror.css"
@@ -37,6 +38,11 @@ export interface RumiBlockEditorHandle {
   focus: () => void
   getMarkdown: () => string
   markClean: (markdown: string) => void
+  activeDocumentKey: () => string | null
+  documentRevision: () => number
+  prependTitleContent: (text: string, expectedDocumentKey: string) => boolean
+  canUndoTitleContent: (text: string, expectedDocumentKey: string) => boolean
+  undoTitleContent: (text: string, expectedDocumentKey: string) => boolean
 }
 
 export interface RumiDocumentLink {
@@ -71,6 +77,14 @@ function ProseMirrorEditor(
 ) {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const activeDocumentKeyRef = useRef<string | null>(null)
+  const documentRevisionRef = useRef(0)
+  const titleContentUndoRef = useRef<{
+    documentKey: string
+    text: string
+    originalDoc: ProseMirrorNode
+    doc: ProseMirrorNode
+  } | null>(null)
   const contentRef = useRef(markdown)
   const onDirtyRef = useRef(onDirty)
   onDirtyRef.current = onDirty
@@ -141,6 +155,7 @@ function ProseMirrorEditor(
         view.updateState(newState)
 
         if (transaction.docChanged) {
+          documentRevisionRef.current += 1
           if (serializeRafRef.current !== null) cancelAnimationFrame(serializeRafRef.current)
           serializeRafRef.current = requestAnimationFrame(() => {
             serializeRafRef.current = null
@@ -153,6 +168,8 @@ function ProseMirrorEditor(
     })
 
     viewRef.current = view
+    activeDocumentKeyRef.current = documentKey
+    titleContentUndoRef.current = null
 
     // Focus editor and place cursor at start of first block
     view.focus()
@@ -163,6 +180,10 @@ function ProseMirrorEditor(
       if (serializeRafRef.current !== null) cancelAnimationFrame(serializeRafRef.current)
       view.destroy()
       viewRef.current = null
+      if (activeDocumentKeyRef.current === documentKey) {
+        activeDocumentKeyRef.current = null
+      }
+      titleContentUndoRef.current = null
     }
   }, [documentKey, getFiles])
 
@@ -175,6 +196,81 @@ function ProseMirrorEditor(
     },
     markClean(nextMarkdown: string) {
       contentRef.current = nextMarkdown
+    },
+    activeDocumentKey() {
+      return activeDocumentKeyRef.current
+    },
+    documentRevision() {
+      return documentRevisionRef.current
+    },
+    prependTitleContent(text: string, expectedDocumentKey: string) {
+      const view = viewRef.current
+      if (!view || activeDocumentKeyRef.current !== expectedDocumentKey) return false
+
+      const paragraph = schema.nodes.paragraph.create(
+        null,
+        text ? schema.text(text) : undefined
+      )
+      const onlyEmptyParagraph =
+        view.state.doc.childCount === 1 &&
+        view.state.doc.firstChild?.type === schema.nodes.paragraph &&
+        view.state.doc.firstChild.content.size === 0
+      const originalDoc = view.state.doc
+      let transaction = onlyEmptyParagraph
+        ? view.state.tr.replaceWith(0, view.state.doc.content.size, paragraph)
+        : view.state.tr.insert(0, paragraph)
+      transaction = transaction.setSelection(TextSelection.create(transaction.doc, 1))
+      transaction = transaction.setMeta("addToHistory", false)
+      view.dispatch(transaction.scrollIntoView())
+      titleContentUndoRef.current = {
+        documentKey: expectedDocumentKey,
+        text,
+        originalDoc,
+        doc: view.state.doc
+      }
+      view.focus()
+      return true
+    },
+    canUndoTitleContent(text: string, expectedDocumentKey: string) {
+      const view = viewRef.current
+      const first = view?.state.doc.firstChild
+      const titleUndo = titleContentUndoRef.current
+      return Boolean(
+        view &&
+        activeDocumentKeyRef.current === expectedDocumentKey &&
+        titleUndo?.documentKey === expectedDocumentKey &&
+        titleUndo.text === text &&
+        view.state.doc.eq(titleUndo.doc) &&
+        first?.type === schema.nodes.paragraph &&
+        first.textContent === text
+      )
+    },
+    undoTitleContent(text: string, expectedDocumentKey: string) {
+      const view = viewRef.current
+      const first = view?.state.doc.firstChild
+      const titleUndo = titleContentUndoRef.current
+      if (
+        !view ||
+        activeDocumentKeyRef.current !== expectedDocumentKey ||
+        titleUndo?.documentKey !== expectedDocumentKey ||
+        titleUndo.text !== text ||
+        !view.state.doc.eq(titleUndo.doc) ||
+        first?.type !== schema.nodes.paragraph ||
+        first.textContent !== text
+      ) return false
+
+      let transaction = view.state.tr.replaceWith(
+        0,
+        view.state.doc.content.size,
+        titleUndo.originalDoc.content
+      )
+      transaction = transaction
+        .setSelection(TextSelection.near(transaction.doc.resolve(1)))
+        .setMeta("addToHistory", false)
+      titleContentUndoRef.current = null
+      view.dispatch(transaction.scrollIntoView())
+      view.focus()
+      return true
     }
   }), [])
 
@@ -231,7 +327,7 @@ function ProseMirrorEditor(
 
   return (
     <div
-      className={cn("prosemirror-editor-wrapper", "!min-h-0 !pb-16")}
+      className={cn("prosemirror-editor-wrapper")}
       onClick={handlePaddingClick}
     >
       <div

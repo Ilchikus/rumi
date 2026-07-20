@@ -26,6 +26,19 @@ describe("last opened page persistence", () => {
     expect(readLastOpenedPage(storage, "/workspaces/one")).toBeNull();
   });
 
+  it("restores a workspace-root index selection", () => {
+    const storage = memoryStorage();
+    const selection = {
+      nodePath: "",
+      openPath: "notes.index.md",
+      kind: "workspace" as const
+    };
+
+    writeLastOpenedPage(storage, "/workspaces/notes", selection);
+
+    expect(readLastOpenedPage(storage, "/workspaces/notes")).toEqual(selection);
+  });
+
   it("rejects malformed or non-page selections", () => {
     const storage = memoryStorage();
     storage.setItem("rumi-new-last-opened-page:/workspace", JSON.stringify({ nodePath: "", kind: "asset" }));

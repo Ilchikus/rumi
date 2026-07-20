@@ -25,7 +25,6 @@ import type {
   TableCell,
   PhrasingContent as MdastPhrasingContent
 } from "mdast"
-import { highlightColors } from "./schema"
 
 // Parse markdown string to ProseMirror document
 export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode {
@@ -135,7 +134,7 @@ function findMatchingBacktickRun(line: string, from: number, expectedLength: num
 }
 
 function preprocessPlainCustomSyntax(markdown: string): string {
-  let result = markdown
+  let result = normalizeWorkspaceLinkDestinations(markdown)
 
   // Underline: __text__ -> <u>text</u> (but not at word boundaries for bold)
   // We need to be careful not to match GFM bold which also uses __
@@ -147,13 +146,43 @@ function preprocessPlainCustomSyntax(markdown: string): string {
   // horizontal rules and GFM table alignment delimiters.
   result = result.replace(/(?<![\w-])--(?![\s-])([^\n]*?)(?<![\s-])--(?![\w-])/g, '<s>$1</s>')
 
-  // Highlight with color: ==color::text== -> <mark data-color="color">text</mark>
-  result = result.replace(/==(\w+)::([^=]+)==/g, '<mark data-color="$1">$2</mark>')
+  // Legacy colored highlights are imported as the single default highlight.
+  result = result.replace(/==\w+::([^=]+)==/g, '<mark>$1</mark>')
 
   // Highlight default: ==text== -> <mark>text</mark>
   result = result.replace(/==([^=:]+)==/g, '<mark>$1</mark>')
 
   return result
+}
+
+// CommonMark requires destinations containing spaces to use angle brackets,
+// but workspace paths are frequently authored without them. Accept that
+// convenient form on read and let serialization write the portable form.
+function normalizeWorkspaceLinkDestinations(markdown: string): string {
+  return markdown.replace(/(!?\[[^\]\n]*\])\(([^)\n]+)\)/gu, (match, label, rawDestination) => {
+    const { destination, title } = splitLinkDestinationAndTitle(rawDestination)
+
+    if (
+      !/\s/u.test(destination)
+      || destination.startsWith("<")
+      || /^[a-z][a-z\d+.-]*:/iu.test(destination)
+      || destination.startsWith("//")
+      || /[<>\n\r]/u.test(destination)
+    ) {
+      return match
+    }
+
+    return `${label}(<${destination}>${title})`
+  })
+}
+
+function splitLinkDestinationAndTitle(value: string): { destination: string; title: string } {
+  const trimmed = value.trim()
+  const match = trimmed.match(/^(.*?)(\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'))$/u)
+
+  return match
+    ? { destination: match[1].trim(), title: match[2] }
+    : { destination: trimmed, title: "" }
 }
 
 function convertBlock(node: RootContent, schema: Schema): ProseMirrorNode | ProseMirrorNode[] | null {
@@ -390,7 +419,7 @@ function convertInlineContent(
 }
 
 type MarkName = "bold" | "italic" | "underline" | "strikethrough" | "code" | "link" | "highlight"
-type MarkAttrs = { href?: string; title?: string | null; color?: string }
+type MarkAttrs = { href?: string; title?: string | null }
 
 function parseCustomMarkTag(html: string): {
   closing: boolean
@@ -404,11 +433,11 @@ function parseCustomMarkTag(html: string): {
   if (/^<\/s>$/i.test(tag)) return { closing: true, mark: { name: "strikethrough" } }
   if (/^<\/mark>$/i.test(tag)) return { closing: true, mark: { name: "highlight" } }
 
-  const highlight = tag.match(/^<mark(?:\s+data-color="(\w+)")?>$/i)
+  const highlight = tag.match(/^<mark(?:\s+data-color="\w+")?>$/i)
   if (highlight) {
     return {
       closing: false,
-      mark: { name: "highlight", attrs: { color: highlight[1]?.toLowerCase() || "yellow" } }
+      mark: { name: "highlight" }
     }
   }
 
@@ -476,11 +505,10 @@ function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ na
     return results
   }
 
-  // Parse <mark data-color="color">text</mark>
-  const markColorMatch = html.match(/<mark data-color="(\w+)">([^<]+)<\/mark>/)
+  // Legacy colored mark HTML is imported as the single default highlight.
+  const markColorMatch = html.match(/<mark data-color="\w+">([^<]+)<\/mark>/)
   if (markColorMatch) {
-    const color = markColorMatch[1].toLowerCase()
-    results.push(createTextWithMarks(markColorMatch[2], [...existingMarks, { name: "highlight", attrs: { color } }], schema))
+    results.push(createTextWithMarks(markColorMatch[1], [...existingMarks, { name: "highlight" }], schema))
     return results
   }
 
@@ -806,16 +834,11 @@ function serializeInline(parent: ProseMirrorNode): string {
             text = `\`${text}\``
             break
           case "highlight":
-            const color = mark.attrs.color || "yellow"
-            if (color === "yellow") {
-              text = `==${text}==`
-            } else {
-              text = `==${color}::${text}==`
-            }
+            text = `==${text}==`
             break
           case "link":
             const title = mark.attrs.title ? ` "${mark.attrs.title}"` : ""
-            text = `[${text}](${mark.attrs.href}${title})`
+            text = `[${text}](${serializeLinkDestination(mark.attrs.href)}${title})`
             break
         }
       }
@@ -827,4 +850,10 @@ function serializeInline(parent: ProseMirrorNode): string {
   })
 
   return result
+}
+
+function serializeLinkDestination(href: string): string {
+  return /\s/u.test(href) && !href.startsWith("<")
+    ? `<${href}>`
+    : href
 }

@@ -8,7 +8,8 @@ import {
   pagePropertyKind,
   renameFrontmatterProperty
 } from "./PageProperties";
-import { formatPropertyValue, pageTitleFromPath } from "./pagePresentation";
+import { emptyPageTitle, formatPropertyValue, pageTitleFromPath } from "./pagePresentation";
+import { EditablePageTitle, splitEditableTitle } from "./EditablePageTitle";
 import {
   databasePropertyOptionChoices,
   rankDatabasePropertyOptions
@@ -18,13 +19,55 @@ import {
   databaseOptionColor,
   randomDatabaseOptionColor
 } from "./DatabaseOptionPill";
+import {
+  addDatabasePropertyToPrimaryView,
+  databasePropertyDefinition
+} from "../database/databaseSchema";
 
 describe("page editor presentation", () => {
   it("derives page titles from each canonical filename shape", () => {
     expect(pageTitleFromPath("Idea.md", "page")).toBe("Idea");
     expect(pageTitleFromPath("Projects/Projects.index.md", "folder")).toBe("Projects");
+    expect(pageTitleFromPath("docs.index.md", "folder")).toBe("docs");
     expect(pageTitleFromPath("Tasks/Tasks.db.md", "database")).toBe("Tasks");
     expect(pageTitleFromPath("Notes/release.v2.md", "page")).toBe("release.v2");
+  });
+
+  it("uses kind-specific names when an inline title is split at the beginning", () => {
+    expect(emptyPageTitle("page")).toBe("New Page");
+    expect(emptyPageTitle("folder")).toBe("New Folder");
+    expect(emptyPageTitle("database")).toBe("New Database");
+    expect(splitEditableTitle("My Personal Project", 0, "New Page")).toEqual({
+      title: "New Page",
+      leadingContent: "My Personal Project"
+    });
+  });
+
+  it("splits inline titles into a filename and the first content block", () => {
+    expect(splitEditableTitle("My Personal Project Little Big Server", 20, "New Page")).toEqual({
+      title: "My Personal Project",
+      leadingContent: "Little Big Server"
+    });
+    expect(splitEditableTitle("My Personal Project", "My Personal Project".length, "New Page")).toEqual({
+      title: "My Personal Project",
+      leadingContent: ""
+    });
+  });
+
+  it("renders an editable filename title without focus decoration", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EditablePageTitle, {
+        title: "Idea",
+        editable: true,
+        onRename: async () => true
+      })
+    );
+
+    expect(markup).toContain('aria-label="Rename page"');
+    expect(markup).toContain("Idea");
+    expect(markup).toContain("focus:outline-none");
+    expect(markup).toContain("focus:ring-0");
+    expect(markup).not.toContain(".md");
   });
 
   it("formats common YAML property values for display", () => {
@@ -96,8 +139,8 @@ describe("page editor presentation", () => {
       })
     );
 
-    expect(markup).toContain("Properties");
-    expect(markup).toContain("Add property");
+    expect(markup).not.toContain(">Properties<");
+    expect(markup).toContain("Create new property");
   });
 
   it("renders calm property previews that toggle editing when clicked", () => {
@@ -142,14 +185,28 @@ describe("page editor presentation", () => {
             views: [{ name: "All", type: "table", columns: ["status", "areas", "approved"] }]
           }
         },
-        onChange: () => undefined
+        onChange: () => undefined,
+        onCreateDatabaseProperty: async () => true
       })
     );
 
     expect(markup).toContain('aria-label="Edit status"');
     expect(markup).toContain('aria-label="Edit areas"');
     expect(markup).toContain('aria-label="Toggle approved"');
-    expect(markup).not.toContain("Add property");
+    expect(markup).toContain("Hide properties");
+    expect(markup).toContain("Create new property");
+  });
+
+  it("uses one schema update shape for database table and record property creation", () => {
+    expect(databasePropertyDefinition("select")).toEqual({ type: "select", options: [] });
+    expect(databasePropertyDefinition("text")).toEqual({ type: "text" });
+    expect(addDatabasePropertyToPrimaryView([
+      { name: "All", type: "table", columns: ["status"] },
+      { name: "Done", type: "table", columns: ["status"] }
+    ], "owner")).toEqual([
+      { name: "All", type: "table", columns: ["status", "owner"] },
+      { name: "Done", type: "table", columns: ["status"] }
+    ]);
   });
 
   it("ranks exact, prefix, and substring option matches in that order", () => {

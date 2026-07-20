@@ -7,7 +7,7 @@ coverage:
   - cli
   - runtime
 created: "2026-06-22"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # M02-002 CLI Serve Open Status
 
@@ -44,4 +44,4 @@ commands exist. `serve` hosts the built official client by default when availabl
 
 The optional browser-launching `rumi open` convenience command remains before this task is `done`.
 
-`serve` now uses Fastify/Pino logs with default quiet warning/error mode, `--verbose` for semantic event logs, and `--json-logs` for structured output.
+`serve` now uses Fastify/Pino logs with default quiet warning/error mode, `--verbose` for semantic event logs, and `--json-logs` for structured output. An omitted workspace defaults to the current directory, so the installed CLI supports `cd workspace && rumi serve`; explicit workspace paths remain supported.

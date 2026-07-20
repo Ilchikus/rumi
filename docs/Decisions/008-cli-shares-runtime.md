@@ -6,7 +6,7 @@ areas:
   - agents
 impact: high
 created: "2026-06-22"
-updated: "2026-06-22"
+updated: "2026-07-20"
 ---
 # CLI Shares The Runtime
 
@@ -39,3 +39,6 @@ rumi tree ./workspace
 - Local maintenance commands can load runtime directly.
 - Remote/hosted commands can call the server API.
 - `--json` output should be stable for scripts.
+- The public npm package is `@rumi-md/server`, while its executable remains `rumi`.
+- The published CLI bundles Rumi's internal runtime/server code and the official production web
+  client so consumers do not install unpublished workspace packages or build the repository.

@@ -8,7 +8,7 @@ areas:
   - web
 impact: high
 created: "2026-07-02"
-updated: "2026-07-18"
+updated: "2026-07-20"
 ---
 # Rumi-Owned Object Identity And Revision History
 
@@ -32,10 +32,13 @@ The accepted page-level slice is implemented in the runtime, API, CLI, and offic
 - deduplication by content hash and pending-checkpoint flush on graceful shutdown;
 - revision list/content/checkpoint/restore API commands;
 - `rumi snapshot` and `rumi history`;
-- a page history dialog with current-versus-snapshot comparison and safe restore.
+- a viewport-bounded page history dialog with a line-numbered current-versus-snapshot diff and safe
+  restore.
 
-Deleted-object restore, rich line-level diff highlighting, folder/database restore, retention, and
-binary asset history remain deferred as described below.
+Whole-payload deleted-object restore is now provided by the portable workspace Trash from Decision
+020, including pages, folders, databases, and assets. Restoring a folder/database from an arbitrary
+historical checkpoint, retention, and binary asset version history remain deferred as described
+below.
 
 ## Why
 
@@ -406,7 +409,8 @@ Binary asset history is separate. This proposal is for Markdown-backed pages, fo
 
 - Git integration.
 - Remote backup/sync.
-- Folder/database restore.
+- Folder/database restore from arbitrary historical checkpoints (whole deleted payloads are covered
+  by workspace Trash).
 - Binary asset revision history.
 - Separate aliases log for old path redirects.
 - Per-block history.

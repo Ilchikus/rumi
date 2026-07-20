@@ -14,6 +14,12 @@ export function pageTitleFromPath(path: string, kind: PageDocumentKind): string 
   return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
 }
 
+export function emptyPageTitle(kind: PageDocumentKind): string {
+  if (kind === "folder") return "New Folder";
+  if (kind === "database") return "New Database";
+  return "New Page";
+}
+
 export function formatPropertyValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "Empty";

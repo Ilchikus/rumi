@@ -259,7 +259,9 @@ export function Sidebar({
                 if (tree) onOpenNode(tree);
               }}
             >
-              <img src="/rumi-logo.svg" alt="" className="h-6 w-6 shrink-0" />
+              <span className="h-7 w-7 shrink-0" aria-hidden="true">
+                <img src="/rumi-logo.svg" alt="" className="block h-full w-full object-contain" />
+              </span>
               <span className="truncate text-lg font-semibold">{workspaceName}</span>
             </button>
           </h1>

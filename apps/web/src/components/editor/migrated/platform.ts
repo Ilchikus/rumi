@@ -2,7 +2,9 @@ import type { RumiApiClient } from "@rumi/api-client";
 
 export interface MigratedEditorDocument {
   path: string;
+  nodePath: string;
   title: string;
+  kind: "workspace" | "folder" | "database" | "page";
 }
 
 export interface MigratedEditorPlatform {

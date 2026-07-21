@@ -10,6 +10,10 @@ const databaseEmbedNodeView = readFileSync(
   new URL("./migrated/plugins/databaseEmbedNodeView.tsx", import.meta.url),
   "utf8"
 );
+const slashCommands = readFileSync(
+  new URL("./migrated/plugins/slashCommands.ts", import.meta.url),
+  "utf8"
+);
 
 describe("editor layout contracts", () => {
   it("keeps oversized tables inside a two-axis scrolling content-width wrapper", () => {
@@ -37,6 +41,9 @@ describe("editor layout contracts", () => {
     expect(databaseEmbedNodeView).toContain(
       "database-embed-block my-2 w-full min-w-0 max-w-full"
     );
+    expect(databaseEmbedNodeView).toContain('aria-label="Database source"');
+    expect(databaseEmbedNodeView).toContain("documents={platform.documents}");
+    expect(slashCommands).toContain("selectingSource: true");
   });
 
   it("does not apply Markdown table layout and borders to embedded databases", () => {

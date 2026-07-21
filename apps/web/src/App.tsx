@@ -2113,6 +2113,7 @@ function collectEditorDocuments(tree: WorkspaceNode | null): RumiDocumentLink[] 
     if (path) {
       documents.push({
         path,
+        nodePath: node.path,
         title: stripMarkdownExtension(node.name),
         kind: node.kind === "workspace"
           ? "workspace"

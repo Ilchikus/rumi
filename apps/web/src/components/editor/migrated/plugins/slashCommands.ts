@@ -192,7 +192,11 @@ export function createCommands(schema: Schema): SlashCommand[] {
       execute: (view) => {
         const { state, dispatch } = view
         const { $from } = state.selection
-        const embed = schema.nodes.database_embed.create({ source: "", viewType: "table" })
+        const embed = schema.nodes.database_embed.create({
+          source: "",
+          viewType: "table",
+          selectingSource: true
+        })
         const tr = state.tr.replaceWith($from.before(), $from.after(), embed)
         dispatch(tr)
         view.focus()

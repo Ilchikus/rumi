@@ -8,9 +8,33 @@
 
 import { Node as ProseMirrorNode } from 'prosemirror-model'
 import { EditorView, NodeView } from 'prosemirror-view'
+import { useEffect, useMemo, useRef } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { DatabaseView } from '../../../database/DatabaseView'
-import { migratedEditorPlatform, subscribeMigratedEditorPlatform } from '../platform'
+import {
+  migratedEditorPlatform,
+  subscribeMigratedEditorPlatform
+} from '../platform'
+import type { MigratedEditorDocument } from '../platform'
+
+export interface DatabaseSourceOption {
+  label: string
+  value: string
+}
+
+export function databaseSourceOptions(
+  documents: readonly MigratedEditorDocument[]
+): DatabaseSourceOption[] {
+  return documents
+    .filter((document) => document.kind === 'database')
+    .map((document) => ({
+      value: document.nodePath,
+      label: document.title === document.nodePath
+        ? document.title
+        : `${document.title} — ${document.nodePath}`
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label))
+}
 
 export function databaseEmbedNodeView(
   node: ProseMirrorNode,
@@ -24,6 +48,17 @@ export function databaseEmbedNodeView(
 
   let root: Root | null = null
   let currentNode = node
+
+  function selectSource(source: string) {
+    const position = typeof getPos === 'function' ? getPos() : undefined
+    if (typeof position !== 'number') return
+    view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
+      ...currentNode.attrs,
+      source,
+      selectingSource: false
+    }))
+    view.focus()
+  }
 
   function render(currentNode: ProseMirrorNode) {
     if (!root) {
@@ -40,9 +75,15 @@ export function databaseEmbedNodeView(
         onOpenRecord={(path) => platform.openDocument?.(path)}
         onMessage={(message) => platform.onMessage?.(message)}
       />
+    ) : !source ? (
+      <DatabaseSourcePicker
+        documents={platform.documents}
+        open={Boolean(currentNode.attrs.selectingSource)}
+        onSelect={selectSource}
+      />
     ) : (
       <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-        Database embed — no source specified
+        Database embed is unavailable
       </div>
     ))
   }
@@ -73,4 +114,54 @@ export function databaseEmbedNodeView(
       return true
     },
   }
+}
+
+function DatabaseSourcePicker({
+  documents,
+  open,
+  onSelect
+}: {
+  documents: readonly MigratedEditorDocument[]
+  open: boolean
+  onSelect: (source: string) => void
+}) {
+  const selectRef = useRef<HTMLSelectElement | null>(null)
+  const options = useMemo(() => databaseSourceOptions(documents), [documents])
+
+  useEffect(() => {
+    if (!open || options.length === 0) return
+    const select = selectRef.current
+    if (!select) return
+    select.focus()
+    try {
+      select.showPicker?.()
+    } catch {
+      // Browsers may require transient pointer activation; focused native selection still works.
+    }
+  }, [open, options.length])
+
+  return (
+    <div className="rounded-lg border border-border bg-background p-3">
+      <label className="mb-2 block text-xs font-medium text-muted-foreground">
+        Select a database to embed
+      </label>
+      <select
+        ref={selectRef}
+        aria-label="Database source"
+        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        value=""
+        disabled={options.length === 0}
+        onChange={(event) => {
+          if (event.currentTarget.value) onSelect(event.currentTarget.value)
+        }}
+      >
+        <option value="" disabled>
+          {options.length === 0 ? 'No databases in this workspace' : 'Choose a database…'}
+        </option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  )
 }

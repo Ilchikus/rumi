@@ -47,6 +47,7 @@ export interface RumiBlockEditorHandle {
 
 export interface RumiDocumentLink {
   path: string
+  nodePath: string
   title: string
   kind: "workspace" | "folder" | "database" | "page"
 }

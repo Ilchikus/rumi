@@ -245,6 +245,7 @@ const nodes: { [key: string]: NodeSpec } = {
       viewType: { default: "table" },
       filter: { default: "" },
       sort: { default: "" },
+      selectingSource: { default: false },
     },
     parseDOM: [{
       tag: "div.database-embed-block",
@@ -254,6 +255,7 @@ const nodes: { [key: string]: NodeSpec } = {
           viewType: dom.getAttribute("data-view-type") || "table",
           filter: dom.getAttribute("data-filter") || "",
           sort: dom.getAttribute("data-sort") || "",
+          selectingSource: false,
         }
       }
     }],

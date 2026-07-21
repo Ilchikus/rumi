@@ -75,6 +75,10 @@ const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; labe
 
 export const DATABASE_RECORD_BATCH_SIZE = 20;
 
+export function databaseColumnWidthClass(property: string): string {
+  return property === "title" ? "w-60 min-w-60" : "w-44 min-w-44";
+}
+
 export function databaseRecordsForDisplay<T>(
   records: readonly T[],
   visibleRecordLimit: number
@@ -722,7 +726,7 @@ export function DatabaseView({
           <thead className="sticky top-0 z-10 bg-muted text-left text-xs font-medium text-muted-foreground">
             <tr>
               <th
-                className="w-10 border-b border-border px-2 py-2 text-center"
+                className="w-10 min-w-10 max-w-10 border-b border-border px-2 py-2 text-center"
                 data-database-selection-column="true"
               >
                 <SelectionCheckbox
@@ -747,7 +751,7 @@ export function DatabaseView({
                   onDelete={() => deleteProperty(column)}
                 />
               ))}
-              <th className="w-12 border-b border-border px-2 py-2">
+              <th className="w-12 min-w-12 max-w-12 border-b border-border px-2 py-2">
                 <button
                   type="button"
                   className="grid h-6 w-7 place-items-center rounded hover:bg-background"
@@ -770,7 +774,7 @@ export function DatabaseView({
                 )}
                 data-database-record-selected={selectedRecordPaths.has(record.path) ? "true" : undefined}
               >
-                <td className="w-10 border-b border-border px-2 py-1.5 text-center">
+                <td className="w-10 min-w-10 max-w-10 border-b border-border px-2 py-1.5 text-center">
                   <SelectionCheckbox
                     ariaLabel={`Select ${record.title}`}
                     checked={selectedRecordPaths.has(record.path)}
@@ -778,7 +782,7 @@ export function DatabaseView({
                     onChange={() => toggleRecordSelection(record.path)}
                   />
                 </td>
-                <td className="border-b border-border px-3 py-1.5 font-medium">
+                <td className="w-60 min-w-60 border-b border-border px-3 py-1.5 font-medium">
                   <button
                     type="button"
                     className="max-w-[18rem] truncate text-left hover:underline"
@@ -788,7 +792,7 @@ export function DatabaseView({
                   </button>
                 </td>
                 {columns.map((column) => (
-                  <td key={column} className="border-b border-border px-2 py-1">
+                  <td key={column} className="w-44 min-w-44 border-b border-border px-2 py-1">
                     <PropertyCell
                       property={column}
                       definition={result?.schema.properties[column] ?? { type: "text" }}
@@ -807,7 +811,7 @@ export function DatabaseView({
                     />
                   </td>
                 ))}
-                <td className="border-b border-border" />
+                <td className="w-12 min-w-12 max-w-12 border-b border-border" />
               </tr>
             ))}
           </tbody>
@@ -1152,7 +1156,10 @@ function SortableHeader({
 
   return (
     <th
-      className="border-b border-border px-2 py-1.5"
+      className={cn(
+        "border-b border-border px-2 py-1.5",
+        databaseColumnWidthClass(property)
+      )}
       onContextMenu={(event) => {
         if (!manageable) return;
         event.preventDefault();

@@ -6,6 +6,7 @@ import type { WorkspaceNode } from "@rumi/contracts";
 import {
   DATABASE_RECORD_BATCH_SIZE,
   DatabaseView,
+  databaseColumnWidthClass,
   databaseRecordMoveDestinations,
   databaseRecordsForDisplay
 } from "./DatabaseView";
@@ -38,10 +39,15 @@ describe("database table presentation", () => {
     expect(tableHeader).toContain("sticky top-0 z-10");
     expect(tableHeader).toContain("bg-muted");
     expect(selectionHeader).not.toContain("border-r");
+    expect(selectionHeader).toContain("min-w-10");
     expect(markup).not.toContain("border-r ");
+    expect(markup).toContain("w-60 min-w-60");
+    expect(markup).toContain("w-12 min-w-12 max-w-12");
     expect(markup).toContain('data-database-selection-column="true"');
     expect(markup).toContain('aria-label="Select all records"');
     expect(markup).toContain("accent-sky-600");
+    expect(databaseColumnWidthClass("title")).toBe("w-60 min-w-60");
+    expect(databaseColumnWidthClass("status")).toBe("w-44 min-w-44");
   });
 
   it("reveals database records in batches of twenty", () => {

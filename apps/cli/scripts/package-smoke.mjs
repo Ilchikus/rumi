@@ -45,7 +45,7 @@ try {
   }
 
   const packagedFiles = new Set(packResult.files.map((file) => file.path));
-  for (const requiredPath of ["dist/index.js", "dist/web/index.html", "README.md", "package.json"]) {
+  for (const requiredPath of ["dist/index.js", "dist/web/index.html", "README.md", "LICENSE", "package.json"]) {
     if (!packagedFiles.has(requiredPath)) {
       throw new Error(`The npm package is missing ${requiredPath}`);
     }

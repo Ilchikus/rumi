@@ -46,3 +46,22 @@ npx @rumi-md/server@latest serve
 
 Rumi creates its rebuildable index and application state under `.rumi/` inside the workspace. Your
 normal Markdown files remain portable and readable without Rumi.
+
+## Remote hosting
+
+The default server listens only on `127.0.0.1`. Before binding Rumi to a network interface, set a
+password and serve it behind HTTPS:
+
+```bash
+rumi auth set-password . --username owner
+rumi serve --host 0.0.0.0 --auth password --secure-cookies
+```
+
+Do not expose a workspace publicly with authentication disabled.
+
+## Source and license
+
+Rumi is free and open-source software. Source code, issue tracking, and contribution instructions
+are available at [github.com/Ilchikus/rumi](https://github.com/Ilchikus/rumi).
+
+Licensed under the [GNU Affero General Public License v3.0 only](LICENSE).

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactElement, ReactNode } from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
+import { ArrowSquareOut } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
@@ -81,9 +82,24 @@ export function databaseColumnWidthClass(property: string): string {
 
 export function databaseRecordsForDisplay<T>(
   records: readonly T[],
-  visibleRecordLimit: number
+  visibleRecordLimit: number,
+  pinnedRecordPath?: string,
+  recordPath: (record: T) => string = (record) => String(record)
 ): readonly T[] {
-  return records.slice(0, Math.max(0, visibleRecordLimit));
+  const limit = Math.max(0, visibleRecordLimit);
+  const visible = records.slice(0, limit);
+  if (!pinnedRecordPath || visible.some((record) => recordPath(record) === pinnedRecordPath)) {
+    return visible;
+  }
+
+  const pinnedRecord = records.find((record) => recordPath(record) === pinnedRecordPath);
+  if (!pinnedRecord || limit === 0) return visible;
+  return [pinnedRecord, ...visible.slice(0, limit - 1)];
+}
+
+export function databaseRecordTitleFromPath(recordPath: string): string {
+  const fileName = recordPath.split("/").at(-1) ?? recordPath;
+  return fileName.replace(/\.md$/iu, "");
 }
 
 export interface DatabaseViewProps {
@@ -117,8 +133,15 @@ export function DatabaseView({
   const [moveTree, setMoveTree] = useState<WorkspaceNode | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [visibleRecordLimit, setVisibleRecordLimit] = useState(DATABASE_RECORD_BATCH_SIZE);
+  const [recordNameEdit, setRecordNameEdit] = useState<{
+    path: string;
+    draft: string;
+    focusMode: "end" | "select-all";
+  } | null>(null);
+  const [renamingRecordPath, setRenamingRecordPath] = useState<string | null>(null);
   const activeLoadRequestRef = useRef(0);
   const activeDatabasePathRef = useRef(databasePath);
+  const recordMutationRef = useRef(false);
   activeDatabasePathRef.current = databasePath;
 
   const load = useCallback(async () => {
@@ -166,6 +189,7 @@ export function DatabaseView({
   }, [api, databasePath, onMessage, search, sorts]);
 
   useEffect(() => {
+    if (recordMutationRef.current) return;
     const timeout = window.setTimeout(() => {
       void load();
     }, search ? 160 : 0);
@@ -191,8 +215,13 @@ export function DatabaseView({
     [result?.records, selectedRecordPaths]
   );
   const displayedRecords = useMemo(
-    () => databaseRecordsForDisplay(result?.records ?? [], visibleRecordLimit),
-    [result?.records, visibleRecordLimit]
+    () => databaseRecordsForDisplay(
+      result?.records ?? [],
+      visibleRecordLimit,
+      recordNameEdit?.path,
+      (record) => record.path
+    ),
+    [recordNameEdit?.path, result?.records, visibleRecordLimit]
   );
   const hasMoreRecords = displayedRecords.length < (result?.records.length ?? 0);
   const visibleRecordPaths = useMemo(
@@ -218,6 +247,8 @@ export function DatabaseView({
     setMoveTree(null);
     setDeleteDialogOpen(false);
     setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
+    setRecordNameEdit(null);
+    setRenamingRecordPath(null);
   }, [databasePath]);
 
   const toggleRecordSelection = useCallback((recordPath: string) => {
@@ -247,17 +278,81 @@ export function DatabaseView({
     }
 
     setCreatingRecord(true);
+    recordMutationRef.current = true;
 
     try {
       const created = await api.createDatabaseRecord({ databasePath });
+      const createdPage = await api.openPage(created.path);
       await load();
-      onOpenRecord(created.path);
+      const createdRecord: DatabaseRecord = {
+        path: created.path,
+        title: databaseRecordTitleFromPath(created.path),
+        frontmatter: createdPage.frontmatter,
+        version: createdPage.version
+      };
+      setResult((current) => current
+        ? {
+            ...current,
+            records: [
+              createdRecord,
+              ...current.records.filter((record) => record.path !== created.path)
+            ]
+          }
+        : current
+      );
+      setRecordNameEdit({
+        path: created.path,
+        draft: createdRecord.title,
+        focusMode: "select-all"
+      });
     } catch (error) {
       onMessage(errorMessage(error));
     } finally {
+      recordMutationRef.current = false;
       setCreatingRecord(false);
     }
-  }, [api, creatingRecord, databasePath, load, onMessage, onOpenRecord]);
+  }, [api, creatingRecord, databasePath, load, onMessage]);
+
+  const renameRecord = useCallback(async (record: DatabaseRecord, requestedName: string) => {
+    if (renamingRecordPath) return;
+    const nextName = requestedName.trim() || "New Page";
+    if (nextName === record.title) {
+      setRecordNameEdit((current) => current?.path === record.path ? null : current);
+      return;
+    }
+
+    setRenamingRecordPath(record.path);
+    recordMutationRef.current = true;
+    try {
+      const renamed = await api.renameNode({ path: record.path, newName: nextName });
+      const renamedTitle = databaseRecordTitleFromPath(renamed.path);
+      setResult((current) => current
+        ? {
+            ...current,
+            records: current.records.map((candidate) =>
+              candidate.path === record.path
+                ? { ...candidate, path: renamed.path, title: renamedTitle }
+                : candidate
+            )
+          }
+        : current
+      );
+      setSelectedRecordPaths((current) => {
+        if (!current.has(record.path)) return current;
+        const next = new Set(current);
+        next.delete(record.path);
+        next.add(renamed.path);
+        return next;
+      });
+      setRecordNameEdit((current) => current?.path === record.path ? null : current);
+      await load();
+    } catch (error) {
+      onMessage(errorMessage(error));
+    } finally {
+      recordMutationRef.current = false;
+      setRenamingRecordPath(null);
+    }
+  }, [api, load, onMessage, renamingRecordPath]);
 
   const duplicateSelectedRecords = useCallback(async () => {
     if (selectionAction || selectedRecords.length === 0) {
@@ -809,14 +904,22 @@ export function DatabaseView({
                     onChange={() => toggleRecordSelection(record.path)}
                   />
                 </td>
-                <td className="w-60 min-w-60 border-b border-border px-3 py-1.5 font-medium">
-                  <button
-                    type="button"
-                    className="max-w-[18rem] truncate text-left hover:underline"
-                    onClick={() => onOpenRecord(record.path)}
-                  >
-                    {record.title}
-                  </button>
+                <td className="group/name relative w-60 min-w-60 border-b border-border p-1 font-medium">
+                  <DatabaseRecordNameCell
+                    record={record}
+                    edit={recordNameEdit?.path === record.path ? recordNameEdit : null}
+                    saving={renamingRecordPath === record.path}
+                    onStartEditing={() => setRecordNameEdit({
+                      path: record.path,
+                      draft: record.title,
+                      focusMode: "end"
+                    })}
+                    onChange={(draft) => setRecordNameEdit((current) =>
+                      current?.path === record.path ? { ...current, draft } : current
+                    )}
+                    onCommit={(draft) => void renameRecord(record, draft)}
+                    onOpen={() => onOpenRecord(record.path)}
+                  />
                 </td>
                 {columns.map((column) => (
                   <td key={column} className="w-44 min-w-44 border-b border-border px-2 py-1">
@@ -1276,6 +1379,81 @@ function SortableHeader({
         )}
       </div>
     </th>
+  );
+}
+
+function DatabaseRecordNameCell({
+  record,
+  edit,
+  saving,
+  onStartEditing,
+  onChange,
+  onCommit,
+  onOpen
+}: {
+  record: DatabaseRecord;
+  edit: { path: string; draft: string; focusMode: "end" | "select-all" } | null;
+  saving: boolean;
+  onStartEditing: () => void;
+  onChange: (draft: string) => void;
+  onCommit: (draft: string) => void;
+  onOpen: () => void;
+}): ReactElement {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!edit) return;
+    const frame = window.requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      if (edit.focusMode === "select-all") input.select();
+      else input.setSelectionRange(input.value.length, input.value.length);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [edit?.focusMode, edit?.path]);
+
+  return (
+    <div className="relative min-h-7 w-full pr-7">
+      {edit ? (
+        <input
+          ref={inputRef}
+          type="text"
+          aria-label={`Rename ${record.title}`}
+          className="h-7 w-full min-w-0 rounded border-0 bg-background px-1 outline-none ring-1 ring-ring"
+          value={edit.draft}
+          disabled={saving}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          onBlur={(event) => onCommit(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          aria-label={`Edit ${record.title}`}
+          className="flex h-7 w-full min-w-0 items-center rounded px-1 text-left hover:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          onClick={onStartEditing}
+        >
+          <span className="truncate">{record.title}</span>
+        </button>
+      )}
+      {!edit && (
+        <button
+          type="button"
+          aria-label={`Open ${record.title}`}
+          title={`Open ${record.title}`}
+          className="absolute right-0 top-0 grid h-7 w-7 place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover/name:opacity-100"
+          onClick={onOpen}
+        >
+          <ArrowSquareOut size={14} aria-hidden="true" />
+        </button>
+      )}
+    </div>
   );
 }
 

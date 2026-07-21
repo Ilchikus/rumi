@@ -753,6 +753,20 @@ describe("WorkspaceRuntime", () => {
         schema: query.schema
       }
     });
+
+    const renamed = await runtime.renameNode({
+      path: record.path,
+      newName: "Ship database editor"
+    });
+    expect(renamed.path).toBe("Tasks/Ship database editor.md");
+    expect(renamed.events).toContainEqual({
+      name: "database.recordsChanged",
+      path: "Tasks",
+      affects: ["records", "title"]
+    });
+    await expect(runtime.queryDatabase({ databasePath: database.path })).resolves.toMatchObject({
+      records: [{ path: renamed.path, title: "Ship database editor" }]
+    });
   });
 
   it("updates database schema and record properties without client-side file coordination", async () => {

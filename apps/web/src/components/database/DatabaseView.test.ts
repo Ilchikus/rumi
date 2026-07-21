@@ -7,6 +7,7 @@ import {
   DATABASE_RECORD_BATCH_SIZE,
   DatabaseView,
   databaseColumnWidthClass,
+  databaseRecordTitleFromPath,
   databaseRecordMoveDestinations,
   databaseRecordsForDisplay
 } from "./DatabaseView";
@@ -63,6 +64,18 @@ describe("database table presentation", () => {
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE)).toEqual(records.slice(0, 20));
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 2)).toEqual(records.slice(0, 40));
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 3)).toEqual(records);
+  });
+
+  it("keeps a newly created record visible while its name is being edited", () => {
+    const records = Array.from({ length: 25 }, (_, index) => ({ path: `record-${index + 1}` }));
+
+    expect(databaseRecordsForDisplay(
+      records,
+      DATABASE_RECORD_BATCH_SIZE,
+      "record-25",
+      (record) => record.path
+    )).toEqual([records[24], ...records.slice(0, 19)]);
+    expect(databaseRecordTitleFromPath("Projects/New Page.md")).toBe("New Page");
   });
 
   it("refreshes only the database named by an event", () => {

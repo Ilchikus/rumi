@@ -1100,7 +1100,21 @@ export class WorkspaceRuntime {
     await this.revisions.move(oldPath, newPath);
     await this.workspaceIndex.movePath(oldPath, newPath);
 
-    const result = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
+    const database = stat.isFile() ? await this.databaseContextForPage(newPath) : null;
+    const movedResult = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
+    const result: WorkspaceMutationResult = database
+      ? {
+          ...movedResult,
+          events: [
+            ...movedResult.events,
+            {
+              name: "database.recordsChanged",
+              path: database.databasePath,
+              affects: ["records", "title"]
+            }
+          ]
+        }
+      : movedResult;
     this.publishResultEvents(result);
     this.scheduleReferenceRepair(oldPath, newPath);
     return result;

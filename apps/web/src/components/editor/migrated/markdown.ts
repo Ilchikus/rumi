@@ -3,6 +3,7 @@ import { Node as ProseMirrorNode, Schema, Fragment } from "prosemirror-model"
 import { unified } from "unified"
 import remarkParse from "remark-parse"
 import remarkGfm from "remark-gfm"
+import { mentionKindForPath } from "./mentionTypes"
 import type {
   Root,
   RootContent,
@@ -419,7 +420,12 @@ function convertInlineContent(
 }
 
 type MarkName = "bold" | "italic" | "underline" | "strikethrough" | "code" | "link" | "highlight"
-type MarkAttrs = { href?: string; title?: string | null; mention?: boolean }
+type MarkAttrs = {
+  href?: string
+  title?: string | null
+  mention?: boolean
+  mentionKind?: "folder" | "database" | "page" | null
+}
 
 function parseCustomMarkTag(html: string): {
   closing: boolean
@@ -461,18 +467,22 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
     case "inlineCode":
       return [createTextWithMarks(node.value, [...marks, { name: "code" }], schema)]
 
-    case "link":
-      return convertInlineContent(node.children, schema, [
+    case "link": {
+      const mention = inlineMarkdownText(node.children).startsWith("@")
+      const converted = convertInlineContent(node.children, schema, [
         ...marks,
         {
           name: "link",
           attrs: {
             href: node.url,
             title: node.title,
-            mention: inlineMarkdownText(node.children).startsWith("@")
+            mention,
+            mentionKind: mention ? mentionKindForPath(node.url) : null
           }
         }
       ])
+      return mention ? withoutMentionPrefix(converted, schema) : converted
+    }
 
     case "html":
       // Handle inline HTML (our custom syntax)
@@ -503,6 +513,16 @@ function inlineMarkdownText(nodes: MdastPhrasingContent[]): string {
     }
     return ""
   }).join("")
+}
+
+function withoutMentionPrefix(nodes: ProseMirrorNode[], schema: Schema): ProseMirrorNode[] {
+  let removed = false
+  return nodes.flatMap((node) => {
+    if (removed || !node.isText || !node.text?.startsWith("@")) return [node]
+    removed = true
+    const text = node.text.slice(1)
+    return text ? [schema.text(text, node.marks)] : []
+  })
 }
 
 function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ name: MarkName; attrs?: MarkAttrs }> = []): ProseMirrorNode[] {
@@ -855,7 +875,8 @@ function serializeInline(parent: ProseMirrorNode): string {
             break
           case "link":
             const title = mark.attrs.title ? ` "${mark.attrs.title}"` : ""
-            text = `[${text}](${serializeLinkDestination(mark.attrs.href)}${title})`
+            const label = mark.attrs.mention ? `@${text}` : text
+            text = `[${label}](${serializeLinkDestination(mark.attrs.href)}${title})`
             break
         }
       }

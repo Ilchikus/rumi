@@ -2113,7 +2113,14 @@ function collectEditorDocuments(tree: WorkspaceNode | null): RumiDocumentLink[] 
     if (path) {
       documents.push({
         path,
-        title: stripMarkdownExtension(node.name)
+        title: stripMarkdownExtension(node.name),
+        kind: node.kind === "workspace"
+          ? "workspace"
+          : node.kind === "folder"
+            ? "folder"
+            : node.kind === "database"
+              ? "database"
+              : "page"
       });
     }
     node.children?.forEach(visit);

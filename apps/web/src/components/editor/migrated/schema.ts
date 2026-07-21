@@ -1,5 +1,6 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Schema, NodeSpec, MarkSpec } from "prosemirror-model"
+import { mentionKindForPath } from "./mentionTypes"
 
 const nodes: { [key: string]: NodeSpec } = {
   doc: {
@@ -417,16 +418,22 @@ const marks: { [key: string]: MarkSpec } = {
     attrs: {
       href: {},
       title: { default: null },
-      mention: { default: false }
+      mention: { default: false },
+      mentionKind: { default: null }
     },
     inclusive: false,
     parseDOM: [{
       tag: "a[href]",
       getAttrs(dom: HTMLElement) {
+        const href = dom.getAttribute("href") ?? ""
+        const mention = dom.dataset.mention === "true" || dom.textContent?.startsWith("@") === true
         return {
-          href: dom.getAttribute("href"),
+          href,
           title: dom.getAttribute("title"),
-          mention: dom.dataset.mention === "true" || dom.textContent?.startsWith("@") === true
+          mention,
+          mentionKind: mention
+            ? dom.dataset.mentionKind ?? mentionKindForPath(href)
+            : null
         }
       }
     }],
@@ -436,7 +443,10 @@ const marks: { [key: string]: MarkSpec } = {
         {
           href: node.attrs.href,
           title: node.attrs.title,
-          ...(node.attrs.mention ? { "data-mention": "true" } : {})
+          ...(node.attrs.mention ? {
+            "data-mention": "true",
+            "data-mention-kind": node.attrs.mentionKind ?? mentionKindForPath(node.attrs.href)
+          } : {})
         },
         0
       ]

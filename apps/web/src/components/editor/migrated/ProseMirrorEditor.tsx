@@ -48,6 +48,7 @@ export interface RumiBlockEditorHandle {
 export interface RumiDocumentLink {
   path: string
   title: string
+  kind: "workspace" | "folder" | "database" | "page"
 }
 
 export interface RumiBlockEditorProps {
@@ -97,7 +98,8 @@ function ProseMirrorEditor(
   useEffect(() => {
     filesRef.current = documents.map((document) => ({
       name: document.title || document.path.split("/").at(-1) || document.path,
-      path: document.path
+      path: document.path,
+      kind: document.kind
     }))
   }, [documents])
 

@@ -715,7 +715,7 @@ export function DatabaseView({
       )}
 
       <div
-        className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
         data-database-table-scroll="true"
       >
         <table className="w-max min-w-[max(100%,620px)] border-collapse text-sm">
@@ -1152,7 +1152,7 @@ function SortableHeader({
 
   return (
     <th
-      className="border-b border-r border-border px-2 py-1.5 last:border-r-0"
+      className="border-b border-border px-2 py-1.5"
       onContextMenu={(event) => {
         if (!manageable) return;
         event.preventDefault();

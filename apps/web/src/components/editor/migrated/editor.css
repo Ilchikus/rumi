@@ -294,22 +294,26 @@
   max-width: 100%;
 }
 
-.prosemirror-editor .ProseMirror table {
+.prosemirror-editor .ProseMirror > table,
+.prosemirror-editor .ProseMirror > .tableWrapper > table {
   border-collapse: collapse;
   margin: 0;
   width: 100%;
   table-layout: fixed;
 }
 
-.prosemirror-editor .ProseMirror th,
-.prosemirror-editor .ProseMirror td {
+.prosemirror-editor .ProseMirror > table th,
+.prosemirror-editor .ProseMirror > table td,
+.prosemirror-editor .ProseMirror > .tableWrapper > table th,
+.prosemirror-editor .ProseMirror > .tableWrapper > table td {
   border: 1px solid hsl(var(--border));
   padding: 8px 12px;
   vertical-align: top;
   position: relative;
 }
 
-.prosemirror-editor .ProseMirror th {
+.prosemirror-editor .ProseMirror > table th,
+.prosemirror-editor .ProseMirror > .tableWrapper > table th {
   font-weight: 600;
   background: hsl(var(--muted));
   text-align: left;

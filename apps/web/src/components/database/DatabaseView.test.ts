@@ -30,7 +30,7 @@ describe("database table presentation", () => {
     expect(section).not.toContain("border-y");
     expect(scrollFrame).not.toContain("max-h-");
     expect(scrollFrame).toContain("overflow-x-auto");
-    expect(scrollFrame).toContain("overflow-y-hidden");
+    expect(scrollFrame).not.toContain("overflow-y-hidden");
     expect(scrollFrame).not.toContain("rounded-md");
     expect(scrollFrame).not.toContain("border-border");
     expect(table).toContain("w-max");
@@ -38,6 +38,7 @@ describe("database table presentation", () => {
     expect(tableHeader).toContain("sticky top-0 z-10");
     expect(tableHeader).toContain("bg-muted");
     expect(selectionHeader).not.toContain("border-r");
+    expect(markup).not.toContain("border-r ");
     expect(markup).toContain('data-database-selection-column="true"');
     expect(markup).toContain('aria-label="Select all records"');
     expect(markup).toContain("accent-sky-600");

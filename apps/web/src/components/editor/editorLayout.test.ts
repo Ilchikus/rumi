@@ -39,6 +39,17 @@ describe("editor layout contracts", () => {
     );
   });
 
+  it("does not apply Markdown table layout and borders to embedded databases", () => {
+    const markdownTableRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror > table,\n.prosemirror-editor .ProseMirror > .tableWrapper > table"
+    );
+
+    expect(markdownTableRule).toContain("table-layout: fixed;");
+    expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror table\s*\{/u);
+    expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror th\s*,/u);
+  });
+
   it("uses Tailwind sky 600 for checked task boxes", () => {
     const nestedTaskRule = cssRule(
       editorStyles,

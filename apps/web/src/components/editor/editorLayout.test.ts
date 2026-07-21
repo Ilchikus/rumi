@@ -16,6 +16,20 @@ describe("editor layout contracts", () => {
     expect(wrapperRule).toContain("overflow: auto;");
     expect(wrapperRule).toContain("overscroll-behavior: contain;");
   });
+
+  it("uses Tailwind sky 600 for checked task boxes", () => {
+    const nestedTaskRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]'
+    );
+    const flatTaskRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]'
+    );
+
+    expect(nestedTaskRule).toContain("accent-color: #0284c7;");
+    expect(flatTaskRule).toContain("accent-color: #0284c7;");
+  });
 });
 
 function cssRule(styles: string, selector: string): string {

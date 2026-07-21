@@ -36,6 +36,7 @@ describe("database table presentation", () => {
     expect(selectionHeader).not.toContain("border-r");
     expect(markup).toContain('data-database-selection-column="true"');
     expect(markup).toContain('aria-label="Select all records"');
+    expect(markup).toContain("accent-sky-600");
   });
 
   it("reveals database records in batches of twenty", () => {

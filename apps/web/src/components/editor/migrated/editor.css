@@ -485,7 +485,7 @@
   height: 16px;
   margin: 0;
   cursor: pointer;
-  accent-color: hsl(222.2, 47.4%, 41.2%);
+  accent-color: #0284c7;
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item .task-content {
@@ -625,7 +625,7 @@
   height: 16px;
   margin: 0;
   cursor: pointer;
-  accent-color: hsl(222.2, 47.4%, 41.2%);
+  accent-color: #0284c7;
 }
 
 .prosemirror-editor .ProseMirror .task-item .task-content {

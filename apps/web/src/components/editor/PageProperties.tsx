@@ -757,7 +757,11 @@ function PropertyValueEditor({
             onFinish();
           }}
         >
-          <Icon size={16} className="text-neutral-400" aria-hidden="true" />
+          <Icon
+            size={16}
+            className={checked ? "text-sky-600" : "text-neutral-400"}
+            aria-hidden="true"
+          />
           <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
         </button>
       );
@@ -1204,7 +1208,11 @@ function CheckboxValue({ checked }: { checked: boolean }): ReactElement {
   const Icon = checked ? CheckSquare : Square;
   return (
     <span className="inline-flex items-center" title={checked ? "Checked" : "Unchecked"}>
-      <Icon size={16} className="text-neutral-400" aria-hidden="true" />
+      <Icon
+        size={16}
+        className={checked ? "text-sky-600" : "text-neutral-400"}
+        aria-hidden="true"
+      />
       <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
     </span>
   );

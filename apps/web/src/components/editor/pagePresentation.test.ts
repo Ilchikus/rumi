@@ -159,6 +159,7 @@ describe("page editor presentation", () => {
     expect(markup).toContain('aria-label="Edit status"');
     expect(markup).toContain('aria-label="Toggle published"');
     expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain("text-sky-600");
     expect(markup).toContain('aria-label="Edit launched"');
     expect(markup).toContain('aria-label="Edit tags"');
     expect(markup).toContain("right-click for property options");

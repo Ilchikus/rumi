@@ -951,7 +951,7 @@ function SelectionCheckbox({
     <input
       ref={inputRef}
       type="checkbox"
-      className="h-4 w-4 cursor-pointer accent-black disabled:cursor-default"
+      className="h-4 w-4 cursor-pointer accent-sky-600 disabled:cursor-default"
       aria-label={ariaLabel}
       aria-checked={mixed ? "mixed" : checked}
       checked={checked}
@@ -1270,7 +1270,7 @@ function PropertyCell({
         <input
           type="checkbox"
           checked={value === true}
-          className="h-4 w-4 accent-black"
+          className="h-4 w-4 accent-sky-600"
           onChange={(event) => onChange(event.target.checked)}
         />
       </label>

@@ -55,6 +55,7 @@ describe("Rumi server API", () => {
     expect(treeResponse.statusCode).toBe(200);
     expect(treeResponse.json()).toMatchObject({
       kind: "workspace",
+      companionPath: "index.md",
       children: [{ name: "Idea.md", kind: "page" }]
     });
 
@@ -63,6 +64,14 @@ describe("Rumi server API", () => {
     expect(pageResponse.json()).toMatchObject({
       path: "Idea.md",
       markdownBody: "# Idea"
+    });
+
+    const homeResponse = await server.inject({ method: "GET", url: "/api/page?path=index.md" });
+    expect(homeResponse.statusCode).toBe(200);
+    expect(homeResponse.json()).toMatchObject({
+      path: "index.md",
+      kind: "folder",
+      markdownBody: ""
     });
 
     await server.close();

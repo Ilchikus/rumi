@@ -25,6 +25,24 @@ describe("WorkspaceRuntime", () => {
     expect(runtime.assetPolicy).toMatchObject({ maxFileSizeMb: 50 });
   });
 
+  it("creates an empty editable root index when a workspace has no home page", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const tree = await runtime.getTree();
+
+    await expect(fs.readFile(path.join(root, "index.md"), "utf8")).resolves.toBe("");
+    expect(tree).toMatchObject({
+      path: "",
+      kind: "workspace",
+      companionPath: "index.md"
+    });
+    await expect(runtime.openPage("")).resolves.toMatchObject({
+      path: "index.md",
+      kind: "folder",
+      markdownBody: ""
+    });
+  });
+
   it("rejects missing roots and files as roots", async () => {
     const root = await tempWorkspace();
     const filePath = path.join(root, "not-root.md");
@@ -1047,7 +1065,7 @@ describe("WorkspaceRuntime", () => {
     const rebuilt = await runtime.rebuildIndex();
     const result = await runtime.searchWorkspace({ query: "age" });
 
-    expect(rebuilt.documentCount).toBe(4);
+    expect(rebuilt.documentCount).toBe(5);
     expect(result.items.map((item) => item.title)).toEqual([
       "age",
       "agents",

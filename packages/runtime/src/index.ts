@@ -164,7 +164,13 @@ export class WorkspaceRuntime {
     }
 
     const assetPolicy = await loadWorkspaceAssetPolicy(rootPath);
-    return new WorkspaceRuntime(rootPath, await WorkspaceIndex.open(rootPath), assetPolicy);
+    const runtime = new WorkspaceRuntime(
+      rootPath,
+      await WorkspaceIndex.open(rootPath),
+      assetPolicy
+    );
+    await runtime.ensureRootIndexPage();
+    return runtime;
   }
 
   info(): OpenWorkspaceResult {
@@ -1360,6 +1366,24 @@ export class WorkspaceRuntime {
     }
 
     return node;
+  }
+
+  private async ensureRootIndexPage(): Promise<void> {
+    for (const candidate of rootIndexPaths(this.name)) {
+      if (await fileExists(this.resolveAbsolutePath(candidate))) return;
+    }
+
+    const rootIndexPath = "index.md";
+    const absolutePath = this.resolveAbsolutePath(rootIndexPath);
+    try {
+      await fs.writeFile(absolutePath, "", { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "EEXIST") return;
+      throw error;
+    }
+
+    await this.revisions.checkpoint(rootIndexPath, "", "baseline", "runtime");
+    await this.workspaceIndex.indexPath(rootIndexPath);
   }
 
   private async resolvePageTarget(inputPath: string): Promise<{ path: string; kind: PageDocumentKind }> {

@@ -8,9 +8,18 @@
 
 import { Node as ProseMirrorNode } from 'prosemirror-model'
 import { EditorView, NodeView } from 'prosemirror-view'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactElement } from 'react'
 import { createRoot, Root } from 'react-dom/client'
+import { CaretDown } from '@phosphor-icons/react/dist/csr/CaretDown'
+import { Table } from '@phosphor-icons/react/dist/csr/Table'
 import { DatabaseView } from '../../../database/DatabaseView'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '../../../ui/dropdown-menu'
 import {
   migratedEditorPlatform,
   subscribeMigratedEditorPlatform
@@ -74,6 +83,14 @@ export function databaseEmbedNodeView(
         refreshRevision={platform.databaseRefreshRevision}
         onOpenRecord={(path) => platform.openDocument?.(path)}
         onMessage={(message) => platform.onMessage?.(message)}
+        toolbarStart={(
+          <DatabaseEmbedSourceControl
+            source={source}
+            documents={platform.documents}
+            onOpen={() => platform.openDocument?.(source)}
+            onSelect={selectSource}
+          />
+        )}
       />
     ) : !source ? (
       <DatabaseSourcePicker
@@ -125,43 +142,112 @@ function DatabaseSourcePicker({
   open: boolean
   onSelect: (source: string) => void
 }) {
-  const selectRef = useRef<HTMLSelectElement | null>(null)
   const options = useMemo(() => databaseSourceOptions(documents), [documents])
-
-  useEffect(() => {
-    if (!open || options.length === 0) return
-    const select = selectRef.current
-    if (!select) return
-    select.focus()
-    try {
-      select.showPicker?.()
-    } catch {
-      // Browsers may require transient pointer activation; focused native selection still works.
-    }
-  }, [open, options.length])
 
   return (
     <div className="rounded-lg border border-border bg-background p-3">
       <label className="mb-2 block text-xs font-medium text-muted-foreground">
         Select a database to embed
       </label>
-      <select
-        ref={selectRef}
-        aria-label="Database source"
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        value=""
-        disabled={options.length === 0}
-        onChange={(event) => {
-          if (event.currentTarget.value) onSelect(event.currentTarget.value)
-        }}
+      <DatabaseSourceDropdown
+        options={options}
+        openOnMount={open}
+        onSelect={onSelect}
       >
-        <option value="" disabled>
-          {options.length === 0 ? 'No databases in this workspace' : 'Choose a database…'}
-        </option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+        <button
+          type="button"
+          aria-label="Database source"
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-3 text-left text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={options.length === 0}
+        >
+          <Table size={16} aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">
+            {options.length === 0 ? 'No databases in this workspace' : 'Choose a database…'}
+          </span>
+          <CaretDown size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </DatabaseSourceDropdown>
     </div>
+  )
+}
+
+function DatabaseEmbedSourceControl({
+  source,
+  documents,
+  onOpen,
+  onSelect
+}: {
+  source: string
+  documents: readonly MigratedEditorDocument[]
+  onOpen: () => void
+  onSelect: (source: string) => void
+}): ReactElement {
+  const options = useMemo(() => databaseSourceOptions(documents), [documents])
+  const sourceDocument = documents.find((document) => (
+    document.kind === 'database' && document.nodePath === source
+  ))
+
+  return (
+    <div
+      className="flex min-w-0 max-w-full items-center gap-0.5"
+      data-database-embed-source="true"
+    >
+      <button
+        type="button"
+        className="inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-sky-600 underline decoration-sky-600 underline-offset-[0.18em] hover:text-sky-700"
+        onClick={onOpen}
+        title={`Open ${sourceDocument?.title ?? source}`}
+      >
+        <Table size={15} weight="bold" className="shrink-0" aria-hidden="true" />
+        <span className="truncate">{sourceDocument?.title ?? source}</span>
+      </button>
+      <DatabaseSourceDropdown options={options} onSelect={onSelect}>
+        <button
+          type="button"
+          aria-label="Change database source"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-sky-600 outline-none hover:bg-accent hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <CaretDown size={13} aria-hidden="true" />
+        </button>
+      </DatabaseSourceDropdown>
+    </div>
+  )
+}
+
+function DatabaseSourceDropdown({
+  options,
+  openOnMount = false,
+  onSelect,
+  children
+}: {
+  options: readonly DatabaseSourceOption[]
+  openOnMount?: boolean
+  onSelect: (source: string) => void
+  children: ReactElement
+}): ReactElement {
+  const [menuOpen, setMenuOpen] = useState(openOnMount && options.length > 0)
+
+  useEffect(() => {
+    if (openOnMount && options.length > 0) setMenuOpen(true)
+  }, [openOnMount, options.length])
+
+  return (
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 min-w-[14rem] max-w-[min(28rem,calc(100vw-2rem))] overflow-y-auto"
+      >
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onSelect={() => onSelect(option.value)}
+          >
+            <Table size={15} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate">{option.label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

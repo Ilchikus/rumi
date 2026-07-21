@@ -26,7 +26,8 @@ properties through the owning database schema.
 - Use one default yellow `==highlight==` mark with no color picker or colored source syntax.
 - Restore block-handle menu background, add-block control, click selection, padding, and marquee behavior.
 - After inserting a database embed, immediately choose its source from the database folders in the
-  current workspace instead of creating an unusable source-less block.
+  current workspace using the styled source menu. Embedded database toolbars show that source as a
+  link to the original database and use the same menu to change it later.
 
 ## Required Coverage
 

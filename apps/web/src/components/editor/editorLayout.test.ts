@@ -42,6 +42,10 @@ describe("editor layout contracts", () => {
       "database-embed-block my-2 w-full min-w-0 max-w-full"
     );
     expect(databaseEmbedNodeView).toContain('aria-label="Database source"');
+    expect(databaseEmbedNodeView).toContain("DropdownMenuContent");
+    expect(databaseEmbedNodeView).toContain('data-database-embed-source="true"');
+    expect(databaseEmbedNodeView).toContain('aria-label="Change database source"');
+    expect(databaseEmbedNodeView).not.toContain("<select");
     expect(databaseEmbedNodeView).toContain("documents={platform.documents}");
     expect(slashCommands).toContain("selectingSource: true");
   });

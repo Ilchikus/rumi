@@ -18,7 +18,8 @@ describe("database table presentation", () => {
       databasePath: "Projects",
       refreshRevision: 0,
       onOpenRecord: () => undefined,
-      onMessage: () => undefined
+      onMessage: () => undefined,
+      toolbarStart: createElement("span", { "data-database-source": "true" }, "Projects")
     }));
     const section = markup.match(/<section[^>]*aria-label="Database records"[^>]*>/u)?.[0] ?? "";
     const scrollFrame = markup.match(/<div[^>]*data-database-table-scroll="true"[^>]*>/u)?.[0] ?? "";
@@ -27,6 +28,7 @@ describe("database table presentation", () => {
     const selectionHeader = markup.match(/<th[^>]*data-database-selection-column="true"[^>]*>/u)?.[0] ?? "";
 
     expect(markup).not.toContain(">Refresh<");
+    expect(markup).toContain('data-database-source="true"');
     expect(section).toContain("w-full min-w-0 max-w-full");
     expect(section).not.toContain("border-y");
     expect(scrollFrame).not.toContain("max-h-");

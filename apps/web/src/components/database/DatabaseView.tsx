@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ReactElement } from "react";
+import type { ChangeEvent, ReactElement, ReactNode } from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
@@ -92,6 +92,7 @@ export interface DatabaseViewProps {
   refreshRevision: number;
   onOpenRecord: (recordPath: string) => void;
   onMessage: (message: string) => void;
+  toolbarStart?: ReactNode;
 }
 
 export function DatabaseView({
@@ -99,7 +100,8 @@ export function DatabaseView({
   databasePath,
   refreshRevision,
   onOpenRecord,
-  onMessage
+  onMessage,
+  toolbarStart
 }: DatabaseViewProps): ReactElement {
   const [result, setResult] = useState<QueryDatabaseResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -699,6 +701,7 @@ export function DatabaseView({
         </div>
       ) : (
         <div className="mb-3 flex flex-wrap items-center gap-2">
+          {toolbarStart}
           <Input
             value={search}
             className="h-8 max-w-xs"

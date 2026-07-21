@@ -7,7 +7,7 @@ import {
 
 afterEach(() => {
   setMigratedEditorPlatform({
-    databaseRefreshRevision: 0,
+    databaseRefreshRevisions: {},
     documentKey: "",
     documents: []
   });
@@ -19,17 +19,17 @@ describe("migrated editor platform updates", () => {
     const unsubscribe = subscribeMigratedEditorPlatform(listener);
 
     setMigratedEditorPlatform({
-      databaseRefreshRevision: 4,
+      databaseRefreshRevisions: { Tasks: 4 },
       documentKey: "Dashboard.md",
       documents: []
     });
 
     expect(listener).toHaveBeenCalledOnce();
-    expect(migratedEditorPlatform().databaseRefreshRevision).toBe(4);
+    expect(migratedEditorPlatform().databaseRefreshRevisions).toEqual({ Tasks: 4 });
 
     unsubscribe();
     setMigratedEditorPlatform({
-      databaseRefreshRevision: 5,
+      databaseRefreshRevisions: { Tasks: 5 },
       documentKey: "Dashboard.md",
       documents: []
     });

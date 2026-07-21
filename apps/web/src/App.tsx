@@ -25,6 +25,11 @@ import type {
 } from "./components/editor/RumiBlockEditor";
 import { DatabaseView } from "./components/database/DatabaseView";
 import {
+  bumpDatabaseRefreshRevision,
+  databaseRefreshRevisionFor
+} from "./components/database/databaseRefresh";
+import type { DatabaseRefreshRevisions } from "./components/database/databaseRefresh";
+import {
   addDatabasePropertyToPrimaryView,
   databasePropertyDefinition
 } from "./components/database/databaseSchema";
@@ -112,7 +117,7 @@ export function App(): ReactElement {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
   const [editorRevision, setEditorRevision] = useState(0);
-  const [databaseRefreshRevision, setDatabaseRefreshRevision] = useState(0);
+  const [databaseRefreshRevisions, setDatabaseRefreshRevisions] = useState<DatabaseRefreshRevisions>({});
   const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
@@ -1185,7 +1190,6 @@ export function App(): ReactElement {
           setSaveState("dirty");
         }
 
-        void loadTree();
         return true;
       } catch (error) {
         if (pageRef.current?.path === savingPage.path) {
@@ -1201,7 +1205,7 @@ export function App(): ReactElement {
 
     saveInFlightRef.current = task;
     return task;
-  }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, loadTree]);
+  }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody]);
 
   const convertNode = useCallback(async (node: WorkspaceNode): Promise<boolean> => {
     if (node.kind !== "folder" && node.kind !== "database") return false;
@@ -1616,7 +1620,9 @@ export function App(): ReactElement {
       }
 
       forgetCachedPage(event.path);
-      void loadTree();
+      if (event.affects?.includes("tree")) {
+        void loadTree();
+      }
 
       const currentPage = pageRef.current;
 
@@ -1791,7 +1797,9 @@ export function App(): ReactElement {
       }
 
       if (event.name === "database.recordsChanged" || event.name === "database.schemaChanged") {
-        setDatabaseRefreshRevision((current) => current + 1);
+        setDatabaseRefreshRevisions((current) =>
+          bumpDatabaseRefreshRevision(current, event.path)
+        );
       }
 
       if (
@@ -1955,7 +1963,10 @@ export function App(): ReactElement {
                   <DatabaseView
                     api={api}
                     databasePath={parentPathForPage(page.path)}
-                    refreshRevision={databaseRefreshRevision}
+                    refreshRevision={databaseRefreshRevisionFor(
+                      databaseRefreshRevisions,
+                      parentPathForPage(page.path)
+                    )}
                     onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
                     onMessage={setMessage}
                   />
@@ -1994,7 +2005,7 @@ export function App(): ReactElement {
                   <RumiBlockEditor
                     ref={editorRef}
                     api={api}
-                    databaseRefreshRevision={databaseRefreshRevision}
+                    databaseRefreshRevisions={databaseRefreshRevisions}
                     documentKey={page.path}
                     markdown={draftBody}
                     documents={editorDocuments}

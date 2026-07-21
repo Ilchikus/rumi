@@ -1,6 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
+import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh"
 import { cn } from "../../../lib/utils"
 import type { Node as ProseMirrorNode } from "prosemirror-model"
 import { EditorState, TextSelection } from "prosemirror-state"
@@ -54,7 +55,7 @@ export interface RumiDocumentLink {
 
 export interface RumiBlockEditorProps {
   api?: RumiApiClient
-  databaseRefreshRevision?: number
+  databaseRefreshRevisions?: DatabaseRefreshRevisions
   documentKey: string
   markdown: string
   documents?: readonly RumiDocumentLink[]
@@ -68,7 +69,7 @@ export const ProseMirrorEditor = forwardRef<RumiBlockEditorHandle, RumiBlockEdit
 function ProseMirrorEditor(
   {
     api,
-    databaseRefreshRevision = 0,
+    databaseRefreshRevisions = {},
     documentKey,
     markdown,
     documents = [],
@@ -107,7 +108,7 @@ function ProseMirrorEditor(
   useEffect(() => {
     setMigratedEditorPlatform({
       api,
-      databaseRefreshRevision,
+      databaseRefreshRevisions,
       documentKey,
       documents,
       openDocument: onOpenDocument,
@@ -116,7 +117,7 @@ function ProseMirrorEditor(
     })
   }, [
     api,
-    databaseRefreshRevision,
+    databaseRefreshRevisions,
     documentKey,
     documents,
     onMessage,

@@ -117,8 +117,13 @@ export function DatabaseView({
   const [moveTree, setMoveTree] = useState<WorkspaceNode | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [visibleRecordLimit, setVisibleRecordLimit] = useState(DATABASE_RECORD_BATCH_SIZE);
+  const activeLoadRequestRef = useRef(0);
+  const activeDatabasePathRef = useRef(databasePath);
+  activeDatabasePathRef.current = databasePath;
 
   const load = useCallback(async () => {
+    const requestId = activeLoadRequestRef.current + 1;
+    activeLoadRequestRef.current = requestId;
     setLoading(true);
 
     try {
@@ -137,11 +142,26 @@ export function DatabaseView({
           : {}),
         ...(sorts.length > 0 ? { sorts } : {})
       });
-      setResult(nextResult);
+      if (
+        activeLoadRequestRef.current === requestId &&
+        activeDatabasePathRef.current === databasePath
+      ) {
+        setResult(nextResult);
+      }
     } catch (error) {
-      onMessage(errorMessage(error));
+      if (
+        activeLoadRequestRef.current === requestId &&
+        activeDatabasePathRef.current === databasePath
+      ) {
+        onMessage(errorMessage(error));
+      }
     } finally {
-      setLoading(false);
+      if (
+        activeLoadRequestRef.current === requestId &&
+        activeDatabasePathRef.current === databasePath
+      ) {
+        setLoading(false);
+      }
     }
   }, [api, databasePath, onMessage, search, sorts]);
 
@@ -658,7 +678,11 @@ export function DatabaseView({
   }, []);
 
   return (
-    <section className="mt-8 w-full min-w-0 max-w-full" aria-label="Database records">
+    <section
+      className="mt-8 w-full min-w-0 max-w-full"
+      aria-label="Database records"
+      aria-busy={loading}
+    >
       {selectedRecords.length > 0 ? (
         <div
           className="mb-3 flex min-h-8 flex-wrap items-center gap-1 rounded-md bg-muted/70 px-2 py-1"
@@ -820,7 +844,7 @@ export function DatabaseView({
           </tbody>
         </table>
 
-        {!loading && result?.records.length === 0 && (
+        {result?.records.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             {search ? "No records match this filter." : "No records yet. Create the first one."}
           </div>
@@ -830,7 +854,7 @@ export function DatabaseView({
         )}
       </div>
 
-      {!loading && hasMoreRecords && (
+      {hasMoreRecords && (
         <div className="mt-3 flex justify-center" data-database-load-more="true">
           <Button
             type="button"

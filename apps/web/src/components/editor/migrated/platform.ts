@@ -1,4 +1,5 @@
 import type { RumiApiClient } from "@rumi/api-client";
+import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh";
 
 export interface MigratedEditorDocument {
   path: string;
@@ -9,7 +10,7 @@ export interface MigratedEditorDocument {
 
 export interface MigratedEditorPlatform {
   api?: RumiApiClient | undefined;
-  databaseRefreshRevision: number;
+  databaseRefreshRevisions: DatabaseRefreshRevisions;
   documentKey: string;
   documents: readonly MigratedEditorDocument[];
   openDocument?: ((path: string) => void) | undefined;
@@ -18,7 +19,7 @@ export interface MigratedEditorPlatform {
 }
 
 let currentPlatform: MigratedEditorPlatform = {
-  databaseRefreshRevision: 0,
+  databaseRefreshRevisions: {},
   documentKey: "",
   documents: []
 };

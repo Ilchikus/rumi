@@ -14,6 +14,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { CaretDown } from '@phosphor-icons/react/dist/csr/CaretDown'
 import { Table } from '@phosphor-icons/react/dist/csr/Table'
 import { DatabaseView } from '../../../database/DatabaseView'
+import { databaseRefreshRevisionFor } from '../../../database/databaseRefresh'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +31,9 @@ export interface DatabaseSourceOption {
   label: string
   value: string
 }
+
+const ignoreDatabaseOpen = () => undefined
+const ignoreDatabaseMessage = () => undefined
 
 export function databaseSourceOptions(
   documents: readonly MigratedEditorDocument[]
@@ -80,9 +84,12 @@ export function databaseEmbedNodeView(
         key={source}
         api={platform.api}
         databasePath={source}
-        refreshRevision={platform.databaseRefreshRevision}
-        onOpenRecord={(path) => platform.openDocument?.(path)}
-        onMessage={(message) => platform.onMessage?.(message)}
+        refreshRevision={databaseRefreshRevisionFor(
+          platform.databaseRefreshRevisions,
+          source
+        )}
+        onOpenRecord={platform.openDocument ?? ignoreDatabaseOpen}
+        onMessage={platform.onMessage ?? ignoreDatabaseMessage}
         toolbarStart={(
           <DatabaseEmbedSourceControl
             source={source}

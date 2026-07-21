@@ -10,6 +10,10 @@ import {
   databaseRecordMoveDestinations,
   databaseRecordsForDisplay
 } from "./DatabaseView";
+import {
+  bumpDatabaseRefreshRevision,
+  databaseRefreshRevisionFor
+} from "./databaseRefresh";
 
 describe("database table presentation", () => {
   it("uses a borderless, unrestricted-height horizontal scroll frame without a manual refresh action", () => {
@@ -59,6 +63,17 @@ describe("database table presentation", () => {
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE)).toEqual(records.slice(0, 20));
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 2)).toEqual(records.slice(0, 40));
     expect(databaseRecordsForDisplay(records, DATABASE_RECORD_BATCH_SIZE * 3)).toEqual(records);
+  });
+
+  it("refreshes only the database named by an event", () => {
+    const tasksChanged = bumpDatabaseRefreshRevision({}, "Tasks");
+    const decisionsChanged = bumpDatabaseRefreshRevision(tasksChanged, "Decisions");
+
+    expect(databaseRefreshRevisionFor(tasksChanged, "Tasks")).toBe(1);
+    expect(databaseRefreshRevisionFor(tasksChanged, "Decisions")).toBe(0);
+    expect(databaseRefreshRevisionFor(decisionsChanged, "Tasks")).toBe(1);
+    expect(databaseRefreshRevisionFor(decisionsChanged, "Decisions")).toBe(1);
+    expect(databaseRefreshRevisionFor(bumpDatabaseRefreshRevision(decisionsChanged), "Tasks")).toBe(2);
   });
 
   it("offers workspace containers as move destinations and marks the current database", () => {

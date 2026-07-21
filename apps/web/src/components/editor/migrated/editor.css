@@ -278,6 +278,22 @@
   overscroll-behavior: contain;
 }
 
+/* Database views are full-width editor blocks. Their shared table frame owns
+   horizontal overflow while the view itself grows vertically via Load more. */
+.prosemirror-editor .ProseMirror > .database-embed-block {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.prosemirror-editor .database-embed-block > section,
+.prosemirror-editor .database-embed-block [data-database-table-scroll="true"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .prosemirror-editor .ProseMirror table {
   border-collapse: collapse;
   margin: 0;

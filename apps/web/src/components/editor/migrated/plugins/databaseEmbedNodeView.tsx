@@ -18,7 +18,8 @@ export function databaseEmbedNodeView(
   getPos: (() => number | undefined) | boolean
 ): NodeView {
   const dom = document.createElement('div')
-  dom.className = 'database-embed-block my-2'
+  dom.className = 'database-embed-block my-2 w-full min-w-0 max-w-full'
+  dom.dataset.databaseEmbed = 'true'
   dom.setAttribute('contenteditable', 'false')
 
   let root: Root | null = null

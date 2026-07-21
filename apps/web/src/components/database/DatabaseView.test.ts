@@ -21,6 +21,7 @@ describe("database table presentation", () => {
     }));
     const section = markup.match(/<section[^>]*aria-label="Database records"[^>]*>/u)?.[0] ?? "";
     const scrollFrame = markup.match(/<div[^>]*data-database-table-scroll="true"[^>]*>/u)?.[0] ?? "";
+    const table = markup.match(/<table[^>]*>/u)?.[0] ?? "";
     const tableHeader = markup.match(/<thead[^>]*>/u)?.[0] ?? "";
     const selectionHeader = markup.match(/<th[^>]*data-database-selection-column="true"[^>]*>/u)?.[0] ?? "";
 
@@ -29,8 +30,11 @@ describe("database table presentation", () => {
     expect(section).not.toContain("border-y");
     expect(scrollFrame).not.toContain("max-h-");
     expect(scrollFrame).toContain("overflow-x-auto");
+    expect(scrollFrame).toContain("overflow-y-hidden");
     expect(scrollFrame).not.toContain("rounded-md");
     expect(scrollFrame).not.toContain("border-border");
+    expect(table).toContain("w-max");
+    expect(table).toContain("min-w-[max(100%,620px)]");
     expect(tableHeader).toContain("sticky top-0 z-10");
     expect(tableHeader).toContain("bg-muted");
     expect(selectionHeader).not.toContain("border-r");

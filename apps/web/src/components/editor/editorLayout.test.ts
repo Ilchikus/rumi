@@ -6,6 +6,10 @@ const mentionPlugin = readFileSync(
   new URL("./migrated/plugins/atMention.ts", import.meta.url),
   "utf8"
 );
+const databaseEmbedNodeView = readFileSync(
+  new URL("./migrated/plugins/databaseEmbedNodeView.tsx", import.meta.url),
+  "utf8"
+);
 
 describe("editor layout contracts", () => {
   it("keeps oversized tables inside a two-axis scrolling content-width wrapper", () => {
@@ -19,6 +23,20 @@ describe("editor layout contracts", () => {
     expect(wrapperRule).toContain("max-height: min(60vh, 36rem);");
     expect(wrapperRule).toContain("overflow: auto;");
     expect(wrapperRule).toContain("overscroll-behavior: contain;");
+  });
+
+  it("constrains embedded database views to editor width before their table scrolls", () => {
+    const embedRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror > .database-embed-block"
+    );
+
+    expect(embedRule).toContain("width: 100%;");
+    expect(embedRule).toContain("min-width: 0;");
+    expect(embedRule).toContain("max-width: 100%;");
+    expect(databaseEmbedNodeView).toContain(
+      "database-embed-block my-2 w-full min-w-0 max-w-full"
+    );
   });
 
   it("uses Tailwind sky 600 for checked task boxes", () => {

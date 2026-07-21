@@ -715,10 +715,10 @@ export function DatabaseView({
       )}
 
       <div
-        className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
+        className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain"
         data-database-table-scroll="true"
       >
-        <table className="w-full min-w-[620px] border-collapse text-sm">
+        <table className="w-max min-w-[max(100%,620px)] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-muted text-left text-xs font-medium text-muted-foreground">
             <tr>
               <th

@@ -383,13 +383,9 @@ function filterFiles(files: FileItem[], query: string): FileItem[] {
 }
 
 function insertFileLink(view: EditorView, file: FileItem, range: { from: number; to: number }, schema: Schema) {
-  const linkMark = schema.marks.link
-  const displayName = file.name.replace(/\.md$/, "")
-
   // Delete the @ and query, insert link
   let tr = view.state.tr.delete(range.from, view.state.selection.from)
-  const linkText = schema.text(displayName, [linkMark.create({ href: file.path })])
-  tr = tr.insert(range.from, linkText)
+  tr = tr.insert(range.from, createMentionLinkText(schema, file))
 
   // Close the menu
   tr = tr.setMeta(atMentionPluginKey, {
@@ -401,6 +397,13 @@ function insertFileLink(view: EditorView, file: FileItem, range: { from: number;
 
   view.dispatch(tr)
   view.focus()
+}
+
+export function createMentionLinkText(schema: Schema, file: FileItem) {
+  const displayName = file.name.replace(/\.md$/, "")
+  return schema.text(`@${displayName}`, [
+    schema.marks.link.create({ href: file.path, mention: true })
+  ])
 }
 
 function highlightMatch(text: string, query: string): string {

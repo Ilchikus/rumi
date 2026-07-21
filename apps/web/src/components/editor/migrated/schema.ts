@@ -416,17 +416,30 @@ const marks: { [key: string]: MarkSpec } = {
   link: {
     attrs: {
       href: {},
-      title: { default: null }
+      title: { default: null },
+      mention: { default: false }
     },
     inclusive: false,
     parseDOM: [{
       tag: "a[href]",
       getAttrs(dom: HTMLElement) {
-        return { href: dom.getAttribute("href"), title: dom.getAttribute("title") }
+        return {
+          href: dom.getAttribute("href"),
+          title: dom.getAttribute("title"),
+          mention: dom.dataset.mention === "true" || dom.textContent?.startsWith("@") === true
+        }
       }
     }],
     toDOM(node) {
-      return ["a", { href: node.attrs.href, title: node.attrs.title }, 0]
+      return [
+        "a",
+        {
+          href: node.attrs.href,
+          title: node.attrs.title,
+          ...(node.attrs.mention ? { "data-mention": "true" } : {})
+        },
+        0
+      ]
     }
   }
 }

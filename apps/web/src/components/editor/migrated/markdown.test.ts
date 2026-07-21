@@ -41,6 +41,20 @@ describe("live editor Markdown round trips", () => {
     expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
   })
 
+  it("preserves the at-sign and mention identity across Markdown round trips", () => {
+    const markdown = "Ask [@Inner notes](<test folder/inner.index.md>) for context.\n"
+    const parsed = parseMarkdown(markdown, schema)
+    const linkedText = parsed.firstChild?.content.content.find((node) => node.text === "@Inner notes")
+    const link = linkedText?.marks.find((mark) => mark.type.name === "link")
+
+    expect(link?.attrs).toMatchObject({
+      href: "test folder/inner.index.md",
+      mention: true
+    })
+    expect(serializeMarkdown(parsed)).toBe(markdown)
+    expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
   it("preserves underline and one canonical yellow highlight mark", () => {
     const markdown = [
       "Before __underlined__ ==highlighted== ==green::green highlight== and --legacy strike-- after.",

@@ -419,7 +419,7 @@ function convertInlineContent(
 }
 
 type MarkName = "bold" | "italic" | "underline" | "strikethrough" | "code" | "link" | "highlight"
-type MarkAttrs = { href?: string; title?: string | null }
+type MarkAttrs = { href?: string; title?: string | null; mention?: boolean }
 
 function parseCustomMarkTag(html: string): {
   closing: boolean
@@ -464,7 +464,14 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
     case "link":
       return convertInlineContent(node.children, schema, [
         ...marks,
-        { name: "link", attrs: { href: node.url, title: node.title } }
+        {
+          name: "link",
+          attrs: {
+            href: node.url,
+            title: node.title,
+            mention: inlineMarkdownText(node.children).startsWith("@")
+          }
+        }
       ])
 
     case "html":
@@ -486,6 +493,16 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
       }
       return []
   }
+}
+
+function inlineMarkdownText(nodes: MdastPhrasingContent[]): string {
+  return nodes.map((node) => {
+    if ("value" in node && typeof node.value === "string") return node.value
+    if ("children" in node && Array.isArray(node.children)) {
+      return inlineMarkdownText(node.children as MdastPhrasingContent[])
+    }
+    return ""
+  }).join("")
 }
 
 function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ name: MarkName; attrs?: MarkAttrs }> = []): ProseMirrorNode[] {

@@ -447,13 +447,18 @@
 
 /* Links */
 .prosemirror-editor .ProseMirror a {
-  color: hsl(222.2 47.4% 41.2%);
+  color: #0284c7;
   text-decoration: underline;
+  text-underline-offset: 0.18em;
   cursor: pointer;
 }
 
 .prosemirror-editor .ProseMirror a:hover {
-  color: hsl(222.2 47.4% 31.2%);
+  color: #0369a1;
+}
+
+.prosemirror-editor .ProseMirror a[data-mention="true"] {
+  font-weight: 500;
 }
 
 .prosemirror-editor.rumi-native-context-link .ProseMirror a {

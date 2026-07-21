@@ -30,6 +30,18 @@ describe("editor layout contracts", () => {
     expect(nestedTaskRule).toContain("accent-color: #0284c7;");
     expect(flatTaskRule).toContain("accent-color: #0284c7;");
   });
+
+  it("uses sky 600 links and medium-weight mention links", () => {
+    const linkRule = cssRule(editorStyles, ".prosemirror-editor .ProseMirror a");
+    const mentionRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror a[data-mention="true"]'
+    );
+
+    expect(linkRule).toContain("color: #0284c7;");
+    expect(linkRule).toContain("text-decoration: underline;");
+    expect(mentionRule).toContain("font-weight: 500;");
+  });
 });
 
 function cssRule(styles: string, selector: string): string {

@@ -34,6 +34,9 @@ describe("workspace format", () => {
     expect(classifyFilePath("node_modules/react/index.js")).toBe("internal");
     expect(isHiddenFromTree(".rumi/index.json")).toBe(true);
     expect(isHiddenFromTree(".assets/photo.jpg")).toBe(true);
+    expect(isHiddenFromTree(".DS_Store")).toBe(true);
+    expect(isHiddenFromTree("Notes/.DS_Store")).toBe(true);
+    expect(isHiddenFromTree("Notes/.private/Page.md")).toBe(true);
     expect(isHiddenFromTree("node_modules/react/index.js")).toBe(true);
     expect(isHiddenFromTree("package.json")).toBe(true);
     expect(isHiddenFromTree("package-lock.json")).toBe(true);

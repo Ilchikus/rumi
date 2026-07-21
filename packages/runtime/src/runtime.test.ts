@@ -63,6 +63,8 @@ describe("WorkspaceRuntime", () => {
     await fs.writeFile(path.join(root, "Projects", "Projects.index.md"), "# Projects", "utf8");
     await fs.writeFile(path.join(root, "Projects", "Idea.md"), "# Idea", "utf8");
     await fs.writeFile(path.join(root, ".rumi", "index.json"), "", "utf8");
+    await fs.writeFile(path.join(root, ".DS_Store"), "macOS metadata", "utf8");
+    await fs.writeFile(path.join(root, "Projects", ".DS_Store"), "macOS metadata", "utf8");
     await fs.writeFile(path.join(root, "package.json"), "{}", "utf8");
     await fs.writeFile(path.join(root, "package-lock.json"), "{}", "utf8");
 

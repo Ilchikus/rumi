@@ -120,6 +120,7 @@ export function isInternalPath(relPath: string): boolean {
 export function isHiddenFromTree(relPath: string): boolean {
   const segments = splitWorkspacePath(relPath);
   return (
+    segments.some((segment) => segment.startsWith(".")) ||
     segments.some((segment) => TREE_HIDDEN_SEGMENTS.has(segment)) ||
     TREE_HIDDEN_FILES.has(segments.at(-1) ?? "")
   );

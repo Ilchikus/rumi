@@ -534,6 +534,50 @@ describe("Rumi server API", () => {
     await server.close();
   });
 
+  it("converts containers through the domain API", async () => {
+    const root = await tempWorkspace();
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    await server.inject({
+      method: "POST",
+      url: "/api/folders",
+      payload: { parentPath: "", name: "Projects" }
+    });
+    await server.inject({
+      method: "POST",
+      url: "/api/pages",
+      payload: { parentPath: "Projects", name: "Alpha", frontmatter: { status: "ready" } }
+    });
+    const toDatabase = await server.inject({
+      method: "POST",
+      url: "/api/nodes/convert",
+      payload: { path: "Projects", targetKind: "database" }
+    });
+    expect(toDatabase.statusCode).toBe(200);
+
+    const query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Projects" }
+    });
+    expect(query.statusCode).toBe(200);
+    expect(query.json()).toMatchObject({
+      schema: { properties: { status: { type: "text" } } },
+      records: [{ path: "Projects/Alpha.md", frontmatter: { status: "ready" } }]
+    });
+
+    const toFolder = await server.inject({
+      method: "POST",
+      url: "/api/nodes/convert",
+      payload: { path: "Projects", targetKind: "folder" }
+    });
+    expect(toFolder.statusCode).toBe(200);
+    const page = await server.inject({ method: "GET", url: "/api/page?path=Projects" });
+    expect(page.json()).toMatchObject({ kind: "folder", path: "Projects/Projects.index.md" });
+
+    await server.close();
+  });
+
   it("creates, reads, and restores Rumi-owned revisions through HTTP", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "History.md"), "# Original", "utf8");

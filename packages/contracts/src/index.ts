@@ -112,6 +112,11 @@ export interface CreateDatabaseRequest {
   markdownBody?: string;
 }
 
+export interface ConvertContainerRequest {
+  path: string;
+  targetKind: "folder" | "database";
+}
+
 export interface CreateDatabaseRecordRequest {
   databasePath: string;
   name?: string;
@@ -351,6 +356,8 @@ export type RevisionReason =
   | "baseline"
   | "idle-checkpoint"
   | "manual-checkpoint"
+  | "before-container-conversion"
+  | "container-conversion"
   | "before-reference-repair"
   | "before-delete"
   | "before-restore"

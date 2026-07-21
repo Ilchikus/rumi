@@ -1203,6 +1203,57 @@ export function App(): ReactElement {
     return task;
   }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, loadTree]);
 
+  const convertNode = useCallback(async (node: WorkspaceNode): Promise<boolean> => {
+    if (node.kind !== "folder" && node.kind !== "database") return false;
+
+    const currentSelection = selectionRef.current;
+    const selectedInsideContainer = Boolean(
+      currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)
+    );
+
+    if (selectedInsideContainer && saveStateRef.current === "dirty") {
+      const saved = await savePage();
+      if (!saved) return false;
+    }
+
+    try {
+      await api.convertContainer({
+        path: node.path,
+        targetKind: node.kind === "folder" ? "database" : "folder"
+      });
+      clearPageLoadCache();
+      await loadTree();
+
+      if (currentSelection && selectedInsideContainer) {
+        const nextOpenTarget = currentSelection.nodePath === node.path
+          ? node.path
+          : currentSelection.openPath;
+
+        if (nextOpenTarget) {
+          const nextPage = await loadPage(nextOpenTarget);
+          pendingHistoryActionRef.current = "replace";
+          setPage(nextPage);
+          setDraftBody(nextPage.markdownBody);
+          setSelection({
+            nodePath: currentSelection.nodePath,
+            openPath: nextPage.path,
+            kind: currentSelection.nodePath === node.path
+              ? node.kind === "folder" ? "database" : "folder"
+              : pageKindToNodeKind(nextPage.kind)
+          });
+          setSaveState("idle");
+        }
+      }
+
+      setMessage("");
+      return true;
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setSaveState("error");
+      return false;
+    }
+  }, [api, clearPageLoadCache, loadPage, loadTree, savePage]);
+
   const renameOpenPage = useCallback(async (requestedTitle: string): Promise<boolean> => {
     const currentPage = pageRef.current;
     const currentSelection = selectionRef.current;
@@ -1795,6 +1846,7 @@ export function App(): ReactElement {
             onCreateDatabase={createDatabase}
             onRenameNode={renameNode}
             onMoveNode={moveNode}
+            onConvertNode={convertNode}
             onDeleteNode={deleteNode}
             onOpenTrash={openTrash}
           />

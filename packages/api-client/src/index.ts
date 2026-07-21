@@ -3,6 +3,7 @@ import type {
   AuthSessionResult,
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
+  ConvertContainerRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
@@ -157,6 +158,14 @@ export class RumiApiClient {
 
   async createDatabase(request: CreateDatabaseRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/databases", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async convertContainer(request: ConvertContainerRequest): Promise<WorkspaceMutationResult> {
+    return this.request<WorkspaceMutationResult>("/api/nodes/convert", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

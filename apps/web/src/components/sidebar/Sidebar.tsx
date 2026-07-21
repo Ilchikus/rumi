@@ -68,6 +68,7 @@ interface SidebarProps {
   onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
+  onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
   onOpenTrash: () => void;
 }
@@ -114,6 +115,7 @@ export function Sidebar({
   onCreateDatabase,
   onRenameNode,
   onMoveNode,
+  onConvertNode,
   onDeleteNode,
   onOpenTrash
 }: SidebarProps): ReactElement {
@@ -124,6 +126,8 @@ export function Sidebar({
   const [floatingMenu, setFloatingMenu] = useState<FloatingMenu | null>(null);
   const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
   const [moveBusy, setMoveBusy] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<WorkspaceNode | null>(null);
+  const [convertBusy, setConvertBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceNode | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
@@ -184,6 +188,13 @@ export function Sidebar({
     setMoveTarget(node);
   }, []);
 
+  const requestConvert = useCallback((node: WorkspaceNode) => {
+    setFloatingMenu(null);
+    setCreateTarget(null);
+    setRenamingPath(null);
+    setConvertTarget(node);
+  }, []);
+
   const confirmMove = useCallback(async (newParentPath: string) => {
     if (!moveTarget || moveBusy) {
       return;
@@ -213,6 +224,18 @@ export function Sidebar({
       setDeleteBusy(false);
     }
   }, [deleteBusy, deleteTarget, onDeleteNode]);
+
+  const confirmConvert = useCallback(async () => {
+    if (!convertTarget || convertBusy) return;
+
+    setConvertBusy(true);
+    try {
+      const converted = await onConvertNode(convertTarget);
+      if (converted) setConvertTarget(null);
+    } finally {
+      setConvertBusy(false);
+    }
+  }, [convertBusy, convertTarget, onConvertNode]);
 
   const toggleExpanded = useCallback((path: string) => {
     setExpandedPaths((current) => {
@@ -308,6 +331,7 @@ export function Sidebar({
                 onStartRename={startRename}
                 onRenameNode={onRenameNode}
                 onMoveNode={requestMove}
+                onConvertNode={requestConvert}
                 onDeleteNode={requestDelete}
                 onCancelRename={() => setRenamingPath(null)}
                 onCancelCreate={() => setCreateTarget(null)}
@@ -356,6 +380,7 @@ export function Sidebar({
           onCreate={startCreate}
           onRename={startRename}
           onMove={requestMove}
+          onConvert={requestConvert}
           onDelete={requestDelete}
         />
       )}
@@ -382,6 +407,15 @@ export function Sidebar({
         }}
         onConfirm={confirmDelete}
       />
+
+      <ConvertNodeDialog
+        node={convertTarget}
+        busy={convertBusy}
+        onOpenChange={(open) => {
+          if (!open && !convertBusy) setConvertTarget(null);
+        }}
+        onConfirm={confirmConvert}
+      />
     </aside>
   );
 }
@@ -400,6 +434,7 @@ interface TreeNodeProps {
   onStartRename: (node: WorkspaceNode) => void;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode) => void;
+  onConvertNode: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => void;
   onCancelRename: () => void;
   onCancelCreate: () => void;
@@ -423,6 +458,7 @@ function TreeNode({
   onStartRename,
   onRenameNode,
   onMoveNode,
+  onConvertNode,
   onDeleteNode,
   onCancelRename,
   onCancelCreate,
@@ -516,6 +552,7 @@ function TreeNode({
           onCreate={onStartCreate}
           onRename={onStartRename}
           onMove={onMoveNode}
+          onConvert={onConvertNode}
           onDelete={onDeleteNode}
         />
       </div>
@@ -553,6 +590,7 @@ function TreeNode({
               onStartRename={onStartRename}
               onRenameNode={onRenameNode}
               onMoveNode={onMoveNode}
+              onConvertNode={onConvertNode}
               onDeleteNode={onDeleteNode}
               onCancelRename={onCancelRename}
               onCancelCreate={onCancelCreate}
@@ -573,12 +611,14 @@ function NodeMenu({
   onCreate,
   onRename,
   onMove,
+  onConvert,
   onDelete
 }: {
   node: WorkspaceNode;
   onCreate: (parentPath: string, kind: CreateKind) => void;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
+  onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   return (
@@ -601,6 +641,7 @@ function NodeMenu({
           onCreate={onCreate}
           onRename={onRename}
           onMove={onMove}
+          onConvert={onConvert}
           onDelete={onDelete}
         />
       </DropdownMenuContent>
@@ -640,6 +681,7 @@ function FloatingSidebarMenu({
   onCreate,
   onRename,
   onMove,
+  onConvert,
   onDelete
 }: {
   menu: FloatingMenu;
@@ -647,6 +689,7 @@ function FloatingSidebarMenu({
   onCreate: (parentPath: string, kind: CreateKind) => void;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
+  onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   return (
@@ -667,6 +710,7 @@ function FloatingSidebarMenu({
             onCreate={onCreate}
             onRename={onRename}
             onMove={onMove}
+            onConvert={onConvert}
             onDelete={onDelete}
           />
         ) : (
@@ -695,12 +739,14 @@ function NodeMenuItems({
   onCreate,
   onRename,
   onMove,
+  onConvert,
   onDelete
 }: {
   node: WorkspaceNode;
   onCreate: (parentPath: string, kind: CreateKind) => void;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
+  onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   const isContainer = isContainerNode(node);
@@ -732,6 +778,12 @@ function NodeMenuItems({
         <ArrowRight size={16} />
         Move
       </DropdownMenuItem>
+      {(node.kind === "folder" || node.kind === "database") && (
+        <DropdownMenuItem onSelect={() => onConvert(node)}>
+          {node.kind === "folder" ? <Table size={16} /> : <Folder size={16} />}
+          {node.kind === "folder" ? "Convert to database" : "Convert to folder"}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(node)}>
         <Trash size={16} />
@@ -897,6 +949,49 @@ export function DeleteNodeDialog({
             }}
           >
             {busy ? "Moving" : "Move to Trash"}
+          </AlertDialogActionButton>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export function ConvertNodeDialog({
+  node,
+  busy,
+  onOpenChange,
+  onConfirm
+}: {
+  node: WorkspaceNode | null;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => Promise<void>;
+}): ReactElement {
+  const toDatabase = node?.kind === "folder";
+
+  return (
+    <AlertDialog open={Boolean(node)} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {toDatabase ? "Convert folder to database" : "Convert database to folder"}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {toDatabase
+              ? "Properties from pages directly inside this folder will be merged into one database schema. Missing properties will be added to every page."
+              : "The database schema will be removed from the folder page. Existing properties on its pages will be kept."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancelButton disabled={busy}>Cancel</AlertDialogCancelButton>
+          <AlertDialogActionButton
+            disabled={busy}
+            onClick={(event) => {
+              event.preventDefault();
+              void onConfirm();
+            }}
+          >
+            {busy ? "Converting" : toDatabase ? "Convert to database" : "Convert to folder"}
           </AlertDialogActionButton>
         </AlertDialogFooter>
       </AlertDialogContent>

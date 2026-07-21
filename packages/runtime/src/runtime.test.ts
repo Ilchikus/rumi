@@ -345,6 +345,141 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.readFile(path.join(root, moved.path), "utf8")).resolves.toBe("Source");
   });
 
+  it("converts folders to databases with a merged schema and back to folders", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createFolder({ parentPath: "", name: "Projects", markdownBody: "Project notes" });
+    const folderPage = await runtime.openPage("Projects");
+    await runtime.savePage({
+      path: folderPage.path,
+      baseVersion: folderPage.version,
+      frontmatter: { summary: "Active work" },
+      markdownBody: folderPage.markdownBody,
+      reason: "api"
+    });
+    await runtime.createPage({
+      parentPath: "Projects",
+      name: "Alpha",
+      frontmatter: {
+        status: "todo",
+        effort: 3,
+        done: true,
+        due: "2026-07-21",
+        tags: ["one", "two"],
+        mixed: 7
+      },
+      markdownBody: "Alpha body"
+    });
+    await runtime.createPage({
+      parentPath: "Projects",
+      name: "Beta",
+      frontmatter: {
+        status: "ready",
+        due: "2026-07-22",
+        tags: ["two"],
+        mixed: "seven"
+      },
+      markdownBody: "Beta body"
+    });
+    await runtime.createFolder({ parentPath: "Projects", name: "Nested" });
+    await runtime.createPage({
+      parentPath: "Projects/Nested",
+      name: "Child",
+      frontmatter: { nestedOnly: true }
+    });
+
+    const converted = await runtime.convertContainer({ path: "Projects", targetKind: "database" });
+    expect(converted.events.map((event) => event.name)).toEqual(
+      expect.arrayContaining([
+        "page.moved",
+        "database.schemaChanged",
+        "database.recordsChanged",
+        "workspace.treeChanged"
+      ])
+    );
+    await expect(fs.stat(path.join(root, "Projects", "Projects.index.md"))).rejects.toThrow();
+    await expect(fs.stat(path.join(root, "Projects", "Projects.db.md"))).resolves.toBeDefined();
+
+    const tree = await runtime.getTree();
+    expect(tree.children?.find((node) => node.path === "Projects")).toMatchObject({
+      kind: "database",
+      companionPath: "Projects/Projects.db.md"
+    });
+    const databasePage = await runtime.openPage("Projects");
+    expect(databasePage).toMatchObject({
+      kind: "database",
+      frontmatter: { summary: "Active work", type: "database" },
+      markdownBody: "Project notes"
+    });
+
+    const query = await runtime.queryDatabase({ databasePath: "Projects" });
+    expect(query.schema.properties).toEqual({
+      done: { type: "checkbox" },
+      due: { type: "date" },
+      effort: { type: "number" },
+      mixed: { type: "text" },
+      status: { type: "text" },
+      tags: { type: "multi-select", options: [{ name: "one" }, { name: "two" }] }
+    });
+    expect(query.schema.views[0]?.columns).toEqual([
+      "done",
+      "due",
+      "effort",
+      "mixed",
+      "status",
+      "tags"
+    ]);
+    expect(query.records.find((record) => record.title === "Alpha")?.frontmatter).toEqual({
+      done: true,
+      due: "2026-07-21",
+      effort: 3,
+      mixed: "7",
+      status: "todo",
+      tags: ["one", "two"]
+    });
+    expect(query.records.find((record) => record.title === "Beta")?.frontmatter).toEqual({
+      done: false,
+      due: "2026-07-22",
+      effort: null,
+      mixed: "seven",
+      status: "ready",
+      tags: ["two"]
+    });
+    expect((await runtime.openPage("Projects/Nested/Child.md")).frontmatter).toEqual({
+      nestedOnly: true
+    });
+
+    await runtime.convertContainer({ path: "Projects", targetKind: "folder" });
+    await expect(fs.stat(path.join(root, "Projects", "Projects.db.md"))).rejects.toThrow();
+    const restoredFolderPage = await runtime.openPage("Projects");
+    expect(restoredFolderPage).toMatchObject({
+      kind: "folder",
+      frontmatter: { summary: "Active work" },
+      markdownBody: "Project notes"
+    });
+    expect(restoredFolderPage.frontmatter).not.toHaveProperty("type");
+    expect(restoredFolderPage.frontmatter).not.toHaveProperty("properties");
+    expect(restoredFolderPage.frontmatter).not.toHaveProperty("views");
+  });
+
+  it("rejects invalid container conversions without replacing existing companions", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createFolder({ parentPath: "", name: "Projects" });
+
+    await expect(runtime.convertContainer({ path: "", targetKind: "database" })).rejects.toThrow(
+      /workspace root/
+    );
+    await expect(runtime.convertContainer({ path: "Projects", targetKind: "folder" })).rejects.toThrow(
+      /Database companion does not exist/
+    );
+    await fs.writeFile(path.join(root, "Projects", "Projects.db.md"), "collision", "utf8");
+    await expect(runtime.convertContainer({ path: "Projects", targetKind: "database" })).rejects.toThrow(
+      /already exists/
+    );
+    await expect(fs.readFile(path.join(root, "Projects", "Projects.index.md"), "utf8")).resolves.toBe("");
+  });
+
   it("uses portable sanitized names for create and rename commands", async () => {
     const root = await tempWorkspace();
     const runtime = await WorkspaceRuntime.open({ rootPath: root });

@@ -5,6 +5,7 @@ import path from "node:path";
 import type {
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
+  ConvertContainerRequest,
   DatabasePropertyDefinition,
   DatabasePropertyType,
   CreateDatabasePropertyOptionRequest,
@@ -424,6 +425,181 @@ export class WorkspaceRuntime {
       ]
     };
     this.publishResultEvents(result);
+    return result;
+  }
+
+  async convertContainer(request: ConvertContainerRequest): Promise<WorkspaceMutationResult> {
+    const containerPath = normalizeWorkspacePath(request.path);
+    if (!containerPath) throw new Error("The workspace root cannot be converted");
+    if (request.targetKind !== "folder" && request.targetKind !== "database") {
+      throw new Error(`Unsupported container kind: ${String(request.targetKind)}`);
+    }
+
+    const absoluteContainerPath = this.resolveAbsolutePath(containerPath);
+    const stat = await fs.stat(absoluteContainerPath);
+    if (!stat.isDirectory()) throw new Error(`Container path must be a directory: ${containerPath}`);
+
+    const indexPath = folderIndexPathForDirectory(containerPath);
+    const databasePath = databaseConfigPathForDirectory(containerPath);
+    const sourcePath = request.targetKind === "database" ? indexPath : databasePath;
+    const targetPath = request.targetKind === "database" ? databasePath : indexPath;
+    const sourceContent = await fs.readFile(this.resolveAbsolutePath(sourcePath), "utf8").catch(
+      (error: unknown) => {
+        if (isNodeError(error) && error.code === "ENOENT") {
+          throw new Error(
+            `${request.targetKind === "database" ? "Folder" : "Database"} companion does not exist: ${sourcePath}`
+          );
+        }
+        throw error;
+      }
+    );
+    await failIfExists(this.resolveAbsolutePath(targetPath));
+
+    const parsedSource = parseMarkdownFile(sourceContent);
+    const changedRecords: Array<{
+      path: string;
+      previousContent: string;
+      nextContent: string;
+      contentHash: string;
+    }> = [];
+    let targetContent: string;
+
+    if (request.targetKind === "database") {
+      const records = await this.readDirectContainerPages(containerPath);
+      const properties = inferMergedDatabaseProperties(records.map((record) => record.frontmatter));
+      const propertyNames = Object.keys(properties);
+
+      for (const record of records) {
+        const frontmatter = Object.fromEntries(
+          propertyNames.map((property) => [
+            property,
+            normalizeConvertedDatabaseValue(record.frontmatter[property], properties[property]!.type)
+          ])
+        );
+        const nextContent = serializeMarkdownFile(frontmatter, record.markdownBody);
+        if (nextContent === record.content) continue;
+        changedRecords.push({
+          path: record.path,
+          previousContent: record.content,
+          nextContent,
+          contentHash: hashText(nextContent)
+        });
+      }
+
+      const { type: _type, properties: _properties, views: _views, ...folderFrontmatter } =
+        parsedSource.frontmatter;
+      targetContent = serializeMarkdownFile(
+        {
+          ...folderFrontmatter,
+          type: "database",
+          properties,
+          views: [{ name: "All", type: "table", columns: propertyNames }]
+        },
+        parsedSource.body
+      );
+    } else {
+      const { type: _type, properties: _properties, views: _views, ...folderFrontmatter } =
+        parsedSource.frontmatter;
+      targetContent = serializeMarkdownFile(folderFrontmatter, parsedSource.body);
+    }
+
+    for (const record of changedRecords) {
+      await this.revisions.checkpoint(
+        record.path,
+        record.previousContent,
+        "before-container-conversion",
+        "runtime"
+      );
+    }
+    await this.revisions.checkpoint(sourcePath, sourceContent, "before-container-conversion", "runtime");
+
+    const writtenRecords: typeof changedRecords = [];
+    let companionMoved = false;
+    try {
+      for (const record of changedRecords) {
+        await fs.writeFile(this.resolveAbsolutePath(record.path), record.nextContent, "utf8");
+        writtenRecords.push(record);
+      }
+      await fs.rename(this.resolveAbsolutePath(sourcePath), this.resolveAbsolutePath(targetPath));
+      companionMoved = true;
+      await fs.writeFile(this.resolveAbsolutePath(targetPath), targetContent, "utf8");
+    } catch (error) {
+      await Promise.allSettled(
+        writtenRecords.map((record) =>
+          fs.writeFile(this.resolveAbsolutePath(record.path), record.previousContent, "utf8")
+        )
+      );
+      if (companionMoved) {
+        await fs.rename(this.resolveAbsolutePath(targetPath), this.resolveAbsolutePath(sourcePath))
+          .catch(() => undefined);
+        await fs.writeFile(this.resolveAbsolutePath(sourcePath), sourceContent, "utf8")
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+
+    for (const record of changedRecords) {
+      await this.workspaceIndex.indexPath(record.path);
+      await this.revisions.checkpoint(
+        record.path,
+        record.nextContent,
+        "container-conversion",
+        "runtime"
+      );
+    }
+    await this.revisions.move(sourcePath, targetPath);
+    await this.workspaceIndex.movePath(sourcePath, targetPath);
+    await this.revisions.checkpoint(
+      targetPath,
+      targetContent,
+      "container-conversion",
+      "runtime"
+    );
+
+    const contentEvents: RumiEvent[] = changedRecords.map((record) => ({
+      name: "page.changed",
+      path: record.path,
+      changedBy: "container-conversion",
+      version: record.contentHash,
+      contentHash: record.contentHash,
+      affects: ["frontmatter", "database"]
+    }));
+    const result: WorkspaceMutationResult = {
+      status: "ok",
+      path: containerPath,
+      events: [
+        ...contentEvents,
+        {
+          name: "page.moved",
+          path: targetPath,
+          previousPath: sourcePath,
+          affects: ["tree", "links", "search"]
+        },
+        ...(request.targetKind === "database"
+          ? [
+              {
+                name: "database.schemaChanged" as const,
+                path: containerPath,
+                affects: ["tree", "schema", "body"]
+              },
+              {
+                name: "database.recordsChanged" as const,
+                path: containerPath,
+                affects: ["records", "frontmatter"]
+              }
+            ]
+          : [
+              {
+                name: "folder.childrenChanged" as const,
+                path: containerPath,
+                affects: ["tree", "body"]
+              }
+            ]),
+        { name: "workspace.treeChanged", path: containerPath, affects: ["tree"] }
+      ]
+    };
+    this.publishResultEvents(result);
+    this.scheduleReferenceRepair(sourcePath, targetPath);
     return result;
   }
 
@@ -1283,6 +1459,35 @@ export class WorkspaceRuntime {
     };
   }
 
+  private async readDirectContainerPages(containerPath: string): Promise<Array<{
+    path: string;
+    content: string;
+    frontmatter: FrontmatterRecord;
+    markdownBody: string;
+  }>> {
+    const entries = await fs.readdir(this.resolveAbsolutePath(containerPath), {
+      withFileTypes: true
+    });
+    const pagePaths = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => normalizeWorkspacePath(path.posix.join(containerPath, entry.name)))
+      .filter((entryPath) => classifyFilePath(entryPath) === "page")
+      .sort((left, right) => left.localeCompare(right));
+
+    return Promise.all(
+      pagePaths.map(async (pagePath) => {
+        const content = await fs.readFile(this.resolveAbsolutePath(pagePath), "utf8");
+        const parsed = parseMarkdownFile(content);
+        return {
+          path: pagePath,
+          content,
+          frontmatter: parsed.frontmatter,
+          markdownBody: parsed.body
+        };
+      })
+    );
+  }
+
   private async checkpointNodeBeforeDelete(
     relPath: string,
     absolutePath: string,
@@ -1656,6 +1861,58 @@ function convertDatabasePropertyValue(value: unknown, type: DatabasePropertyType
         ? value.filter((item): item is string => typeof item === "string" && Boolean(item))
         : [typeof value === "string" ? value : String(value)];
   }
+}
+
+function inferMergedDatabaseProperties(
+  frontmatters: FrontmatterRecord[]
+): Record<string, DatabasePropertyDefinition> {
+  const propertyNames = [...new Set(frontmatters.flatMap((frontmatter) => Object.keys(frontmatter)))]
+    .sort((left, right) => left.localeCompare(right));
+
+  return Object.fromEntries(
+    propertyNames.map((property) => {
+      const values = frontmatters
+        .map((frontmatter) => frontmatter[property])
+        .filter((value) => value !== undefined && value !== null && value !== "");
+      return [property, inferDatabasePropertyDefinition(values)];
+    })
+  );
+}
+
+function inferDatabasePropertyDefinition(values: unknown[]): DatabasePropertyDefinition {
+  if (values.length === 0) return { type: "text" };
+  if (values.every((value) => typeof value === "boolean")) return { type: "checkbox" };
+  if (values.every((value) => typeof value === "number" && Number.isFinite(value))) {
+    return { type: "number" };
+  }
+  if (
+    values.every(
+      (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    )
+  ) {
+    return { type: "date" };
+  }
+  if (
+    values.every(
+      (value) => Array.isArray(value) && value.every((item) => typeof item === "string")
+    )
+  ) {
+    const optionNames = [...new Set(values.flatMap((value) => value as string[]).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    return {
+      type: "multi-select",
+      options: optionNames.map((name) => ({ name }))
+    };
+  }
+  return { type: "text" };
+}
+
+function normalizeConvertedDatabaseValue(value: unknown, type: DatabasePropertyType): unknown {
+  const converted = convertDatabasePropertyValue(value, type);
+  if (converted !== undefined) return converted;
+  if (type === "checkbox") return false;
+  if (type === "multi-select") return [];
+  return null;
 }
 
 function saveSource(reason: SavePageRequest["reason"]): "editor" | "api" | "cli" | "runtime" {

@@ -8,6 +8,7 @@ import type {
   AuthSessionResult,
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
+  ConvertContainerRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
@@ -494,6 +495,19 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     );
     const result = await runtime.createDatabase(request.body);
     request.log.info({ path: result.path }, "database.create.ok");
+    return result;
+  });
+
+  server.post<{ Body: ConvertContainerRequest }>("/api/nodes/convert", async (request) => {
+    request.log.info(
+      { path: request.body.path, targetKind: request.body.targetKind },
+      "node.convert"
+    );
+    const result = await runtime.convertContainer(request.body);
+    request.log.info(
+      { path: result.path, targetKind: request.body.targetKind },
+      "node.convert.ok"
+    );
     return result;
   });
 

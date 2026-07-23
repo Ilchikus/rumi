@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ReactElement, ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
+import type {
+  ChangeEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+  ReactNode
+} from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
@@ -64,6 +76,13 @@ import {
   addDatabasePropertyToPrimaryView,
   databasePropertyDefinition
 } from "./databaseSchema";
+import {
+  clampDatabaseColumnWidth,
+  databaseColumnWidth,
+  readDatabaseColumnWidths,
+  writeDatabaseColumnWidths,
+  type DatabaseColumnWidths
+} from "./databasePreferences";
 
 const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; label: string }> = [
   { value: "text", label: "Text" },
@@ -75,9 +94,19 @@ const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; labe
 ];
 
 export const DATABASE_RECORD_BATCH_SIZE = 20;
+export const DATABASE_RECORD_NAME_LAYOUT_CLASS =
+  "box-border block min-h-7 w-full min-w-0 break-words whitespace-pre-wrap px-1 py-1 text-left leading-5";
 
 export function databaseColumnWidthClass(property: string): string {
   return property === "title" ? "w-60 min-w-60" : "w-44 min-w-44";
+}
+
+export function databaseColumnStyle(
+  widths: DatabaseColumnWidths,
+  property: string
+): { width: number; minWidth: number; maxWidth: number } {
+  const width = databaseColumnWidth(widths, property);
+  return { width, minWidth: width, maxWidth: width };
 }
 
 export function databaseRecordsForDisplay<T>(
@@ -105,6 +134,7 @@ export function databaseRecordTitleFromPath(recordPath: string): string {
 export interface DatabaseViewProps {
   api: RumiApiClient;
   databasePath: string;
+  preferenceScope?: string;
   refreshRevision: number;
   onOpenRecord: (recordPath: string) => void;
   onMessage: (message: string) => void;
@@ -114,6 +144,7 @@ export interface DatabaseViewProps {
 export function DatabaseView({
   api,
   databasePath,
+  preferenceScope = "",
   refreshRevision,
   onOpenRecord,
   onMessage,
@@ -136,13 +167,22 @@ export function DatabaseView({
   const [recordNameEdit, setRecordNameEdit] = useState<{
     path: string;
     draft: string;
-    focusMode: "end" | "select-all";
   } | null>(null);
   const [renamingRecordPath, setRenamingRecordPath] = useState<string | null>(null);
+  const [columnWidths, setColumnWidths] = useState<DatabaseColumnWidths>(() =>
+    readDatabaseColumnWidths(browserStorage(), preferenceScope, databasePath, "All")
+  );
+  const [resizingColumn, setResizingColumn] = useState<{
+    property: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const activeLoadRequestRef = useRef(0);
   const activeDatabasePathRef = useRef(databasePath);
   const recordMutationRef = useRef(false);
+  const columnWidthsRef = useRef(columnWidths);
   activeDatabasePathRef.current = databasePath;
+  columnWidthsRef.current = columnWidths;
 
   const load = useCallback(async () => {
     const requestId = activeLoadRequestRef.current + 1;
@@ -169,6 +209,15 @@ export function DatabaseView({
         activeLoadRequestRef.current === requestId &&
         activeDatabasePathRef.current === databasePath
       ) {
+        const viewName = nextResult.schema.views[0]?.name ?? "All";
+        const savedColumnWidths = readDatabaseColumnWidths(
+          browserStorage(),
+          preferenceScope,
+          databasePath,
+          viewName
+        );
+        columnWidthsRef.current = savedColumnWidths;
+        setColumnWidths(savedColumnWidths);
         setResult(nextResult);
       }
     } catch (error) {
@@ -186,7 +235,7 @@ export function DatabaseView({
         setLoading(false);
       }
     }
-  }, [api, databasePath, onMessage, search, sorts]);
+  }, [api, databasePath, onMessage, preferenceScope, search, sorts]);
 
   useEffect(() => {
     if (recordMutationRef.current) return;
@@ -232,6 +281,61 @@ export function DatabaseView({
     visibleRecordPaths.length > 0 && visibleRecordPaths.every((path) => selectedRecordPaths.has(path));
   const someVisibleRecordsSelected =
     !allVisibleRecordsSelected && visibleRecordPaths.some((path) => selectedRecordPaths.has(path));
+  const activeViewName = result?.schema.views[0]?.name ?? "All";
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const nextWidth = clampDatabaseColumnWidth(
+        resizingColumn.startWidth + event.clientX - resizingColumn.startX
+      );
+      if (columnWidthsRef.current[resizingColumn.property] === nextWidth) return;
+      const next = {
+        ...columnWidthsRef.current,
+        [resizingColumn.property]: nextWidth
+      };
+      columnWidthsRef.current = next;
+      setColumnWidths(next);
+    };
+    const finishResize = () => {
+      writeDatabaseColumnWidths(
+        browserStorage(),
+        preferenceScope,
+        databasePath,
+        activeViewName,
+        columnWidthsRef.current
+      );
+      setResizingColumn(null);
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+    };
+  }, [activeViewName, databasePath, preferenceScope, resizingColumn]);
+
+  const startColumnResize = useCallback((
+    property: string,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setResizingColumn({
+      property,
+      startX: event.clientX,
+      startWidth: databaseColumnWidth(columnWidthsRef.current, property)
+    });
+  }, []);
 
   useEffect(() => {
     setSelectedRecordPaths((current) => {
@@ -249,6 +353,7 @@ export function DatabaseView({
     setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
     setRecordNameEdit(null);
     setRenamingRecordPath(null);
+    setResizingColumn(null);
   }, [databasePath]);
 
   const toggleRecordSelection = useCallback((recordPath: string) => {
@@ -302,8 +407,7 @@ export function DatabaseView({
       );
       setRecordNameEdit({
         path: created.path,
-        draft: createdRecord.title,
-        focusMode: "select-all"
+        draft: createdRecord.title
       });
     } catch (error) {
       onMessage(errorMessage(error));
@@ -694,6 +798,21 @@ export function DatabaseView({
           return false;
         }
 
+        if (columnWidthsRef.current[property] !== undefined) {
+          const nextColumnWidths = { ...columnWidthsRef.current };
+          nextColumnWidths[normalizedName] = nextColumnWidths[property] as number;
+          delete nextColumnWidths[property];
+          columnWidthsRef.current = nextColumnWidths;
+          setColumnWidths(nextColumnWidths);
+          writeDatabaseColumnWidths(
+            browserStorage(),
+            preferenceScope,
+            databasePath,
+            activeViewName,
+            nextColumnWidths
+          );
+        }
+
         await load();
         return true;
       } catch (error) {
@@ -701,7 +820,7 @@ export function DatabaseView({
         return false;
       }
     },
-    [api, databasePath, load, onMessage, result]
+    [activeViewName, api, databasePath, load, onMessage, preferenceScope, result]
   );
 
   const changePropertyType = useCallback(
@@ -859,15 +978,26 @@ export function DatabaseView({
                   onChange={toggleAllVisibleRecords}
                 />
               </th>
-              <SortableHeader label="Name" property="title" sorts={sorts} onSort={toggleSort} />
+              <SortableHeader
+                label="Name"
+                property="title"
+                width={databaseColumnWidth(columnWidths, "title")}
+                resizing={resizingColumn?.property === "title"}
+                sorts={sorts}
+                onSort={toggleSort}
+                onResizeStart={startColumnResize}
+              />
               {columns.map((column) => (
                 <SortableHeader
                   key={column}
                   label={column}
                   property={column}
+                  width={databaseColumnWidth(columnWidths, column)}
+                  resizing={resizingColumn?.property === column}
                   definition={result?.schema.properties[column]}
                   sorts={sorts}
                   onSort={toggleSort}
+                  onResizeStart={startColumnResize}
                   onRename={(newName) => renameProperty(column, newName)}
                   onChangeType={(type) => changePropertyType(column, type)}
                   onDelete={() => deleteProperty(column)}
@@ -904,15 +1034,17 @@ export function DatabaseView({
                     onChange={() => toggleRecordSelection(record.path)}
                   />
                 </td>
-                <td className="group/name relative w-60 min-w-60 border-b border-border p-1 font-medium">
+                <td
+                  className="group/name relative w-60 min-w-60 border-b border-border p-1 font-medium"
+                  style={databaseColumnStyle(columnWidths, "title")}
+                >
                   <DatabaseRecordNameCell
                     record={record}
                     edit={recordNameEdit?.path === record.path ? recordNameEdit : null}
                     saving={renamingRecordPath === record.path}
                     onStartEditing={() => setRecordNameEdit({
                       path: record.path,
-                      draft: record.title,
-                      focusMode: "end"
+                      draft: record.title
                     })}
                     onChange={(draft) => setRecordNameEdit((current) =>
                       current?.path === record.path ? { ...current, draft } : current
@@ -922,7 +1054,11 @@ export function DatabaseView({
                   />
                 </td>
                 {columns.map((column) => (
-                  <td key={column} className="w-44 min-w-44 border-b border-border px-2 py-1">
+                  <td
+                    key={column}
+                    className="w-44 min-w-44 border-b border-border px-2 py-1"
+                    style={databaseColumnStyle(columnWidths, column)}
+                  >
                     <PropertyCell
                       property={column}
                       definition={result?.schema.properties[column] ?? { type: "text" }}
@@ -1248,18 +1384,24 @@ function displayWorkspaceNodeName(name: string): string {
 function SortableHeader({
   label,
   property,
+  width,
+  resizing,
   definition,
   sorts,
   onSort,
+  onResizeStart,
   onRename,
   onChangeType,
   onDelete
 }: {
   label: string;
   property: string;
+  width: number;
+  resizing: boolean;
   definition?: DatabasePropertyDefinition | undefined;
   sorts: DatabaseSort[];
   onSort: (property: string) => void;
+  onResizeStart: (property: string, event: ReactPointerEvent<HTMLButtonElement>) => void;
   onRename?: ((newName: string) => Promise<boolean>) | undefined;
   onChangeType?: ((type: DatabasePropertyType) => Promise<boolean>) | undefined;
   onDelete?: (() => Promise<boolean>) | undefined;
@@ -1287,9 +1429,10 @@ function SortableHeader({
   return (
     <th
       className={cn(
-        "border-b border-border px-2 py-1.5",
+        "relative border-b border-r border-border px-2 py-1.5",
         databaseColumnWidthClass(property)
       )}
+      style={{ width, minWidth: width, maxWidth: width }}
       onContextMenu={(event) => {
         if (!manageable) return;
         event.preventDefault();
@@ -1323,7 +1466,7 @@ function SortableHeader({
             className="flex min-h-6 w-full items-center gap-1 rounded px-1 text-left hover:bg-background"
             onClick={() => onSort(property)}
           >
-            <span className="truncate">{label}</span>
+            <span className="break-words whitespace-normal">{label}</span>
             {direction === "asc" ? <CaretUp size={12} /> : direction === "desc" ? <CaretDown size={12} /> : null}
           </button>
         )}
@@ -1378,6 +1521,20 @@ function SortableHeader({
           </DropdownMenu>
         )}
       </div>
+      <button
+        type="button"
+        aria-label={`Resize ${label} column`}
+        data-database-column-resizer={property}
+        className={cn(
+          "absolute -right-1 top-0 z-20 h-full w-2 touch-none cursor-col-resize select-none outline-none after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full hover:after:bg-sky-600 focus-visible:after:bg-sky-600",
+          resizing && "after:bg-sky-600"
+        )}
+        onPointerDown={(event) => onResizeStart(property, event)}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      />
     </th>
   );
 }
@@ -1392,35 +1549,45 @@ function DatabaseRecordNameCell({
   onOpen
 }: {
   record: DatabaseRecord;
-  edit: { path: string; draft: string; focusMode: "end" | "select-all" } | null;
+  edit: { path: string; draft: string } | null;
   saving: boolean;
   onStartEditing: () => void;
   onChange: (draft: string) => void;
   onCommit: (draft: string) => void;
   onOpen: () => void;
 }): ReactElement {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const connectInput = useCallback((input: HTMLTextAreaElement | null) => {
+    inputRef.current = input;
+    if (input) resizeTextarea(input);
+  }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!edit) return;
-    const frame = window.requestAnimationFrame(() => {
-      const input = inputRef.current;
-      if (!input) return;
-      input.focus({ preventScroll: true });
-      if (edit.focusMode === "select-all") input.select();
-      else input.setSelectionRange(input.value.length, input.value.length);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [edit?.focusMode, edit?.path]);
+    const input = inputRef.current;
+    if (!input) return;
+    resizeTextarea(input);
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [edit?.path]);
+
+  useLayoutEffect(() => {
+    if (inputRef.current) resizeTextarea(inputRef.current);
+  }, [edit?.draft]);
 
   return (
     <div className="relative min-h-7 w-full pr-7">
       {edit ? (
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={connectInput}
+          rows={1}
+          wrap="soft"
           aria-label={`Rename ${record.title}`}
-          className="h-7 w-full min-w-0 rounded border-0 bg-background px-1 outline-none ring-1 ring-ring"
+          data-database-record-name-editor="true"
+          className={cn(
+            DATABASE_RECORD_NAME_LAYOUT_CLASS,
+            "resize-none overflow-hidden border-0 bg-transparent outline-none"
+          )}
           value={edit.draft}
           disabled={saving}
           onChange={(event) => onChange(event.currentTarget.value)}
@@ -1436,10 +1603,10 @@ function DatabaseRecordNameCell({
         <button
           type="button"
           aria-label={`Edit ${record.title}`}
-          className="flex h-7 w-full min-w-0 items-center rounded px-1 text-left hover:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className={cn(DATABASE_RECORD_NAME_LAYOUT_CLASS, "rounded focus:outline-none")}
           onClick={onStartEditing}
         >
-          <span className="truncate">{record.title}</span>
+          <span className="block">{record.title}</span>
         </button>
       )}
       {!edit && (
@@ -1501,6 +1668,31 @@ function PropertyCell({
         onChangeOptionColor={onChangeOptionColor}
         onRenameOption={onRenameOption}
         onDeleteOption={onDeleteOption}
+      />
+    );
+  }
+
+  if (definition.type === "text") {
+    return (
+      <textarea
+        defaultValue={inputValue(value, definition.type)}
+        key={`${definition.type}:${inputValue(value, definition.type)}`}
+        rows={1}
+        wrap="soft"
+        data-database-text-cell="true"
+        className="min-h-7 w-full min-w-28 resize-none overflow-hidden break-words whitespace-pre-wrap rounded border-0 bg-transparent px-1 py-1 leading-5 outline-none focus:bg-background focus:ring-1 focus:ring-ring"
+        placeholder="Empty"
+        ref={(textarea) => {
+          if (textarea) resizeTextarea(textarea);
+        }}
+        onInput={(event) => resizeTextarea(event.currentTarget)}
+        onBlur={(event) => onChange(parseInput(event, definition.type))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
       />
     );
   }
@@ -1598,7 +1790,17 @@ function inputValue(value: unknown, type: DatabasePropertyType): string | number
   return typeof value === "string" || typeof value === "number" ? value : "";
 }
 
-function parseInput(event: ChangeEvent<HTMLInputElement> | { target: HTMLInputElement }, type: DatabasePropertyType): unknown {
+function resizeTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function parseInput(
+  event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | {
+    target: HTMLInputElement | HTMLTextAreaElement;
+  },
+  type: DatabasePropertyType
+): unknown {
   const value = event.target.value.trim();
 
   if (!value) {
@@ -1619,4 +1821,14 @@ function parseInput(event: ChangeEvent<HTMLInputElement> | { target: HTMLInputEl
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Database request failed";
+}
+
+function browserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }

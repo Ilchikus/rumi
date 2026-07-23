@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: 2026-06-23
-updated: 2026-06-23
+updated: 2026-07-22
 ---
 # M03-003 Sidebar Interactions And Layout
 
@@ -48,6 +48,12 @@ web, runtime
 ## Progress
 
 Implemented a fresh server-command-oriented sidebar with shadcn-style dropdown menus, inline create/rename, caret expansion, active ancestor guides, delete, persisted resize/collapse state, and normalized event refresh behavior.
+
+Expanded folder and database paths are now browser-local preferences scoped to the workspace. They
+survive a refresh without becoming shared workspace or Markdown state, while navigating to a nested
+item still expands the ancestors needed to reveal it.
+On restoration, a saved collapsed folder or database remains collapsed even when the last-opened page
+is one of its descendants. Later navigation can still reveal the ancestors of a newly selected item.
 
 Follow-up UI pass switched app tokens to neutral/white/black defaults, reduced nested tree indentation to roughly 20px per level, and settled sidebar entity marks on neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
 

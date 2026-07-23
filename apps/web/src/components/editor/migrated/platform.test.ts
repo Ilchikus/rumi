@@ -8,6 +8,7 @@ import {
 afterEach(() => {
   setMigratedEditorPlatform({
     databaseRefreshRevisions: {},
+    workspaceKey: "",
     documentKey: "",
     documents: []
   });
@@ -20,6 +21,7 @@ describe("migrated editor platform updates", () => {
 
     setMigratedEditorPlatform({
       databaseRefreshRevisions: { Tasks: 4 },
+      workspaceKey: "/docs",
       documentKey: "Dashboard.md",
       documents: []
     });
@@ -30,6 +32,7 @@ describe("migrated editor platform updates", () => {
     unsubscribe();
     setMigratedEditorPlatform({
       databaseRefreshRevisions: { Tasks: 5 },
+      workspaceKey: "/docs",
       documentKey: "Dashboard.md",
       documents: []
     });

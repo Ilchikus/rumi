@@ -12,6 +12,78 @@ const CARET_RIGHT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" heig
 
 export const slashCommandsPluginKey = new PluginKey("slashCommands")
 
+const SLASH_MENU_GAP = 8
+const SLASH_MENU_MARGIN = 8
+const SLASH_MENU_MAX_HEIGHT = 340
+
+interface SlashMenuPlacementInput {
+  anchor: { left: number; top: number; bottom: number }
+  menuWidth: number
+  menuHeight: number
+  viewportWidth: number
+  viewportHeight: number
+  gap?: number
+  margin?: number
+  maxHeight?: number
+}
+
+export interface SlashMenuPlacement {
+  left: number
+  top: number
+  maxHeight: number
+  side: "above" | "below"
+}
+
+interface ScrollCanvasGeometry {
+  left: number
+  top: number
+  scrollLeft: number
+  scrollTop: number
+}
+
+export function viewportPlacementToScrollCanvas(
+  placement: Pick<SlashMenuPlacement, "left" | "top">,
+  canvas: ScrollCanvasGeometry
+): { left: number; top: number } {
+  return {
+    left: placement.left - canvas.left + canvas.scrollLeft,
+    top: placement.top - canvas.top + canvas.scrollTop
+  }
+}
+
+export function computeSlashMenuPlacement({
+  anchor,
+  menuWidth,
+  menuHeight,
+  viewportWidth,
+  viewportHeight,
+  gap = SLASH_MENU_GAP,
+  margin = SLASH_MENU_MARGIN,
+  maxHeight = SLASH_MENU_MAX_HEIGHT
+}: SlashMenuPlacementInput): SlashMenuPlacement {
+  const availableWidth = Math.max(0, viewportWidth - margin * 2)
+  const renderedWidth = Math.min(menuWidth, availableWidth)
+  const left = Math.min(
+    Math.max(margin, anchor.left),
+    Math.max(margin, viewportWidth - margin - renderedWidth)
+  )
+  const belowTop = anchor.bottom + gap
+  const aboveBottom = anchor.top - gap
+  const belowSpace = Math.max(0, viewportHeight - margin - belowTop)
+  const aboveSpace = Math.max(0, aboveBottom - margin)
+  const desiredHeight = Math.min(menuHeight, maxHeight)
+  const side = belowSpace >= desiredHeight || belowSpace >= aboveSpace ? "below" : "above"
+  const availableHeight = side === "below" ? belowSpace : aboveSpace
+  const renderedHeight = Math.min(desiredHeight, availableHeight)
+
+  return {
+    left,
+    top: side === "below" ? belowTop : Math.max(margin, aboveBottom - renderedHeight),
+    maxHeight: Math.min(maxHeight, availableHeight),
+    side
+  }
+}
+
 interface SlashCommand {
   name: string
   aliases: string[]
@@ -480,22 +552,28 @@ export function slashCommandsPlugin(schema: Schema) {
     },
 
     view(editorView) {
+      const scrollCanvas = editorView.dom.closest("[data-rumi-editor-canvas]") as HTMLElement | null
+      const menuHost = scrollCanvas ?? document.body
       const container = document.createElement("div")
       container.className = "slash-commands-menu"
+      container.setAttribute("role", "listbox")
+      container.setAttribute("aria-label", "Insert a block")
       container.style.cssText = `
-        position: absolute;
+        position: ${scrollCanvas ? "absolute" : "fixed"};
         z-index: 1000;
-        background: #fff;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
         border: 1px solid hsl(var(--border));
         border-radius: 8px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-        min-width: 220px;
-        max-height: 340px;
+        width: min(280px, calc(100vw - 16px));
+        min-width: min(220px, calc(100vw - 16px));
+        max-height: ${SLASH_MENU_MAX_HEIGHT}px;
         overflow: hidden;
         display: none;
         flex-direction: column;
       `
-      document.body.appendChild(container)
+      menuHost.appendChild(container)
 
       // Header with search input
       const header = document.createElement("div")
@@ -557,11 +635,47 @@ export function slashCommandsPlugin(schema: Schema) {
       const commandsList = document.createElement("div")
       commandsList.className = "slash-commands-list"
       commandsList.style.cssText = `
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
-        max-height: 280px;
         padding: 4px;
       `
       container.appendChild(commandsList)
+
+      function positionMenu() {
+        const state = slashCommandsPluginKey.getState(editorView.state)
+        if (!state?.active || container.style.display === "none") return
+
+        const { from } = editorView.state.selection
+        const coords = editorView.coordsAtPos(from)
+        container.style.maxHeight = `${SLASH_MENU_MAX_HEIGHT}px`
+        const menuRect = container.getBoundingClientRect()
+        const placement = computeSlashMenuPlacement({
+          anchor: coords,
+          menuWidth: menuRect.width,
+          menuHeight: menuRect.height,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight
+        })
+
+        const canvasRect = scrollCanvas?.getBoundingClientRect()
+        const menuPosition = scrollCanvas && canvasRect
+          ? viewportPlacementToScrollCanvas(placement, {
+              left: canvasRect.left,
+              top: canvasRect.top,
+              scrollLeft: scrollCanvas.scrollLeft,
+              scrollTop: scrollCanvas.scrollTop
+            })
+          : placement
+
+        container.dataset.side = placement.side
+        container.style.left = `${menuPosition.left}px`
+        container.style.top = `${menuPosition.top}px`
+        container.style.maxHeight = `${placement.maxHeight}px`
+      }
+
+      window.addEventListener("resize", positionMenu)
+      window.visualViewport?.addEventListener("resize", positionMenu)
 
       function executeCommand(index: number) {
         const state = slashCommandsPluginKey.getState(editorView.state)
@@ -588,16 +702,9 @@ export function slashCommandsPlugin(schema: Schema) {
         // Update search display
         querySpan.textContent = state.query
 
-        // Position the menu
-        const { from } = editorView.state.selection
-        const coords = editorView.coordsAtPos(from)
-        container.style.left = `${coords.left}px`
-        container.style.top = `${coords.bottom + 8}px`
-        container.style.display = "flex"
-
         // Render commands
         commandsList.innerHTML = state.filteredCommands.map((cmd, index) => `
-          <div class="slash-command-item ${index === state.selectedIndex ? "selected" : ""}" data-index="${index}">
+          <div role="option" aria-selected="${index === state.selectedIndex}" class="slash-command-item ${index === state.selectedIndex ? "selected" : ""}" data-index="${index}">
             <span class="slash-command-icon">${cmd.icon}</span>
             <div class="slash-command-content">
               <div class="slash-command-name">${cmd.name}</div>
@@ -621,16 +728,31 @@ export function slashCommandsPlugin(schema: Schema) {
           })
         })
 
+        // Decide the opening side after rendering. The menu itself lives in the
+        // scrolling canvas, so browser layout keeps it attached to the line.
+        container.style.visibility = "hidden"
+        container.style.display = "flex"
+        positionMenu()
+        container.style.visibility = "visible"
+
         // Scroll selected item into view
         const selectedItem = commandsList.querySelector(".slash-command-item.selected")
         if (selectedItem) {
-          selectedItem.scrollIntoView({ block: "nearest" })
+          const selectedRect = selectedItem.getBoundingClientRect()
+          const listRect = commandsList.getBoundingClientRect()
+          if (selectedRect.top < listRect.top) {
+            commandsList.scrollTop -= listRect.top - selectedRect.top
+          } else if (selectedRect.bottom > listRect.bottom) {
+            commandsList.scrollTop += selectedRect.bottom - listRect.bottom
+          }
         }
       }
 
       return {
         update,
         destroy() {
+          window.removeEventListener("resize", positionMenu)
+          window.visualViewport?.removeEventListener("resize", positionMenu)
           container.remove()
           style.remove()
         }

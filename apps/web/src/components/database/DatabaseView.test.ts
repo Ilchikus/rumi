@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -5,8 +6,10 @@ import type { RumiApiClient } from "@rumi/api-client";
 import type { WorkspaceNode } from "@rumi/contracts";
 import {
   DATABASE_RECORD_BATCH_SIZE,
+  DATABASE_RECORD_NAME_LAYOUT_CLASS,
   DatabaseView,
   databaseColumnWidthClass,
+  databaseColumnStyle,
   databaseRecordTitleFromPath,
   databaseRecordMoveDestinations,
   databaseRecordsForDisplay
@@ -15,6 +18,8 @@ import {
   bumpDatabaseRefreshRevision,
   databaseRefreshRevisionFor
 } from "./databaseRefresh";
+
+const databaseViewSource = readFileSync(new URL("./DatabaseView.tsx", import.meta.url), "utf8");
 
 describe("database table presentation", () => {
   it("uses a borderless, unrestricted-height horizontal scroll frame without a manual refresh action", () => {
@@ -47,7 +52,7 @@ describe("database table presentation", () => {
     expect(tableHeader).toContain("bg-muted");
     expect(selectionHeader).not.toContain("border-r");
     expect(selectionHeader).toContain("min-w-10");
-    expect(markup).not.toContain("border-r ");
+    expect(markup).toContain("border-b border-r border-border");
     expect(markup).toContain("w-60 min-w-60");
     expect(markup).toContain("w-12 min-w-12 max-w-12");
     expect(markup).toContain('data-database-selection-column="true"');
@@ -55,6 +60,20 @@ describe("database table presentation", () => {
     expect(markup).toContain("accent-sky-600");
     expect(databaseColumnWidthClass("title")).toBe("w-60 min-w-60");
     expect(databaseColumnWidthClass("status")).toBe("w-44 min-w-44");
+    expect(databaseColumnStyle({}, "title")).toEqual({
+      width: 240,
+      minWidth: 240,
+      maxWidth: 240
+    });
+    expect(databaseColumnStyle({ status: 312 }, "status")).toEqual({
+      width: 312,
+      minWidth: 312,
+      maxWidth: 312
+    });
+    expect(databaseViewSource).toContain("data-database-column-resizer={property}");
+    expect(databaseViewSource).toContain(
+      '"relative border-b border-r border-border px-2 py-1.5"'
+    );
   });
 
   it("reveals database records in batches of twenty", () => {
@@ -76,6 +95,27 @@ describe("database table presentation", () => {
       (record) => record.path
     )).toEqual([records[24], ...records.slice(0, 19)]);
     expect(databaseRecordTitleFromPath("Projects/New Page.md")).toBe("New Page");
+  });
+
+  it("uses a plain wrapping record-name editor with the caret at the end", () => {
+    expect(databaseViewSource).toContain('data-database-record-name-editor="true"');
+    expect(databaseViewSource).toContain("input.setSelectionRange(input.value.length, input.value.length)");
+    expect(databaseViewSource).toContain("useLayoutEffect(() =>");
+    expect(databaseViewSource).toContain("border-0 bg-transparent");
+    expect(DATABASE_RECORD_NAME_LAYOUT_CLASS).toContain("box-border block min-h-7");
+    expect(DATABASE_RECORD_NAME_LAYOUT_CLASS).toContain("whitespace-pre-wrap");
+    expect(DATABASE_RECORD_NAME_LAYOUT_CLASS).toContain("px-1 py-1 text-left leading-5");
+    expect(databaseViewSource.match(/DATABASE_RECORD_NAME_LAYOUT_CLASS/gu)).toHaveLength(3);
+    expect(databaseViewSource).toContain('<span className="block">{record.title}</span>');
+    expect(databaseViewSource).not.toContain(
+      '<span className="truncate">{record.title}</span>'
+    );
+  });
+
+  it("wraps ordinary text values instead of using a one-line field", () => {
+    expect(databaseViewSource).toContain('data-database-text-cell="true"');
+    expect(databaseViewSource).toContain('wrap="soft"');
+    expect(databaseViewSource).toContain("break-words whitespace-pre-wrap");
   });
 
   it("refreshes only the database named by an event", () => {

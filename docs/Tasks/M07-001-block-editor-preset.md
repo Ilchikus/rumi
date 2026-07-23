@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-06-23"
-updated: "2026-07-20"
+updated: "2026-07-22"
 ---
 # M07-001 Rumi Block Editor Preset
 
@@ -80,3 +80,24 @@ Database tables also share one record-selection model in both placements: a lead
 one record, the header checkbox selects all currently visible records, and a contextual action strip
 offers exactly Duplicate, Move, and Delete. Duplicate creates canonical Markdown records through the
 database command, Move uses workspace container destinations, and Delete uses the recoverable Trash.
+Record names and ordinary text properties wrap with their rows rather than truncating. Entering record
+rename keeps the existing table appearance, adds no field border or background, and places the caret at
+the end for both existing and newly created records.
+Each shared database table header also exposes a drag target for changing that column's width. Full-page
+and embedded instances read the same browser-local width preference, scoped by workspace, database, and
+view, without writing personal presentation state into the database schema.
+Resizable headers keep a subtle vertical divider as the visual boundary, while the record Name editor
+does not flash a focus border before entering its plain inline edit state.
+The read and edit states share one box model, wrapping width, padding, and line height. Textarea height
+is measured in the layout phase before paint, so entering rename does not move the text baseline or
+change the row height.
+
+Code blocks use the shared styled dropdown presentation for language selection. The menu includes a
+focused search field, filters canonical languages and common aliases, and writes the selected language
+back to the Markdown fence without relying on the operating system's native select control.
+
+The slash-command menu is anchored in the editor's scrolling canvas, so browser layout moves it with
+the active line without per-scroll JavaScript. It opens below the active line when it fits, flips
+above near the bottom edge, clamps horizontally, and uses the larger available side with an internally
+scrolling height when neither side can show the complete menu. Focused geometry tests protect the
+placement boundaries and the conversion from viewport to canvas coordinates.

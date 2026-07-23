@@ -11,6 +11,7 @@ export interface MigratedEditorDocument {
 export interface MigratedEditorPlatform {
   api?: RumiApiClient | undefined;
   databaseRefreshRevisions: DatabaseRefreshRevisions;
+  workspaceKey: string;
   documentKey: string;
   documents: readonly MigratedEditorDocument[];
   openDocument?: ((path: string) => void) | undefined;
@@ -20,6 +21,7 @@ export interface MigratedEditorPlatform {
 
 let currentPlatform: MigratedEditorPlatform = {
   databaseRefreshRevisions: {},
+  workspaceKey: "",
   documentKey: "",
   documents: []
 };

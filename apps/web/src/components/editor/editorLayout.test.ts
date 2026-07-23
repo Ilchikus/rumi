@@ -14,6 +14,14 @@ const slashCommands = readFileSync(
   new URL("./migrated/plugins/slashCommands.ts", import.meta.url),
   "utf8"
 );
+const codeBlockView = readFileSync(
+  new URL("./migrated/plugins/codeBlockView.ts", import.meta.url),
+  "utf8"
+);
+const codeLanguagePicker = readFileSync(
+  new URL("./migrated/plugins/CodeLanguagePicker.tsx", import.meta.url),
+  "utf8"
+);
 
 describe("editor layout contracts", () => {
   it("keeps oversized tables inside a two-axis scrolling content-width wrapper", () => {
@@ -106,6 +114,14 @@ describe("editor layout contracts", () => {
     expect(selectedRule).toContain("background: hsl(var(--accent));");
     expect(mentionPlugin).toContain('fileList.addEventListener("pointerdown"');
     expect(mentionPlugin).not.toContain('item.addEventListener("mousedown"');
+  });
+
+  it("uses a searchable styled menu for code languages instead of a native select", () => {
+    expect(codeBlockView).toContain("CodeLanguagePicker");
+    expect(codeBlockView).not.toContain('document.createElement("select")');
+    expect(codeLanguagePicker).toContain("DropdownMenuContent");
+    expect(codeLanguagePicker).toContain('aria-label="Search code languages"');
+    expect(codeLanguagePicker).not.toContain("<select");
   });
 });
 

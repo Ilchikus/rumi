@@ -1,7 +1,10 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Node as PmNode } from "prosemirror-model"
 import { EditorView, NodeView } from "prosemirror-view"
+import { createElement } from "react"
+import { createRoot, type Root } from "react-dom/client"
 import hljs from "highlight.js/lib/core"
+import { CodeLanguagePicker } from "./CodeLanguagePicker"
 
 // Register commonly used languages
 import javascript from "highlight.js/lib/languages/javascript"
@@ -48,16 +51,12 @@ hljs.registerLanguage("yaml", yaml)
 hljs.registerLanguage("yml", yaml)
 hljs.registerLanguage("xml", xml)
 
-const LANGUAGES = [
-  "", "javascript", "typescript", "python", "css", "html", "json",
-  "bash", "markdown", "sql", "go", "rust", "java", "cpp", "ruby", "yaml", "xml"
-]
-
 class CodeBlockView implements NodeView {
   dom: HTMLElement
   contentDOM: HTMLElement
   private toolbar: HTMLElement
-  private select: HTMLSelectElement
+  private languagePicker: HTMLElement
+  private languagePickerRoot: Root
   private copyBtn: HTMLElement
 
   constructor(private node: PmNode, private view: EditorView, private getPos: () => number | undefined) {
@@ -69,25 +68,11 @@ class CodeBlockView implements NodeView {
     this.toolbar.className = "code-block-toolbar"
     this.toolbar.contentEditable = "false"
 
-    // Language selector
-    this.select = document.createElement("select")
-    this.select.className = "code-block-lang-select"
-    LANGUAGES.forEach(lang => {
-      const opt = document.createElement("option")
-      opt.value = lang
-      opt.textContent = lang || "plain text"
-      this.select.appendChild(opt)
-    })
-    this.select.value = node.attrs.language || ""
-    this.select.addEventListener("change", () => {
-      const pos = this.getPos()
-      if (pos === undefined) return
-      const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
-        ...this.node.attrs,
-        language: this.select.value || null
-      })
-      this.view.dispatch(tr)
-    })
+    // Searchable shadcn language picker
+    this.languagePicker = document.createElement("div")
+    this.languagePicker.className = "code-block-language-picker"
+    this.languagePickerRoot = createRoot(this.languagePicker)
+    this.renderLanguagePicker()
 
     // Copy button
     this.copyBtn = document.createElement("button")
@@ -101,7 +86,7 @@ class CodeBlockView implements NodeView {
       setTimeout(() => { this.copyBtn.textContent = "Copy" }, 1500)
     })
 
-    this.toolbar.appendChild(this.select)
+    this.toolbar.appendChild(this.languagePicker)
     this.toolbar.appendChild(this.copyBtn)
     this.dom.appendChild(this.toolbar)
 
@@ -114,10 +99,25 @@ class CodeBlockView implements NodeView {
     this.dom.appendChild(code)
   }
 
+  private renderLanguagePicker() {
+    this.languagePickerRoot.render(createElement(CodeLanguagePicker, {
+      value: this.node.attrs.language || "",
+      onChange: (language: string) => {
+        const pos = this.getPos()
+        if (pos === undefined) return
+        const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+          ...this.node.attrs,
+          language: language || null
+        })
+        this.view.dispatch(tr)
+      }
+    }))
+  }
+
   update(node: PmNode): boolean {
     if (node.type !== this.node.type) return false
     this.node = node
-    this.select.value = node.attrs.language || ""
+    this.renderLanguagePicker()
     if (node.attrs.language) {
       this.contentDOM.className = `language-${node.attrs.language}`
     } else {
@@ -127,7 +127,7 @@ class CodeBlockView implements NodeView {
   }
 
   stopEvent(event: Event): boolean {
-    // Let the select and button handle their own events
+    // Let the language picker and copy button handle their own events
     const target = event.target as HTMLElement
     if (this.toolbar.contains(target)) return true
     return false
@@ -136,6 +136,11 @@ class CodeBlockView implements NodeView {
   ignoreMutation(mutation: MutationRecord): boolean {
     if (this.toolbar.contains(mutation.target)) return true
     return false
+  }
+
+  destroy() {
+    const root = this.languagePickerRoot
+    setTimeout(() => root.unmount(), 0)
   }
 }
 

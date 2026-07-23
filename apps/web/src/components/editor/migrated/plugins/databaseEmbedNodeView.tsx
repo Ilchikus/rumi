@@ -84,6 +84,7 @@ export function databaseEmbedNodeView(
         key={source}
         api={platform.api}
         databasePath={source}
+        preferenceScope={platform.workspaceKey}
         refreshRevision={databaseRefreshRevisionFor(
           platform.databaseRefreshRevisions,
           source

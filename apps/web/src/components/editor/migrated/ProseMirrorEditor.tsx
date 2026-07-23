@@ -56,6 +56,7 @@ export interface RumiDocumentLink {
 export interface RumiBlockEditorProps {
   api?: RumiApiClient
   databaseRefreshRevisions?: DatabaseRefreshRevisions
+  workspaceKey?: string
   documentKey: string
   markdown: string
   documents?: readonly RumiDocumentLink[]
@@ -70,6 +71,7 @@ function ProseMirrorEditor(
   {
     api,
     databaseRefreshRevisions = {},
+    workspaceKey = "",
     documentKey,
     markdown,
     documents = [],
@@ -109,6 +111,7 @@ function ProseMirrorEditor(
     setMigratedEditorPlatform({
       api,
       databaseRefreshRevisions,
+      workspaceKey,
       documentKey,
       documents,
       openDocument: onOpenDocument,
@@ -118,6 +121,7 @@ function ProseMirrorEditor(
   }, [
     api,
     databaseRefreshRevisions,
+    workspaceKey,
     documentKey,
     documents,
     onMessage,

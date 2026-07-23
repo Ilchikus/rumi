@@ -45,6 +45,11 @@ import {
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
+import {
+  readSidebarExpandedPaths,
+  shouldRevealSelectionAncestors,
+  writeSidebarExpandedPaths
+} from "./sidebarPreferences";
 
 export interface SidebarSelection {
   nodePath: string;
@@ -54,6 +59,7 @@ export interface SidebarSelection {
 
 interface SidebarProps {
   workspaceName: string;
+  workspaceKey: string;
   tree: WorkspaceNode | null;
   selection: SidebarSelection | null;
   loadState: "idle" | "loading" | "error";
@@ -101,6 +107,7 @@ interface MoveDestination {
 
 export function Sidebar({
   workspaceName,
+  workspaceKey,
   tree,
   selection,
   loadState,
@@ -119,7 +126,9 @@ export function Sidebar({
   onDeleteNode,
   onOpenTrash
 }: SidebarProps): ReactElement {
-  const initializedExpansion = useRef(false);
+  const initializedExpansionScope = useRef<string | null>(null);
+  const restoredExpansionScope = useRef<string | null>(null);
+  const initialSelectionScope = useRef<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -131,23 +140,50 @@ export function Sidebar({
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceNode | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const updateExpandedPaths = useCallback((
+    update: (current: Set<string>) => Set<string>
+  ) => {
+    setExpandedPaths((current) => {
+      const next = update(current);
+      writeSidebarExpandedPaths(browserStorage(), workspaceKey, next);
+      return next;
+    });
+  }, [workspaceKey]);
+
   useEffect(() => {
-    if (!tree || initializedExpansion.current) {
+    if (!tree || initializedExpansionScope.current === workspaceKey) {
       return;
     }
 
-    initializedExpansion.current = true;
-    setExpandedPaths(new Set((tree.children ?? []).filter(isContainerNode).map((node) => node.path)));
-  }, [tree]);
+    initializedExpansionScope.current = workspaceKey;
+    const availablePaths = sidebarContainerPaths(tree);
+    const savedPaths = readSidebarExpandedPaths(browserStorage(), workspaceKey);
+    restoredExpansionScope.current = savedPaths ? workspaceKey : null;
+    initialSelectionScope.current = null;
+    const next = savedPaths
+      ? new Set([...savedPaths].filter((path) => availablePaths.has(path)))
+      : new Set((tree.children ?? []).filter(isContainerNode).map((node) => node.path));
+    setExpandedPaths(next);
+    writeSidebarExpandedPaths(browserStorage(), workspaceKey, next);
+  }, [tree, workspaceKey]);
 
   useEffect(() => {
     if (!selection) {
       return;
     }
 
+    const initialSelection = initialSelectionScope.current !== workspaceKey;
+    if (initialSelection) {
+      initialSelectionScope.current = workspaceKey;
+    }
+    if (!shouldRevealSelectionAncestors(
+      restoredExpansionScope.current === workspaceKey,
+      initialSelection
+    )) return;
+
     const paths = ancestorPaths(selection.nodePath);
     const openPaths = selection.openPath ? ancestorPaths(selection.openPath) : [];
-    setExpandedPaths((current) => {
+    updateExpandedPaths((current) => {
       const next = new Set(current);
 
       for (const path of [...paths, ...openPaths]) {
@@ -156,7 +192,7 @@ export function Sidebar({
 
       return next;
     });
-  }, [selection]);
+  }, [selection, updateExpandedPaths, workspaceKey]);
 
   const startCreate = useCallback((parentPath: string, kind: CreateKind) => {
     setFloatingMenu(null);
@@ -164,9 +200,9 @@ export function Sidebar({
     setCreateTarget({ parentPath, kind });
 
     if (parentPath) {
-      setExpandedPaths((current) => new Set(current).add(parentPath));
+      updateExpandedPaths((current) => new Set(current).add(parentPath));
     }
-  }, []);
+  }, [updateExpandedPaths]);
 
   const startRename = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
@@ -238,7 +274,7 @@ export function Sidebar({
   }, [convertBusy, convertTarget, onConvertNode]);
 
   const toggleExpanded = useCallback((path: string) => {
-    setExpandedPaths((current) => {
+    updateExpandedPaths((current) => {
       const next = new Set(current);
 
       if (next.has(path)) {
@@ -249,7 +285,7 @@ export function Sidebar({
 
       return next;
     });
-  }, []);
+  }, [updateExpandedPaths]);
 
   const openRootMenu = useCallback((event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
@@ -1305,6 +1341,21 @@ function isContainerNode(node: WorkspaceNode): boolean {
   return node.kind === "workspace" || node.kind === "folder" || node.kind === "database";
 }
 
+function sidebarContainerPaths(tree: WorkspaceNode): Set<string> {
+  const paths = new Set<string>();
+
+  const visit = (node: WorkspaceNode) => {
+    for (const child of node.children ?? []) {
+      if (!isContainerNode(child)) continue;
+      paths.add(child.path);
+      visit(child);
+    }
+  };
+
+  visit(tree);
+  return paths;
+}
+
 function moveDestinationsForTree(tree: WorkspaceNode, node: WorkspaceNode): MoveDestination[] {
   const destinations: MoveDestination[] = [];
   const currentParent = parentPathFor(node.path);
@@ -1383,4 +1434,14 @@ function isPathInside(candidate: string | null | undefined, parentPath: string):
   }
 
   return candidate === parentPath || candidate.startsWith(`${parentPath}/`);
+}
+
+function browserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }

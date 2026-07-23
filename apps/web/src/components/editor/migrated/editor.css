@@ -359,23 +359,6 @@
   opacity: 1;
 }
 
-.code-block-lang-select {
-  appearance: none;
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  font-family: inherit;
-  background: hsl(var(--background));
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  outline: none;
-}
-
-.code-block-lang-select:focus {
-  border-color: hsl(222.2, 47.4%, 41.2%);
-}
-
 .code-block-copy-btn {
   border: 1px solid hsl(var(--border));
   border-radius: 4px;

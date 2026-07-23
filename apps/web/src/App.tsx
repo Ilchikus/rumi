@@ -1840,6 +1840,7 @@ export function App(): ReactElement {
         >
           <Sidebar
             workspaceName={workspaceName}
+            workspaceKey={workspaceRootPath}
             tree={tree}
             selection={trashOpen ? null : selection}
             loadState={loadState}
@@ -1937,7 +1938,7 @@ export function App(): ReactElement {
             onRestore={restoreTrashItem}
           />
         ) : page ? (
-          <div className="min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
+          <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
             <article className={cn(
               "mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12"
             )}>
@@ -1963,6 +1964,7 @@ export function App(): ReactElement {
                   <DatabaseView
                     api={api}
                     databasePath={parentPathForPage(page.path)}
+                    preferenceScope={workspaceRootPath}
                     refreshRevision={databaseRefreshRevisionFor(
                       databaseRefreshRevisions,
                       parentPathForPage(page.path)
@@ -2006,6 +2008,7 @@ export function App(): ReactElement {
                     ref={editorRef}
                     api={api}
                     databaseRefreshRevisions={databaseRefreshRevisions}
+                    workspaceKey={workspaceRootPath}
                     documentKey={page.path}
                     markdown={draftBody}
                     documents={editorDocuments}

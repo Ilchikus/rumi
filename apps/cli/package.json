@@ -1,6 +1,6 @@
 {
   "name": "@rumi-md/server",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "File-native Rumi workspace server and command-line interface",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -33,7 +33,7 @@
   "bugs": {
     "url": "https://github.com/Ilchikus/rumi/issues"
   },
-  "homepage": "https://github.com/Ilchikus/rumi#readme",
+  "homepage": "https://rumi.md",
   "keywords": [
     "rumi",
     "markdown",

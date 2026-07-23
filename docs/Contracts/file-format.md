@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-07-23"
 ---
 # File Format
 
@@ -27,6 +27,11 @@ Database/Database.db.md
 ```
 
 `.db.md` and `.index.md` are canonical Rumi workspace objects, not cache files.
+Database `.db.md` frontmatter stores property definitions, shared view definitions, nested saved
+filters, per-view visible columns, and database-record page presentation settings. Stable view IDs
+are limited to this database configuration object; they do not add IDs to ordinary pages or
+database records. The detailed shape and compatibility rules live in the
+[database views contract](database-views.md).
 The root-level `<workspace-root-name>.index.md` is the workspace homepage: it is represented by the
 workspace root node, hidden as a separate sidebar child, and opens at `/`.
 For compatibility with existing Markdown folders, a plain root-level `index.md` is also recognized

@@ -92,7 +92,7 @@ export function randomDatabaseOptionColor(random = Math.random): DatabasePropert
 
 export function optionForValue(
   value: string,
-  options: DatabasePropertyOption[]
+  options: readonly DatabasePropertyOption[]
 ): DatabasePropertyOption {
   return options.find((option) => option.name === value) ?? { name: value, color: "neutral" };
 }

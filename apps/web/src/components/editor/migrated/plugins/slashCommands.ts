@@ -266,7 +266,7 @@ export function createCommands(schema: Schema): SlashCommand[] {
         const { $from } = state.selection
         const embed = schema.nodes.database_embed.create({
           source: "",
-          viewType: "table",
+          viewType: "",
           selectingSource: true
         })
         const tr = state.tr.replaceWith($from.before(), $from.after(), embed)

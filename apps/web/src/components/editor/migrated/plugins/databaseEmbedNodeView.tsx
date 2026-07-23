@@ -68,9 +68,19 @@ export function databaseEmbedNodeView(
     view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
       ...currentNode.attrs,
       source,
+      viewType: "",
       selectingSource: false
     }))
     view.focus()
+  }
+
+  function selectView(viewId: string) {
+    const position = typeof getPos === 'function' ? getPos() : undefined
+    if (typeof position !== 'number' || currentNode.attrs.viewType === viewId) return
+    view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
+      ...currentNode.attrs,
+      viewType: viewId
+    }))
   }
 
   function render(currentNode: ProseMirrorNode) {
@@ -79,11 +89,15 @@ export function databaseEmbedNodeView(
     }
     const platform = migratedEditorPlatform()
     const source = String(currentNode.attrs.source || '')
+    const viewId = String(currentNode.attrs.viewType || '')
     root.render(source && platform.api ? (
       <DatabaseView
         key={source}
+        variant="embed"
         api={platform.api}
         databasePath={source}
+        initialViewId={viewId}
+        onActiveViewChange={selectView}
         preferenceScope={platform.workspaceKey}
         refreshRevision={databaseRefreshRevisionFor(
           platform.databaseRefreshRevisions,
@@ -91,7 +105,7 @@ export function databaseEmbedNodeView(
         )}
         onOpenRecord={platform.openDocument ?? ignoreDatabaseOpen}
         onMessage={platform.onMessage ?? ignoreDatabaseMessage}
-        toolbarStart={(
+        embedSourceControl={(
           <DatabaseEmbedSourceControl
             source={source}
             documents={platform.documents}

@@ -11,6 +11,8 @@ import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
+import { Eye } from "@phosphor-icons/react/dist/csr/Eye";
+import { EyeSlash } from "@phosphor-icons/react/dist/csr/EyeSlash";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { Square } from "@phosphor-icons/react/dist/csr/Square";
@@ -31,6 +33,7 @@ import {
 import { DatabaseOptionEditor } from "./DatabaseOptionEditor";
 import { DatabaseOptionPill, optionForValue } from "./DatabaseOptionPill";
 import { formatPropertyValue } from "./pagePresentation";
+import { PropertyCreateMenu } from "./PropertyCreateMenu";
 
 export type PagePropertyKind = "text" | "number" | "date" | "checkbox" | "list" | "json";
 type PropertyEditorKind = PagePropertyKind | "select" | "multi-select";
@@ -62,6 +65,10 @@ export interface PagePropertiesProps {
     type: DatabasePropertyType
   ) => Promise<boolean>;
   onDeleteDatabaseProperty?: (property: string) => Promise<boolean>;
+  onSetDatabasePropertyVisibility?: (
+    property: string,
+    visible: boolean
+  ) => Promise<boolean>;
 }
 
 const PROPERTY_KIND_OPTIONS: ReadonlyArray<{ value: PagePropertyKind; label: string }> = [
@@ -203,16 +210,20 @@ export function PageProperties({
   onCreateDatabaseProperty,
   onRenameDatabaseProperty,
   onChangeDatabasePropertyType,
-  onDeleteDatabaseProperty
+  onDeleteDatabaseProperty,
+  onSetDatabasePropertyVisibility
 }: PagePropertiesProps): ReactElement | null {
   const schemaPropertyNames = database ? Object.keys(database.schema.properties) : [];
+  const hiddenSchemaProperties = new Set(database?.schema.recordPage.hiddenProperties ?? []);
+  const visibleSchemaPropertyNames = schemaPropertyNames.filter(
+    (name) => !hiddenSchemaProperties.has(name)
+  );
   const propertyNames = [
-    ...schemaPropertyNames,
+    ...visibleSchemaPropertyNames,
     ...Object.keys(frontmatter).filter((name) => !schemaPropertyNames.includes(name))
   ];
   const properties = propertyNames.map((name) => [name, frontmatter[name]] as const);
   const editable = Boolean(onChange);
-  const [addingProperty, setAddingProperty] = useState(false);
   const [propertiesExpanded, setPropertiesExpanded] = useState(true);
   const canCreateProperty = editable && (!database || Boolean(onCreateDatabaseProperty));
 
@@ -249,22 +260,34 @@ export function PageProperties({
 
   return (
     <section className="group/properties relative mt-8" aria-label="Page properties">
-      {properties.length > 0 && (
-        <button
-          type="button"
-          aria-expanded={propertiesExpanded}
-          tabIndex={propertiesExpanded ? -1 : undefined}
-          className={propertiesExpanded
-            ? "pointer-events-none mb-1 flex h-7 items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/properties:pointer-events-auto group-hover/properties:opacity-100"
-            : "mb-2 flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
-          }
-          onClick={() => setPropertiesExpanded((expanded) => !expanded)}
-        >
-          {propertiesExpanded
-            ? <CaretUp size={13} aria-hidden="true" />
-            : <CaretDown size={13} aria-hidden="true" />}
-          {propertiesExpanded ? "Hide properties" : "Show properties"}
-        </button>
+      {(properties.length > 0 || database) && (
+        <div className="mb-1 flex min-h-7 items-center gap-1">
+          {properties.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={propertiesExpanded}
+              tabIndex={propertiesExpanded ? -1 : undefined}
+              className={propertiesExpanded
+                ? "pointer-events-none flex h-7 items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/properties:pointer-events-auto group-hover/properties:opacity-100"
+                : "flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+              }
+              onClick={() => setPropertiesExpanded((expanded) => !expanded)}
+            >
+              {propertiesExpanded
+                ? <CaretUp size={13} aria-hidden="true" />
+                : <CaretDown size={13} aria-hidden="true" />}
+              {propertiesExpanded ? "Hide properties" : "Show properties"}
+            </button>
+          )}
+          {database && onSetDatabasePropertyVisibility && (
+            <RecordPagePropertyVisibilityMenu
+              properties={schemaPropertyNames}
+              hiddenProperties={hiddenSchemaProperties}
+              disabled={disabled}
+              onChange={onSetDatabasePropertyVisibility}
+            />
+          )}
+        </div>
       )}
 
       {propertiesExpanded && properties.length > 0 && (
@@ -295,6 +318,11 @@ export function PageProperties({
                   ? () => onDeleteDatabaseProperty(name)
                   : undefined
               }
+              onHideOnRecordPage={
+                database?.schema.properties[name] && onSetDatabasePropertyVisibility
+                  ? () => onSetDatabasePropertyVisibility(name, false)
+                  : undefined
+              }
               onChange={(nextValue) => updateProperty(name, nextValue)}
               onCreateOption={
                 onCreateDatabaseOption
@@ -321,42 +349,105 @@ export function PageProperties({
         </dl>
       )}
 
-      {propertiesExpanded && canCreateProperty && !addingProperty && (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="mt-1 h-7 text-muted-foreground"
+      {propertiesExpanded && canCreateProperty && (
+        <PropertyCreateMenu
+          existingNames={[
+            ...schemaPropertyNames,
+            ...Object.keys(frontmatter).filter((name) => !schemaPropertyNames.includes(name))
+          ]}
+          types={database ? DATABASE_PROPERTY_KIND_OPTIONS : PROPERTY_KIND_OPTIONS}
           disabled={disabled}
-          onClick={() => setAddingProperty(true)}
-        >
-          <Plus size={13} aria-hidden="true" />
-          Create new property
-        </Button>
-      )}
-
-      {propertiesExpanded && canCreateProperty && addingProperty && (
-        <AddPropertyRow
-          existingNames={properties.map(([name]) => name)}
-          kindOptions={database ? DATABASE_PROPERTY_KIND_OPTIONS : PROPERTY_KIND_OPTIONS}
-          disabled={disabled}
-          onCancel={() => setAddingProperty(false)}
-          onAdd={async (name, kind) => {
+          onCreate={async (name, kind) => {
             if (database) {
-              const created = await onCreateDatabaseProperty?.(
+              return await onCreateDatabaseProperty?.(
                 name,
                 kind as DatabasePropertyType
-              );
-              if (!created) return false;
-            } else {
-              onChange?.({ ...frontmatter, [name]: createPagePropertyValue(kind as PagePropertyKind) });
+              ) ?? false;
             }
-            setAddingProperty(false);
+            onChange?.({ ...frontmatter, [name]: createPagePropertyValue(kind as PagePropertyKind) });
             return true;
           }}
+          trigger={(
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="mt-1 h-7 text-muted-foreground"
+            >
+              <Plus size={13} aria-hidden="true" />
+              Create new property
+            </Button>
+          )}
         />
       )}
     </section>
+  );
+}
+
+function RecordPagePropertyVisibilityMenu({
+  properties,
+  hiddenProperties,
+  disabled,
+  onChange
+}: {
+  properties: readonly string[];
+  hiddenProperties: ReadonlySet<string>;
+  disabled: boolean;
+  onChange: (property: string, visible: boolean) => Promise<boolean>;
+}): ReactElement {
+  const [busyProperty, setBusyProperty] = useState<string | null>(null);
+
+  const toggle = async (property: string, visible: boolean) => {
+    if (disabled || busyProperty !== null) return;
+    setBusyProperty(property);
+    try {
+      await onChange(property, visible);
+    } catch {
+      // The owning page surface reports persistence failures.
+    } finally {
+      setBusyProperty(null);
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="grid h-7 w-7 place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/properties:opacity-100"
+          aria-label="Record page properties"
+          title="Record page properties"
+          disabled={disabled || busyProperty !== null}
+        >
+          <Eye size={14} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
+        {properties.map((property) => {
+          const visible = !hiddenProperties.has(property);
+          return (
+            <DropdownMenuItem
+              key={property}
+              disabled={disabled || busyProperty !== null}
+              onSelect={(event) => {
+                event.preventDefault();
+                void toggle(property, !visible);
+              }}
+            >
+              <span className="flex w-4 justify-center" aria-hidden="true">
+                {visible ? <Check size={14} /> : null}
+              </span>
+              <span className="truncate">
+                {busyProperty === property ? `${property}…` : property}
+              </span>
+            </DropdownMenuItem>
+          );
+        })}
+        {properties.length === 0 && (
+          <p className="px-2 py-3 text-xs text-muted-foreground">No database properties yet</p>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -373,6 +464,7 @@ interface PropertyRowProps {
   onRenameSchemaProperty?: ((name: string) => Promise<boolean>) | undefined;
   onChangeSchemaPropertyType?: ((type: DatabasePropertyType) => Promise<boolean>) | undefined;
   onDeleteSchemaProperty?: (() => Promise<boolean>) | undefined;
+  onHideOnRecordPage?: (() => Promise<boolean>) | undefined;
   onCreateOption?: ((option: string) => Promise<boolean>) | undefined;
   onChangeOptionColor?: ((option: string, color: DatabasePropertyOptionColor) => Promise<boolean>) | undefined;
   onRenameOption?: ((option: string, newName: string) => Promise<boolean>) | undefined;
@@ -392,6 +484,7 @@ function PropertyRow({
   onRenameSchemaProperty,
   onChangeSchemaPropertyType,
   onDeleteSchemaProperty,
+  onHideOnRecordPage,
   onCreateOption,
   onChangeOptionColor,
   onRenameOption,
@@ -486,6 +579,7 @@ function PropertyRow({
               onDelete();
             }
           }}
+          onHideOnRecordPage={onHideOnRecordPage}
         />
       )}
     </div>
@@ -501,6 +595,7 @@ interface PropertyContextMenuProps {
   onRename: () => void;
   onChangeKind: (kind: PropertyEditorKind) => void;
   onDelete: () => void;
+  onHideOnRecordPage?: (() => Promise<boolean>) | undefined;
 }
 
 function PropertyContextMenu({
@@ -511,7 +606,8 @@ function PropertyContextMenu({
   onOpenChange,
   onRename,
   onChangeKind,
-  onDelete
+  onDelete,
+  onHideOnRecordPage
 }: PropertyContextMenuProps): ReactElement {
   const kindOptions = schemaOwned ? DATABASE_PROPERTY_KIND_OPTIONS : PROPERTY_KIND_OPTIONS;
   const schemaActionDisabled = schemaOwned && !schemaActionsAvailable;
@@ -552,6 +648,12 @@ function PropertyContextMenu({
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        {schemaOwned && onHideOnRecordPage && (
+          <DropdownMenuItem onSelect={() => void onHideOnRecordPage()}>
+            <EyeSlash size={16} aria-hidden="true" />
+            Hide on record pages
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={schemaActionDisabled}
@@ -1047,99 +1149,6 @@ function JsonEditor({ value, disabled, onChange, onFinish }: JsonEditorProps): R
         }
       }}
     />
-  );
-}
-
-interface AddPropertyRowProps {
-  existingNames: string[];
-  kindOptions: ReadonlyArray<{ value: PropertyEditorKind; label: string }>;
-  disabled: boolean;
-  onAdd: (name: string, kind: PropertyEditorKind) => Promise<boolean>;
-  onCancel: () => void;
-}
-
-function AddPropertyRow({
-  existingNames,
-  kindOptions,
-  disabled,
-  onAdd,
-  onCancel
-}: AddPropertyRowProps): ReactElement {
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<PropertyEditorKind>("text");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
-
-  const submit = async () => {
-    const normalizedName = name.trim();
-    if (!normalizedName) {
-      setError("Enter a property name.");
-      return;
-    }
-
-    if (existingNames.includes(normalizedName)) {
-      setError(`“${normalizedName}” already exists.`);
-      return;
-    }
-
-    setSubmitting(true);
-    const added = await onAdd(normalizedName, kind);
-    if (!added) setSubmitting(false);
-  };
-
-  return (
-    <div className="mt-1 grid grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)_auto] items-start gap-2 rounded-md border border-dashed border-border px-2 py-1.5">
-      <div>
-        <input
-          ref={nameRef}
-          aria-label="New property name"
-          aria-invalid={error ? true : undefined}
-          className={propertyInputClassName}
-          value={name}
-          disabled={disabled || submitting}
-          placeholder="Property name"
-          onChange={(event) => {
-            setName(event.currentTarget.value);
-            setError("");
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void submit();
-            } else if (event.key === "Escape") {
-              onCancel();
-            }
-          }}
-        />
-        {error && <p className="mt-1 px-1 text-xs text-destructive">{error}</p>}
-      </div>
-      <select
-        aria-label="New property type"
-        className="h-7 w-full rounded border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-        value={kind}
-        disabled={disabled || submitting}
-        onChange={(event) => setKind(event.currentTarget.value as PropertyEditorKind)}
-      >
-        {kindOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <div className="flex gap-1">
-        <Button type="button" size="sm" variant="ghost" disabled={disabled || submitting} onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="button" size="sm" disabled={disabled || submitting} onClick={() => void submit()}>
-          {submitting ? "Creating…" : "Create"}
-        </Button>
-      </div>
-    </div>
   );
 }
 

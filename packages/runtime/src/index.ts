@@ -6,15 +6,21 @@ import type {
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
   ConvertContainerRequest,
+  CreateDatabasePropertyRequest,
   DatabasePropertyDefinition,
   DatabasePropertyType,
   CreateDatabasePropertyOptionRequest,
+  CreateDatabaseViewRequest,
+  DatabaseFilterItem,
+  DatabaseSort,
+  DatabaseView,
   CreateFolderRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   DeleteDatabasePropertyRequest,
+  DeleteDatabaseViewRequest,
   FrontmatterRecord,
   MoveNodeRequest,
   OpenWorkspaceResult,
@@ -37,10 +43,12 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
+  SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
+  UpdateDatabaseViewRequest,
   WorkspaceNode,
   WorkspaceNodeKind,
   WorkspaceMutationResult
@@ -57,9 +65,14 @@ import {
 } from "@rumi/workspace-format";
 import { WorkspaceWatcher, type WorkspaceReconcileResult } from "./watcher";
 import {
+  createDatabaseViewId,
+  DatabaseRequestError,
   databaseFrontmatter,
   ensureDatabaseRecordPath,
+  isDatabaseFilterGroup,
   loadDatabaseConfig,
+  mapDatabaseFilterRules,
+  normalizeDatabaseFilters,
   queryDatabaseRecords
 } from "./database";
 import { RevisionStore } from "./revisions";
@@ -408,7 +421,7 @@ export class WorkspaceRuntime {
         {
           type: "database",
           properties: {},
-          views: [{ name: "All", type: "table", columns: [] }]
+          views: [{ id: "all", name: "All", type: "table", columns: [] }]
         },
         request.markdownBody ?? ""
       ),
@@ -492,19 +505,31 @@ export class WorkspaceRuntime {
         });
       }
 
-      const { type: _type, properties: _properties, views: _views, ...folderFrontmatter } =
+      const {
+        type: _type,
+        properties: _properties,
+        recordPage: _recordPage,
+        views: _views,
+        ...folderFrontmatter
+      } =
         parsedSource.frontmatter;
       targetContent = serializeMarkdownFile(
         {
           ...folderFrontmatter,
           type: "database",
           properties,
-          views: [{ name: "All", type: "table", columns: propertyNames }]
+          views: [{ id: "all", name: "All", type: "table", columns: propertyNames }]
         },
         parsedSource.body
       );
     } else {
-      const { type: _type, properties: _properties, views: _views, ...folderFrontmatter } =
+      const {
+        type: _type,
+        properties: _properties,
+        recordPage: _recordPage,
+        views: _views,
+        ...folderFrontmatter
+      } =
         parsedSource.frontmatter;
       targetContent = serializeMarkdownFile(folderFrontmatter, parsedSource.body);
     }
@@ -611,6 +636,9 @@ export class WorkspaceRuntime {
 
   async queryDatabase(request: QueryDatabaseRequest): Promise<QueryDatabaseResult> {
     const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    validateDatabaseFilterMode(request.filterMode);
+    validateDatabaseQueryFilters(request.filters ?? []);
+    validateDatabaseSorts(request.sorts ?? [], config.schema.properties, true);
     const records = await this.workspaceIndex.databaseRecords(config.databasePath);
     return queryDatabaseRecords(config, records, request);
   }
@@ -706,7 +734,12 @@ export class WorkspaceRuntime {
     const result = await this.savePage({
       path: config.configPath,
       ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
-      frontmatter: databaseFrontmatter(config.frontmatter, request.properties, request.views),
+      frontmatter: databaseFrontmatter(
+        config.frontmatter,
+        request.properties,
+        request.views,
+        request.recordPage
+      ),
       markdownBody: config.markdownBody,
       reason: "property-edit"
     });
@@ -726,6 +759,185 @@ export class WorkspaceRuntime {
       ...result,
       events: [...result.events, databaseEvent]
     };
+  }
+
+  async createDatabaseProperty(
+    request: CreateDatabasePropertyRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const baseVersion = requiredDatabaseSchemaBaseVersion(request.baseVersion);
+    const property = request.property.trim();
+
+    if (!property) throw new DatabaseRequestError("Database property name cannot be empty");
+    if (
+      config.schema.properties[property] ||
+      config.schema.unsupportedProperties.includes(property)
+    ) {
+      throw new DatabaseRequestError(`Database property already exists: ${property}`);
+    }
+    if (!isDatabasePropertyType(request.type)) {
+      throw new DatabaseRequestError(`Unsupported database property type: ${String(request.type)}`);
+    }
+
+    const targetViewId = request.viewId ?? config.schema.views[0]?.id;
+    if (request.viewId && !config.schema.views.some((view) => view.id === request.viewId)) {
+      throw new DatabaseRequestError(`Database view does not exist: ${request.viewId}`);
+    }
+    const views = config.schema.views.map((view) => (
+      view.id === targetViewId && !view.columns.includes(property)
+        ? { ...view, columns: [...view.columns, property] }
+        : view
+    ));
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      baseVersion,
+      properties: {
+        ...config.schema.properties,
+        [property]: request.type === "select" || request.type === "multi-select"
+          ? { type: request.type, options: [] }
+          : { type: request.type }
+      },
+      views,
+      recordPage: config.schema.recordPage
+    });
+  }
+
+  async createDatabaseView(request: CreateDatabaseViewRequest): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const baseVersion = requiredDatabaseSchemaBaseVersion(request.baseVersion);
+    if (request.type !== "table") {
+      throw new DatabaseRequestError(`Unsupported database view type: ${String(request.type)}`);
+    }
+
+    const source = request.sourceViewId
+      ? config.schema.views.find((view) => view.id === request.sourceViewId)
+      : undefined;
+    if (request.sourceViewId && !source) {
+      throw new DatabaseRequestError(`Database view does not exist: ${request.sourceViewId}`);
+    }
+    const requestedName = request.name.trim() || (source ? `${source.name} copy` : "Table");
+    const name = availableDatabaseViewName(config.schema.views, requestedName);
+    const id = createDatabaseViewId(config.schema.views, name);
+    const view: DatabaseView = source
+      ? { ...source, id, name }
+      : {
+          id,
+          name,
+          type: "table",
+          columns: Object.keys(config.schema.properties)
+        };
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      baseVersion,
+      properties: config.schema.properties,
+      views: [...config.schema.views, view],
+      recordPage: config.schema.recordPage
+    });
+  }
+
+  async updateDatabaseView(request: UpdateDatabaseViewRequest): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const baseVersion = requiredDatabaseSchemaBaseVersion(request.baseVersion);
+    const current = config.schema.views.find((view) => view.id === request.viewId);
+    if (!current) {
+      throw new DatabaseRequestError(`Database view does not exist: ${request.viewId}`);
+    }
+
+    const name = request.name.trim();
+    if (!name) throw new DatabaseRequestError("Database view name cannot be empty");
+    if (
+      config.schema.views.some(
+        (view) => view.id !== current.id && view.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+      )
+    ) {
+      throw new DatabaseRequestError(`Database view already exists: ${name}`);
+    }
+
+    const availableProperties = new Set(Object.keys(config.schema.properties));
+    if (
+      !Array.isArray(request.columns)
+      || request.columns.some((property) => typeof property !== "string")
+    ) {
+      throw new DatabaseRequestError("Database view columns must be a property list");
+    }
+    const columns = [...new Set(request.columns)];
+    const unknownColumn = columns.find((property) => !availableProperties.has(property));
+    if (unknownColumn) {
+      throw new DatabaseRequestError(`Database property does not exist: ${unknownColumn}`);
+    }
+    validateDatabaseFilterMode(request.filterMode);
+    validateDatabaseFilters(request.filters ?? [], config.schema.properties);
+    const filters = normalizeDatabaseFilters(request.filters ?? []);
+    validateDatabaseSorts(request.sorts ?? [], config.schema.properties);
+    const sorts = request.sorts ?? [];
+
+    const nextView: DatabaseView = {
+      id: current.id,
+      name,
+      type: "table",
+      columns,
+      ...(filters.length > 0
+        ? {
+            filters,
+            ...(request.filterMode === "or" ? { filterMode: "or" as const } : {})
+          }
+        : {}),
+      ...(sorts.length > 0 ? { sorts } : {})
+    };
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      baseVersion,
+      properties: config.schema.properties,
+      views: config.schema.views.map((view) => view.id === current.id ? nextView : view),
+      recordPage: config.schema.recordPage
+    });
+  }
+
+  async deleteDatabaseView(request: DeleteDatabaseViewRequest): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const baseVersion = requiredDatabaseSchemaBaseVersion(request.baseVersion);
+    if (!config.schema.views.some((view) => view.id === request.viewId)) {
+      throw new DatabaseRequestError(`Database view does not exist: ${request.viewId}`);
+    }
+    if (config.schema.views.length <= 1) {
+      throw new DatabaseRequestError("A database must keep at least one view");
+    }
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      baseVersion,
+      properties: config.schema.properties,
+      views: config.schema.views.filter((view) => view.id !== request.viewId),
+      recordPage: config.schema.recordPage
+    });
+  }
+
+  async setDatabaseRecordPagePropertyVisibility(
+    request: SetDatabaseRecordPagePropertyVisibilityRequest
+  ): Promise<SavePageResult> {
+    const config = await loadDatabaseConfig(this.rootPath, request.databasePath);
+    const baseVersion = requiredDatabaseSchemaBaseVersion(request.baseVersion);
+    const property = request.property.trim();
+    if (!config.schema.properties[property]) {
+      throw new DatabaseRequestError(
+        `Database property does not exist: ${property || request.property}`
+      );
+    }
+
+    const hidden = new Set(config.schema.recordPage.hiddenProperties);
+    if (request.visible) hidden.delete(property);
+    else hidden.add(property);
+
+    return this.updateDatabaseSchema({
+      databasePath: config.databasePath,
+      baseVersion,
+      properties: config.schema.properties,
+      views: config.schema.views,
+      recordPage: { hiddenProperties: [...hidden] }
+    });
   }
 
   async createDatabasePropertyOption(
@@ -825,16 +1037,18 @@ export class WorkspaceRuntime {
       ...view,
       ...(view.filters
         ? {
-            filters: view.filters.flatMap((filter) => {
-              if (filter.property !== property) return [filter];
+            filters: mapDatabaseFilterRules(view.filters, (filter) => {
+              if (filter.property !== property) return filter;
               const nextValue = updateDatabaseOptionReference(
                 filter.value,
                 optionName,
                 request.action === "rename" ? replacementName : undefined
               );
-              return nextValue === undefined && filter.value !== undefined
-                ? []
-                : [{ ...filter, value: nextValue }];
+              const valueRemoved = nextValue === undefined
+                || (Array.isArray(nextValue) && nextValue.length === 0);
+              return valueRemoved && filter.value !== undefined
+                ? null
+                : { ...filter, value: nextValue };
             })
           }
         : {})
@@ -899,11 +1113,30 @@ export class WorkspaceRuntime {
       definition,
       convertedValues.map(({ value }) => value)
     );
+    const nextProperties = {
+      ...config.schema.properties,
+      [property]: nextDefinition
+    };
+    const views = config.schema.views.map((view) => ({
+      ...view,
+      ...(view.filters
+        ? {
+            filters: mapDatabaseFilterRules(
+              view.filters,
+              (filter) => (
+                filter.property !== property || databaseFilterRuleIsValid(filter, nextProperties)
+                  ? filter
+                  : null
+              )
+            )
+          }
+        : {})
+    }));
     const schemaResult = await this.updateDatabaseSchema({
       databasePath: config.databasePath,
       ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
-      properties: { ...config.schema.properties, [property]: nextDefinition },
-      views: config.schema.views
+      properties: nextProperties,
+      views
     });
 
     if (schemaResult.status === "conflict") return schemaResult;
@@ -939,7 +1172,12 @@ export class WorkspaceRuntime {
       ...view,
       columns: view.columns.filter((column) => column !== property),
       ...(view.filters
-        ? { filters: view.filters.filter((filter) => filter.property !== property) }
+        ? {
+            filters: mapDatabaseFilterRules(
+              view.filters,
+              (filter) => filter.property === property ? null : filter
+            )
+          }
         : {}),
       ...(view.sorts ? { sorts: view.sorts.filter((sort) => sort.property !== property) } : {})
     }));
@@ -947,7 +1185,12 @@ export class WorkspaceRuntime {
       databasePath: config.databasePath,
       ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
       properties,
-      views
+      views,
+      recordPage: {
+        hiddenProperties: config.schema.recordPage.hiddenProperties.filter(
+          (candidate) => candidate !== property
+        )
+      }
     });
 
     if (schemaResult.status === "conflict") return schemaResult;
@@ -1019,7 +1262,7 @@ export class WorkspaceRuntime {
       columns: view.columns.map((column) => (column === property ? newName : column)),
       ...(view.filters
         ? {
-            filters: view.filters.map((filter) => ({
+            filters: mapDatabaseFilterRules(view.filters, (filter) => ({
               ...filter,
               property: filter.property === property ? newName : filter.property
             }))
@@ -1038,7 +1281,12 @@ export class WorkspaceRuntime {
       databasePath: config.databasePath,
       ...(request.baseVersion ? { baseVersion: request.baseVersion } : {}),
       properties,
-      views
+      views,
+      recordPage: {
+        hiddenProperties: config.schema.recordPage.hiddenProperties.map(
+          (candidate) => candidate === property ? newName : candidate
+        )
+      }
     });
 
     if (schemaResult.status === "conflict") {
@@ -1832,6 +2080,235 @@ function updateDatabaseOptionReference(
   }
 
   return value;
+}
+
+function isDatabasePropertyType(value: unknown): value is DatabasePropertyType {
+  return (
+    value === "text" ||
+    value === "number" ||
+    value === "date" ||
+    value === "checkbox" ||
+    value === "select" ||
+    value === "multi-select"
+  );
+}
+
+function requiredDatabaseSchemaBaseVersion(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new DatabaseRequestError("Database schema base version is required");
+  }
+  return value;
+}
+
+function availableDatabaseViewName(views: readonly DatabaseView[], requested: string): string {
+  const names = new Set(views.map((view) => view.name.toLocaleLowerCase()));
+  if (!names.has(requested.toLocaleLowerCase())) return requested;
+  let suffix = 2;
+  while (names.has(`${requested} (${suffix})`.toLocaleLowerCase())) suffix += 1;
+  return `${requested} (${suffix})`;
+}
+
+function validateDatabaseFilters(
+  filters: unknown,
+  properties: Record<string, DatabasePropertyDefinition>
+): asserts filters is DatabaseFilterItem[] {
+  if (!Array.isArray(filters)) {
+    throw new DatabaseRequestError("Database filters must be a filter list");
+  }
+
+  for (const filter of filters) {
+    if (!isRecordValue(filter)) {
+      throw new DatabaseRequestError("Database filter is invalid");
+    }
+    if (Object.prototype.hasOwnProperty.call(filter, "filters")) {
+      validateDatabaseFilterMode(filter.filterMode);
+      validateDatabaseFilters(filter.filters, properties);
+      continue;
+    }
+
+    if (typeof filter.property !== "string" || typeof filter.operator !== "string") {
+      throw new DatabaseRequestError("Database filter rule is invalid");
+    }
+    const definition = filter.property === "title"
+      ? { type: "text" as const }
+      : properties[filter.property];
+    if (!definition) {
+      throw new DatabaseRequestError(`Database property does not exist: ${filter.property}`);
+    }
+
+    const commonEmpty = ["is-empty", "is-not-empty"];
+    const operators: Record<DatabasePropertyType, string[]> = {
+      text: ["contains", "not-contains", "equals", "not-equals", ...commonEmpty],
+      number: ["equals", "not-equals", "greater-than", "less-than", ...commonEmpty],
+      date: ["equals", "not-equals", "greater-than", "less-than", ...commonEmpty],
+      checkbox: ["equals", "not-equals"],
+      select: ["contains", "not-contains", "equals", "not-equals", ...commonEmpty],
+      "multi-select": ["contains", "not-contains", "equals", "not-equals", ...commonEmpty]
+    };
+    if (!operators[definition.type].includes(filter.operator)) {
+      throw new DatabaseRequestError(
+        `Unsupported ${definition.type} filter operator: ${filter.operator}`
+      );
+    }
+    if (commonEmpty.includes(filter.operator)) continue;
+    if (filter.value === undefined) {
+      throw new DatabaseRequestError(`Database filter value is required: ${filter.property}`);
+    }
+
+    if (
+      definition.type === "text" &&
+      (typeof filter.value !== "string" || filter.value.length === 0)
+    ) {
+      throw new DatabaseRequestError(`Database text filter requires a value: ${filter.property}`);
+    }
+    if (
+      definition.type === "number" &&
+      (typeof filter.value !== "number" || !Number.isFinite(filter.value))
+    ) {
+      throw new DatabaseRequestError(
+        `Database number filter requires a numeric value: ${filter.property}`
+      );
+    }
+    if (
+      definition.type === "date" &&
+      (typeof filter.value !== "string" || !isIsoDate(filter.value))
+    ) {
+      throw new DatabaseRequestError(
+        `Database date filter requires YYYY-MM-DD: ${filter.property}`
+      );
+    }
+    if (definition.type === "checkbox" && typeof filter.value !== "boolean") {
+      throw new DatabaseRequestError(
+        `Database checkbox filter requires true or false: ${filter.property}`
+      );
+    }
+    if (definition.type === "select" || definition.type === "multi-select") {
+      const equality = filter.operator === "equals" || filter.operator === "not-equals";
+      if (definition.type === "select" && typeof filter.value !== "string") {
+        throw new DatabaseRequestError(
+          `Database select filter requires one option: ${filter.property}`
+        );
+      }
+      if (
+        definition.type === "multi-select" &&
+        ((equality && !Array.isArray(filter.value)) ||
+          (!equality && typeof filter.value !== "string"))
+      ) {
+        throw new DatabaseRequestError(
+          equality
+            ? `Database multi-select equality requires an option list: ${filter.property}`
+            : `Database multi-select membership requires one option: ${filter.property}`
+        );
+      }
+      const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+      const optionNames = new Set(
+        (definition.options ?? []).map((option) => option.name.toLocaleLowerCase())
+      );
+      if (
+        values.length === 0 ||
+        values.some(
+          (value: unknown) => (
+            typeof value !== "string" || !optionNames.has(value.toLocaleLowerCase())
+          )
+        )
+      ) {
+        throw new DatabaseRequestError(
+          `Database filter must use an option from ${filter.property}`
+        );
+      }
+    }
+  }
+}
+
+function validateDatabaseFilterMode(value: unknown): void {
+  if (value !== undefined && value !== "and" && value !== "or") {
+    throw new DatabaseRequestError('Database filter mode must be "and" or "or"');
+  }
+}
+
+function validateDatabaseQueryFilters(
+  filters: unknown
+): asserts filters is DatabaseFilterItem[] {
+  if (!Array.isArray(filters)) {
+    throw new DatabaseRequestError("Database filters must be a filter list");
+  }
+  const operators = new Set([
+    "equals",
+    "not-equals",
+    "contains",
+    "not-contains",
+    "is-empty",
+    "is-not-empty",
+    "greater-than",
+    "less-than"
+  ]);
+  for (const filter of filters) {
+    if (!isRecordValue(filter)) {
+      throw new DatabaseRequestError("Database filter is invalid");
+    }
+    if (Object.prototype.hasOwnProperty.call(filter, "filters")) {
+      validateDatabaseFilterMode(filter.filterMode);
+      validateDatabaseQueryFilters(filter.filters);
+      continue;
+    }
+    if (
+      typeof filter.property !== "string"
+      || typeof filter.operator !== "string"
+      || !operators.has(filter.operator)
+    ) {
+      throw new DatabaseRequestError("Database filter rule is invalid");
+    }
+  }
+}
+
+function validateDatabaseSorts(
+  sorts: unknown,
+  properties: Record<string, DatabasePropertyDefinition>,
+  allowUnknownProperties = false
+): asserts sorts is DatabaseSort[] {
+  if (!Array.isArray(sorts)) {
+    throw new DatabaseRequestError("Database sorts must be a sort list");
+  }
+  for (const sort of sorts) {
+    if (
+      !isRecordValue(sort)
+      || typeof sort.property !== "string"
+      || (sort.direction !== "asc" && sort.direction !== "desc")
+    ) {
+      throw new DatabaseRequestError("Database sort is invalid");
+    }
+    if (
+      !allowUnknownProperties
+      && sort.property !== "title"
+      && !properties[sort.property]
+    ) {
+      throw new DatabaseRequestError(`Database property does not exist: ${sort.property}`);
+    }
+  }
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function databaseFilterRuleIsValid(
+  filter: DatabaseFilterItem,
+  properties: Record<string, DatabasePropertyDefinition>
+): boolean {
+  if (isDatabaseFilterGroup(filter)) return false;
+  try {
+    validateDatabaseFilters([filter], properties);
+    return true;
+  } catch (error) {
+    if (error instanceof DatabaseRequestError) return false;
+    throw error;
+  }
 }
 
 function databasePropertyDefinitionForType(

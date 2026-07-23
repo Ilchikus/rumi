@@ -19,6 +19,28 @@ describe("markdown file embeds", () => {
 })
 
 describe("live editor Markdown round trips", () => {
+  it("distinguishes no selected database view from a stable view ID named table", () => {
+    const implicit = parseMarkdown([
+      "```db",
+      "source: Tasks",
+      "```",
+      ""
+    ].join("\n"), schema)
+    const explicit = parseMarkdown([
+      "```db",
+      "source: Tasks",
+      "view: table",
+      "```",
+      ""
+    ].join("\n"), schema)
+
+    expect(implicit.firstChild?.attrs.viewType).toBe("")
+    expect(serializeMarkdown(implicit)).not.toContain("view:")
+    expect(explicit.firstChild?.attrs.viewType).toBe("table")
+    expect(serializeMarkdown(explicit)).toContain("view: table")
+    expect(parseMarkdown(serializeMarkdown(explicit), schema).toJSON()).toEqual(explicit.toJSON())
+  })
+
   it("keeps standalone URLs as portable inline links", () => {
     const parsed = parseMarkdown("https://rumi.md\n", schema)
 
@@ -179,6 +201,7 @@ describe("live editor Markdown round trips", () => {
       "",
       "```db",
       "source: Tasks",
+      "view: active",
       "filter: status = doing",
       "```",
       "",

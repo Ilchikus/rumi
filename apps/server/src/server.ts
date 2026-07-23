@@ -9,13 +9,16 @@ import type {
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
   ConvertContainerRequest,
+  CreateDatabasePropertyRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
+  CreateDatabaseViewRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   DeleteDatabasePropertyRequest,
+  DeleteDatabaseViewRequest,
   MoveNodeRequest,
   QueryDatabaseRequest,
   RenameDatabasePropertyRequest,
@@ -26,9 +29,11 @@ import type {
   SavePageRequest,
   SaveAssetResult,
   SearchWorkspaceRequest,
+  SetDatabaseRecordPagePropertyVisibilityRequest,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
-  UpdateDatabaseSchemaRequest
+  UpdateDatabaseSchemaRequest,
+  UpdateDatabaseViewRequest
 } from "@rumi/contracts";
 import { WorkspaceRuntime } from "@rumi/runtime";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
@@ -140,8 +145,12 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
   }
 
   server.setErrorHandler((error: Error, _request, reply) => {
-    _request.log.error({ err: error }, "request.error");
     const statusCode = errorStatusCode(error);
+    if (statusCode >= 500) {
+      _request.log.error({ err: error }, "request.error");
+    } else {
+      _request.log.warn({ err: error }, "request.invalid");
+    }
     reply.status(statusCode).send({
       error: {
         code: statusCode >= 500 ? "internal_error" : "invalid_request",
@@ -547,6 +556,46 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
       }
 
       return result;
+    }
+  );
+
+  server.post<{ Body: CreateDatabasePropertyRequest }>(
+    "/api/database/schema/property",
+    async (request, reply) => {
+      const result = await runtime.createDatabaseProperty(request.body);
+      return result.status === "conflict" ? reply.status(409).send(result) : result;
+    }
+  );
+
+  server.post<{ Body: CreateDatabaseViewRequest }>(
+    "/api/database/views",
+    async (request, reply) => {
+      const result = await runtime.createDatabaseView(request.body);
+      return result.status === "conflict" ? reply.status(409).send(result) : result;
+    }
+  );
+
+  server.post<{ Body: UpdateDatabaseViewRequest }>(
+    "/api/database/views/update",
+    async (request, reply) => {
+      const result = await runtime.updateDatabaseView(request.body);
+      return result.status === "conflict" ? reply.status(409).send(result) : result;
+    }
+  );
+
+  server.post<{ Body: DeleteDatabaseViewRequest }>(
+    "/api/database/views/delete",
+    async (request, reply) => {
+      const result = await runtime.deleteDatabaseView(request.body);
+      return result.status === "conflict" ? reply.status(409).send(result) : result;
+    }
+  );
+
+  server.post<{ Body: SetDatabaseRecordPagePropertyVisibilityRequest }>(
+    "/api/database/record-page/property-visibility",
+    async (request, reply) => {
+      const result = await runtime.setDatabaseRecordPagePropertyVisibility(request.body);
+      return result.status === "conflict" ? reply.status(409).send(result) : result;
     }
   );
 

@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-07-23"
 ---
 # API Shape
 
@@ -37,6 +37,11 @@ Opening a Markdown record directly inside a database includes its database path,
 version in the page response. This lets any client render typed record properties without querying
 or downloading every database record. Creating a select option is a versioned database-schema
 command; the client does not write `.db.md` directly.
+
+Database view creation/update/deletion, record-page property visibility, and database property
+creation are also versioned domain commands. Database queries accept an optional stable view ID;
+the runtime applies that view's nested saved filters and sorts. Full-page and embedded clients use
+the same command shapes described in the [database views contract](database-views.md).
 
 `POST /api/assets?fileName=...` accepts bounded raw asset bytes and returns the runtime-selected
 relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted image/PDF formats from

@@ -193,6 +193,7 @@ class BlockDragHandleView {
 
     document.addEventListener("mousemove", this.onDocMouseMove)
     document.addEventListener("mousedown", this.onDocMouseDown)
+    document.addEventListener("click", this.onDocClick)
     document.addEventListener("keydown", this.onDocKeyDown)
 
     // Area selection: listen on the full editor canvas, including the wide
@@ -505,25 +506,39 @@ class BlockDragHandleView {
         e.target !== this.handle) {
       this.closeContextMenu()
     }
+  }
 
+  private clearBlockSelection() {
+    const pluginState = multiBlockSelectionKey.getState(this.view.state)
+    const hasSelectedBlocks = Boolean(
+      pluginState?.selectedBlocks && pluginState.selectedBlocks.length > 0
+    )
+    if (!hasSelectedBlocks) return
+
+    let tr = this.view.state.tr
+    if (this.view.state.selection instanceof NodeSelection) {
+      const selection = this.view.state.selection as NodeSelection
+      tr = tr.setSelection(TextSelection.near(tr.doc.resolve(selection.from + 1)))
+    }
+    tr = tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [],
+      anchorBlock: null
+    })
+    this.view.dispatch(tr)
+  }
+
+  private onDocClick = (e: MouseEvent) => {
+    if (this.handle.contains(e.target as Node) || this.addButton.contains(e.target as Node)) {
+      return
+    }
     // Don't clear multi-block selection when clicking inside the context menu
     // (e.g. clicking a type-change option must see the full selectedBlocks list)
     if (this.contextMenu && this.contextMenu.contains(e.target as Node)) return
 
-    // Clear multi-block selection on any click except on the handle of a selected block.
-    // Handle clicks call stopPropagation(), so they never reach this handler —
-    // onHandleMouseDown takes care of preserving or changing selection in that case.
-    const pluginState = multiBlockSelectionKey.getState(this.view.state)
-    if (pluginState && pluginState.selectedBlocks && pluginState.selectedBlocks.length > 0) {
-      let tr = this.view.state.tr
-      // NodeSelection (set by drag handle) also shows as blue — clear it too
-      if (this.view.state.selection instanceof NodeSelection) {
-        const sel = this.view.state.selection
-        tr = tr.setSelection(TextSelection.near(tr.doc.resolve(sel.from + 1)))
-      }
-      tr = tr.setMeta(multiBlockSelectionKey, { selectedBlocks: [], anchorBlock: null })
-      this.view.dispatch(tr)
-    }
+    // Clear after the clicked control finishes its own click/change behavior.
+    // This keeps interactive NodeView controls (including database checkboxes)
+    // working while still resetting block highlight on every outside click.
+    this.clearBlockSelection()
   }
 
   private onDocKeyDown = (e: KeyboardEvent) => {
@@ -645,14 +660,7 @@ class BlockDragHandleView {
 
     // Blank ProseMirror canvas and the surrounding editor padding are marquee zones.
     // Clear any existing multi-block selection first
-    const pluginState = multiBlockSelectionKey.getState(this.view.state)
-    if (pluginState && pluginState.selectedBlocks && pluginState.selectedBlocks.length > 0) {
-      const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
-        selectedBlocks: [],
-        anchorBlock: null
-      })
-      this.view.dispatch(tr)
-    }
+    this.clearBlockSelection()
 
     // Start area selection
     e.preventDefault()
@@ -1876,6 +1884,7 @@ class BlockDragHandleView {
     }
     document.removeEventListener("mousemove", this.onDocMouseMove)
     document.removeEventListener("mousedown", this.onDocMouseDown)
+    document.removeEventListener("click", this.onDocClick)
     document.removeEventListener("keydown", this.onDocKeyDown)
     const surface = this.getAreaSelectionSurface()
     if (surface) {

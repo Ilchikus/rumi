@@ -1,6 +1,6 @@
 {
   "name": "@rumi-md/server",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "File-native Rumi workspace server and command-line interface",
   "license": "AGPL-3.0-only",
   "type": "module",

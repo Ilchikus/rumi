@@ -543,6 +543,168 @@ describe("Rumi server API", () => {
     await server.close();
   });
 
+  it("mutates and queries saved database views through domain routes", async () => {
+    const root = await tempWorkspace();
+    const { server } = await createRumiServer({ workspacePath: root });
+    await server.inject({
+      method: "POST",
+      url: "/api/databases",
+      payload: { parentPath: "", name: "Tasks" }
+    });
+    let query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+
+    const property = await server.inject({
+      method: "POST",
+      url: "/api/database/schema/property",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: query.json().schemaVersion,
+        property: "status",
+        type: "text",
+        viewId: "all"
+      }
+    });
+    expect(property.statusCode).toBe(200);
+
+    query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    const createdView = await server.inject({
+      method: "POST",
+      url: "/api/database/views",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: query.json().schemaVersion,
+        name: "Doing",
+        type: "table"
+      }
+    });
+    expect(createdView.statusCode).toBe(200);
+
+    query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    const doing = query.json().schema.views.find(
+      (view: { name: string }) => view.name === "Doing"
+    );
+    const updatedView = await server.inject({
+      method: "POST",
+      url: "/api/database/views/update",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: query.json().schemaVersion,
+        viewId: doing.id,
+        name: doing.name,
+        columns: ["status"],
+        filters: [{ property: "status", operator: "equals", value: "doing" }]
+      }
+    });
+    expect(updatedView.statusCode).toBe(200);
+
+    query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    const hidden = await server.inject({
+      method: "POST",
+      url: "/api/database/record-page/property-visibility",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: query.json().schemaVersion,
+        property: "status",
+        visible: false
+      }
+    });
+    expect(hidden.statusCode).toBe(200);
+
+    query = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: { databasePath: "Tasks" }
+    });
+    expect(query.json().schema).toMatchObject({
+      recordPage: { hiddenProperties: ["status"] },
+      views: [
+        { id: "all", name: "All", columns: ["status"] },
+        {
+          id: doing.id,
+          name: "Doing",
+          filters: [{ property: "status", operator: "equals", value: "doing" }]
+        }
+      ]
+    });
+
+    const missingView = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: {
+        databasePath: "Tasks",
+        viewId: "missing"
+      }
+    });
+    expect(missingView.statusCode).toBe(400);
+    expect(missingView.json()).toMatchObject({
+      error: {
+        code: "invalid_request",
+        message: "Database view does not exist: missing"
+      }
+    });
+
+    const invalidFilter = await server.inject({
+      method: "POST",
+      url: "/api/database/query",
+      payload: {
+        databasePath: "Tasks",
+        filters: [null]
+      }
+    });
+    expect(invalidFilter.statusCode).toBe(400);
+    expect(invalidFilter.json()).toMatchObject({
+      error: {
+        code: "invalid_request",
+        message: "Database filter is invalid"
+      }
+    });
+
+    const missingVersion = await server.inject({
+      method: "POST",
+      url: "/api/database/views",
+      payload: {
+        databasePath: "Tasks",
+        name: "Unsafe",
+        type: "table"
+      }
+    });
+    expect(missingVersion.statusCode).toBe(400);
+    expect(missingVersion.json()).toMatchObject({
+      error: {
+        code: "invalid_request",
+        message: "Database schema base version is required"
+      }
+    });
+
+    const staleDelete = await server.inject({
+      method: "POST",
+      url: "/api/database/views/delete",
+      payload: {
+        databasePath: "Tasks",
+        baseVersion: "stale",
+        viewId: doing.id
+      }
+    });
+    expect(staleDelete.statusCode).toBe(409);
+    await server.close();
+  });
+
   it("converts containers through the domain API", async () => {
     const root = await tempWorkspace();
     const { server } = await createRumiServer({ workspacePath: root });

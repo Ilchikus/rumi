@@ -3,7 +3,7 @@ status: draft
 area: runtime
 owner: runtime
 created: 2026-06-22
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 # Runtime Commands
 
@@ -22,10 +22,15 @@ createPage
 createFolder
 createDatabase
 createDatabaseRecord
+createDatabaseProperty
 updateDatabaseRecordProperty
 updateDatabaseSchema
 createDatabasePropertyOption
 renameDatabaseProperty
+createDatabaseView
+updateDatabaseView
+deleteDatabaseView
+setDatabaseRecordPagePropertyVisibility
 renameNode
 moveNode
 deleteNode
@@ -41,6 +46,14 @@ restoreRevision
 reconcileWorkspace
 rebuildIndex
 ```
+
+`queryDatabase` may resolve one saved database view by its stable view ID. Saved filters and sorts
+are runtime behavior; clients do not evaluate or flatten grouped filters. Optional transient query
+filters are combined with the saved filter root through `and`.
+
+Database view, property creation, and visibility commands are versioned against the `.db.md`
+schema. They preserve unsupported future schema/view definitions and publish
+`database.schemaChanged` only after the canonical file write succeeds.
 
 Commands own side effects:
 

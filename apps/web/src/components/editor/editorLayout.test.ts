@@ -10,6 +10,10 @@ const databaseEmbedNodeView = readFileSync(
   new URL("./migrated/plugins/databaseEmbedNodeView.tsx", import.meta.url),
   "utf8"
 );
+const blockDragHandle = readFileSync(
+  new URL("./migrated/plugins/blockDragHandle.ts", import.meta.url),
+  "utf8"
+);
 const slashCommands = readFileSync(
   new URL("./migrated/plugins/slashCommands.ts", import.meta.url),
   "utf8"
@@ -57,8 +61,23 @@ describe("editor layout contracts", () => {
     expect(databaseEmbedNodeView).toContain(
       "onMessage={platform.onMessage ?? ignoreDatabaseMessage}"
     );
+    expect(databaseEmbedNodeView).toContain('variant="embed"');
+    expect(databaseEmbedNodeView).toContain("embedSourceControl={(");
+    expect(databaseEmbedNodeView).not.toContain("toolbarStart");
     expect(databaseEmbedNodeView).toContain("documents={platform.documents}");
     expect(slashCommands).toContain("selectingSource: true");
+  });
+
+  it("clears block highlight after outside controls finish their click behavior", () => {
+    expect(blockDragHandle).toContain('document.addEventListener("click", this.onDocClick)');
+    expect(blockDragHandle).toContain("this.clearBlockSelection()");
+    expect(blockDragHandle).toContain("if (!hasSelectedBlocks) return");
+    expect(blockDragHandle).toContain(
+      "if (this.view.state.selection instanceof NodeSelection)"
+    );
+    expect(blockDragHandle).toContain(
+      'document.removeEventListener("click", this.onDocClick)'
+    );
   });
 
   it("does not apply Markdown table layout and borders to embedded databases", () => {

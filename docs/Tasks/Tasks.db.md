@@ -50,6 +50,8 @@ properties:
         color: green
       - name: M07
         color: orange
+      - name: M08
+        color: lime
       - name: later
         color: neutral
   owner_layer:
@@ -93,7 +95,8 @@ properties:
   updated:
     type: date
 views:
-  - name: By Milestone
+  - id: by-milestone
+    name: By Milestone
     type: table
     columns:
       - status
@@ -101,12 +104,15 @@ views:
       - owner_layer
       - coverage
       - updated
-  - name: Ready
+  - id: ready
+    name: Ready
     type: table
     columns:
       - milestone
       - owner_layer
       - coverage
+recordPage:
+  hiddenProperties: []
 ---
 # Tasks
 

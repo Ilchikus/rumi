@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
-  DatabaseFilter,
+  DatabaseFilterGroup,
+  DatabaseFilterItem,
+  DatabaseFilterRule,
   DatabasePropertyDefinition,
+  DatabaseRecordPageConfig,
   DatabaseRecord,
   DatabaseSchema,
   DatabaseSort,
@@ -26,6 +29,10 @@ export interface LoadedDatabaseConfig {
   markdownBody: string;
   version: string;
   schema: DatabaseSchema;
+}
+
+export class DatabaseRequestError extends Error {
+  readonly statusCode = 400;
 }
 
 export async function loadDatabaseConfig(
@@ -77,16 +84,28 @@ export function queryDatabaseRecords(
   records: DatabaseRecord[],
   request: QueryDatabaseRequest
 ): QueryDatabaseResult {
-  const filters = request.filters ?? [];
+  const view = request.viewId
+    ? config.schema.views.find((candidate) => candidate.id === request.viewId)
+    : undefined;
+  if (request.viewId && !view) {
+    throw new DatabaseRequestError(`Database view does not exist: ${request.viewId}`);
+  }
+  const savedFilters = view?.filters ?? [];
+  const transientFilters = request.filters ?? [];
   const filtered =
-    filters.length === 0
-      ? records
-      : records.filter((record) =>
-          (request.filterMode ?? "and") === "and"
-            ? filters.every((filter) => matchesFilter(record, filter))
-            : filters.some((filter) => matchesFilter(record, filter))
-        );
-  const sorts = request.sorts ?? [];
+    savedFilters.length === 0 && transientFilters.length === 0
+      ? [...records]
+      : records.filter((record) => (
+          matchesFilterGroup(record, {
+            filters: savedFilters,
+            ...(view?.filterMode ? { filterMode: view.filterMode } : {})
+          })
+          && matchesFilterGroup(record, {
+            filters: transientFilters,
+            ...(request.filterMode ? { filterMode: request.filterMode } : {})
+          })
+        ));
+  const sorts = request.sorts ?? view?.sorts ?? [];
 
   filtered.sort((left, right) => compareRecords(left, right, sorts));
 
@@ -146,20 +165,28 @@ export function databaseSchemaFromFrontmatter(frontmatter: FrontmatterRecord): D
   }
 
   const rawViews = Array.isArray(frontmatter.views) ? frontmatter.views : [];
-  const views = rawViews.flatMap((value) => {
-    const view = parseView(value, Object.keys(properties));
-    return view ? [view] : [];
+  const unsupportedViews: unknown[] = [];
+  const usedViewIds = new Set<string>();
+  const views = rawViews.flatMap((value, index) => {
+    const view = parseView(value, Object.keys(properties), usedViewIds, index);
+    if (view) return [view];
+    unsupportedViews.push(value);
+    return [];
   });
+  const recordPage = parseRecordPage(frontmatter.recordPage);
 
   return {
     type: "database",
     properties,
     unsupportedProperties,
+    unsupportedViews,
+    recordPage,
     views:
       views.length > 0
         ? views
         : [
             {
+              id: createDatabaseViewId([], "All"),
               name: "All",
               type: "table",
               columns: Object.keys(properties)
@@ -171,10 +198,12 @@ export function databaseSchemaFromFrontmatter(frontmatter: FrontmatterRecord): D
 export function databaseFrontmatter(
   current: FrontmatterRecord,
   properties: Record<string, DatabasePropertyDefinition>,
-  views: DatabaseView[]
+  views: DatabaseView[],
+  recordPage?: DatabaseRecordPageConfig
 ): FrontmatterRecord {
+  const currentSchema = databaseSchemaFromFrontmatter(current);
   const currentProperties = isRecord(current.properties) ? current.properties : {};
-  const supportedPropertyNames = new Set(Object.keys(databaseSchemaFromFrontmatter(current).properties));
+  const supportedPropertyNames = new Set(Object.keys(currentSchema.properties));
   const preservedUnsupportedProperties = Object.fromEntries(
     Object.entries(currentProperties).filter(([name]) => !supportedPropertyNames.has(name))
   );
@@ -186,7 +215,21 @@ export function databaseFrontmatter(
       ...properties,
       ...preservedUnsupportedProperties
     },
-    views
+    recordPage: recordPage ?? currentSchema.recordPage,
+    views: [
+      ...views.map((view) => {
+        const { filters: _filters, filterMode: _filterMode, ...viewWithoutFilters } = view;
+        const filters = normalizeDatabaseFilters(view.filters ?? []);
+        return filters.length > 0
+          ? {
+              ...viewWithoutFilters,
+              filters,
+              ...(view.filterMode === "or" ? { filterMode: "or" as const } : {})
+            }
+          : viewWithoutFilters;
+      }),
+      ...currentSchema.unsupportedViews
+    ]
   };
 }
 
@@ -224,28 +267,58 @@ function parsePropertyDefinition(value: unknown): DatabasePropertyDefinition | n
   };
 }
 
-function parseView(value: unknown, fallbackColumns: string[]): DatabaseView | null {
+function parseView(
+  value: unknown,
+  fallbackColumns: string[],
+  usedViewIds: Set<string>,
+  index: number
+): DatabaseView | null {
   if (!isRecord(value) || value.type !== "table") {
     return null;
   }
 
+  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Table";
+  const requestedId = typeof value.id === "string" && value.id.trim() ? value.id.trim() : "";
+  const id = uniqueDatabaseViewId(
+    usedViewIds,
+    requestedId || databaseViewIdBase(name) || `view-${index + 1}`
+  );
+  usedViewIds.add(id);
   const columns = Array.isArray(value.columns)
     ? value.columns.filter((column): column is string => typeof column === "string")
     : fallbackColumns;
   const filters = Array.isArray(value.filters)
-    ? value.filters.filter(isDatabaseFilter)
+    ? value.filters.flatMap((filter) => {
+        const parsed = parseDatabaseFilterItem(filter);
+        return parsed ? [parsed] : [];
+      })
     : undefined;
   const sorts = Array.isArray(value.sorts)
     ? value.sorts.filter(isDatabaseSort)
     : undefined;
 
   return {
-    name: typeof value.name === "string" && value.name.trim() ? value.name : "Table",
+    id,
+    name,
     type: "table",
     columns,
     ...(filters && filters.length > 0 ? { filters } : {}),
     ...(value.filterMode === "or" ? { filterMode: "or" } : {}),
     ...(sorts && sorts.length > 0 ? { sorts } : {})
+  };
+}
+
+function parseRecordPage(value: unknown): DatabaseRecordPageConfig {
+  if (!isRecord(value) || !Array.isArray(value.hiddenProperties)) {
+    return { hiddenProperties: [] };
+  }
+
+  return {
+    hiddenProperties: [...new Set(
+      value.hiddenProperties.filter((property): property is string => (
+        typeof property === "string" && property.trim().length > 0
+      ))
+    )]
   };
 }
 
@@ -260,12 +333,25 @@ function isDatabasePropertyType(value: unknown): value is DatabasePropertyDefini
   );
 }
 
-function isDatabaseFilter(value: unknown): value is DatabaseFilter {
-  return (
-    isRecord(value) &&
-    typeof value.property === "string" &&
-    typeof value.operator === "string" &&
-    [
+function parseDatabaseFilterItem(value: unknown): DatabaseFilterItem | null {
+  if (!isRecord(value)) return null;
+
+  if (Array.isArray(value.filters)) {
+    const filters = value.filters.flatMap((filter) => {
+      const parsed = parseDatabaseFilterItem(filter);
+      return parsed ? [parsed] : [];
+    });
+    if (filters.length === 0) return null;
+    return {
+      filters,
+      ...(value.filterMode === "or" ? { filterMode: "or" as const } : {})
+    };
+  }
+
+  if (
+    typeof value.property !== "string" ||
+    typeof value.operator !== "string" ||
+    ![
       "equals",
       "not-equals",
       "contains",
@@ -275,7 +361,15 @@ function isDatabaseFilter(value: unknown): value is DatabaseFilter {
       "greater-than",
       "less-than"
     ].includes(value.operator)
-  );
+  ) {
+    return null;
+  }
+
+  return {
+    property: value.property,
+    operator: value.operator as DatabaseFilterRule["operator"],
+    ...(Object.prototype.hasOwnProperty.call(value, "value") ? { value: value.value } : {})
+  };
 }
 
 function isDatabaseSort(value: unknown): value is DatabaseSort {
@@ -286,7 +380,20 @@ function isDatabaseSort(value: unknown): value is DatabaseSort {
   );
 }
 
-function matchesFilter(record: DatabaseRecord, filter: DatabaseFilter): boolean {
+function matchesFilterGroup(record: DatabaseRecord, group: DatabaseFilterGroup): boolean {
+  if (group.filters.length === 0) return true;
+  return (group.filterMode ?? "and") === "and"
+    ? group.filters.every((filter) => matchesFilterItem(record, filter))
+    : group.filters.some((filter) => matchesFilterItem(record, filter));
+}
+
+function matchesFilterItem(record: DatabaseRecord, filter: DatabaseFilterItem): boolean {
+  return isDatabaseFilterGroup(filter)
+    ? matchesFilterGroup(record, filter)
+    : matchesFilterRule(record, filter);
+}
+
+function matchesFilterRule(record: DatabaseRecord, filter: DatabaseFilterRule): boolean {
   const value = filter.property === "title" ? record.title : record.frontmatter[filter.property];
   const expected = filter.value;
 
@@ -341,7 +448,18 @@ function compareValues(left: unknown, right: unknown): number {
 
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (Array.isArray(left)) {
+    if (Array.isArray(right)) {
+      return unorderedValuesEqual(left, right);
+    }
     return left.some((item) => valuesEqual(item, right));
+  }
+
+  if (Array.isArray(right)) {
+    return false;
+  }
+
+  if (typeof left === "string" && typeof right === "string") {
+    return left.toLocaleLowerCase() === right.toLocaleLowerCase();
   }
 
   return displayValue(left) === displayValue(right);
@@ -349,10 +467,21 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 
 function containsValue(value: unknown, expected: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some((item) => containsValue(item, expected));
+    return value.some((item) => valuesEqual(item, expected));
   }
 
   return displayValue(value).toLocaleLowerCase().includes(displayValue(expected).toLocaleLowerCase());
+}
+
+function unorderedValuesEqual(left: unknown[], right: unknown[]): boolean {
+  if (left.length !== right.length) return false;
+  const unmatched = [...right];
+  for (const value of left) {
+    const index = unmatched.findIndex((candidate) => valuesEqual(value, candidate));
+    if (index < 0) return false;
+    unmatched.splice(index, 1);
+  }
+  return unmatched.length === 0;
 }
 
 function isEmptyValue(value: unknown): boolean {
@@ -385,4 +514,79 @@ function hashText(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isDatabaseFilterGroup(
+  filter: DatabaseFilterItem
+): filter is DatabaseFilterGroup {
+  return "filters" in filter;
+}
+
+export function mapDatabaseFilterRules(
+  filters: readonly DatabaseFilterItem[],
+  mapRule: (rule: DatabaseFilterRule) => DatabaseFilterRule | null
+): DatabaseFilterItem[] {
+  const mappedFilters: DatabaseFilterItem[] = [];
+  for (const filter of filters) {
+    if (!isDatabaseFilterGroup(filter)) {
+      const mapped = mapRule(filter);
+      if (mapped) mappedFilters.push(mapped);
+      continue;
+    }
+
+    const nested = mapDatabaseFilterRules(filter.filters, mapRule);
+    if (nested.length > 0) {
+      mappedFilters.push({ ...filter, filters: nested });
+    }
+  }
+  return mappedFilters;
+}
+
+export function normalizeDatabaseFilters(
+  filters: readonly DatabaseFilterItem[]
+): DatabaseFilterItem[] {
+  const normalized: DatabaseFilterItem[] = [];
+  for (const filter of filters) {
+    if (isDatabaseFilterGroup(filter)) {
+      const nested = normalizeDatabaseFilters(filter.filters);
+      if (nested.length > 0) {
+        normalized.push({
+          filters: nested,
+          ...(filter.filterMode === "or" ? { filterMode: "or" as const } : {})
+        });
+      }
+      continue;
+    }
+
+    if (filter.operator === "is-empty" || filter.operator === "is-not-empty") {
+      normalized.push({ property: filter.property, operator: filter.operator });
+      continue;
+    }
+    normalized.push({ ...filter });
+  }
+  return normalized;
+}
+
+export function createDatabaseViewId(
+  views: readonly DatabaseView[],
+  name: string
+): string {
+  const used = new Set(views.map((view) => view.id));
+  return uniqueDatabaseViewId(used, databaseViewIdBase(name) || "view");
+}
+
+function databaseViewIdBase(name: string): string {
+  return name
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+}
+
+function uniqueDatabaseViewId(used: Set<string>, requested: string): string {
+  const base = requested || "view";
+  if (!used.has(base)) return base;
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
 }

@@ -242,7 +242,7 @@ const nodes: { [key: string]: NodeSpec } = {
     atom: true,
     attrs: {
       source: { default: "" },
-      viewType: { default: "table" },
+      viewType: { default: "" },
       filter: { default: "" },
       sort: { default: "" },
       selectingSource: { default: false },
@@ -252,7 +252,7 @@ const nodes: { [key: string]: NodeSpec } = {
       getAttrs(dom: HTMLElement) {
         return {
           source: dom.getAttribute("data-source") || "",
-          viewType: dom.getAttribute("data-view-type") || "table",
+          viewType: dom.getAttribute("data-view-type") || "",
           filter: dom.getAttribute("data-filter") || "",
           sort: dom.getAttribute("data-sort") || "",
           selectingSource: false,

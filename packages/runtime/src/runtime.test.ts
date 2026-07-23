@@ -785,7 +785,7 @@ describe("WorkspaceRuntime", () => {
           options: [{ name: "todo" }, { name: "done" }]
         }
       },
-      views: [{ name: "All", type: "table", columns: ["status"] }]
+      views: [{ id: "all", name: "All", type: "table", columns: ["status"] }]
     });
     expect(schemaResult.status).toBe("saved");
 
@@ -848,6 +848,7 @@ describe("WorkspaceRuntime", () => {
       properties: { status: { type: "text" } },
       views: [
         {
+          id: "doing",
           name: "Doing",
           type: "table",
           columns: ["status"],
@@ -898,7 +899,13 @@ describe("WorkspaceRuntime", () => {
         },
         watts: { type: "text" }
       },
-      views: [{ name: "All", type: "table", columns: ["tags", "watts"] }]
+      views: [{
+        id: "all",
+        name: "All",
+        type: "table",
+        columns: ["tags", "watts"],
+        filters: [{ property: "watts", operator: "contains", value: "4" }]
+      }]
     });
 
     let query = await runtime.queryDatabase({ databasePath: "Inventory" });
@@ -944,6 +951,7 @@ describe("WorkspaceRuntime", () => {
     });
     query = await runtime.queryDatabase({ databasePath: "Inventory" });
     expect(query.schema.properties.watts).toEqual({ type: "number" });
+    expect(query.schema.views[0]?.filters).toBeUndefined();
     expect(query.records[0]?.frontmatter.watts).toBe(42);
 
     await runtime.deleteDatabaseProperty({
@@ -962,7 +970,7 @@ describe("WorkspaceRuntime", () => {
     await fs.mkdir(path.join(root, "Tasks"), { recursive: true });
     await fs.writeFile(
       path.join(root, "Tasks", "Tasks.db.md"),
-      "---\ntype: database\nproperties:\n  related:\n    type: relation\n    target: Projects\n  status:\n    type: text\nviews: []\n---\n# Tasks\n",
+      "---\ntype: database\nproperties:\n  related:\n    type: relation\n    target: Projects\n  status:\n    type: text\nviews:\n  - name: Board\n    type: board\n    groupBy: status\n---\n# Tasks\n",
       "utf8"
     );
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
@@ -976,11 +984,13 @@ describe("WorkspaceRuntime", () => {
         related: { type: "text" },
         status: { type: "text" }
       },
-      views: [{ name: "All", type: "table", columns: ["status"] }]
+      views: [{ id: "all", name: "All", type: "table", columns: ["status"] }]
     });
 
     const config = await fs.readFile(path.join(root, "Tasks", "Tasks.db.md"), "utf8");
     expect(config).toContain("related:\n    type: relation\n    target: Projects");
+    expect(config).toContain("name: Board\n    type: board\n    groupBy: status");
+    expect(config).toContain("id: all");
   });
 
   it("filters and sorts database records on the server", async () => {
@@ -1010,6 +1020,319 @@ describe("WorkspaceRuntime", () => {
     });
 
     expect(query.records.map((record) => record.title)).toEqual(["Higher", "Lower"]);
+
+    await expect(runtime.queryDatabase({
+      databasePath: "Tasks",
+      filters: [null]
+    } as unknown as Parameters<typeof runtime.queryDatabase>[0])).rejects.toThrow(
+      /filter is invalid/
+    );
+    await expect(runtime.queryDatabase({
+      databasePath: "Tasks",
+      sorts: [{ property: "priority", direction: "sideways" }]
+    } as unknown as Parameters<typeof runtime.queryDatabase>[0])).rejects.toThrow(
+      /sort is invalid/
+    );
+  });
+
+  it("persists multiple table views, nested filters, exact columns, and record-page visibility", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "High",
+      frontmatter: {
+        status: "doing",
+        priority: 3,
+        due: "2026-07-25",
+        tags: ["editor", "urgent"]
+      }
+    });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "Low",
+      frontmatter: {
+        status: "doing",
+        priority: 1,
+        due: "2026-08-10",
+        tags: ["editor"]
+      }
+    });
+    await runtime.createDatabaseRecord({
+      databasePath: "Tasks",
+      name: "Done",
+      frontmatter: {
+        status: "done",
+        priority: 5,
+        due: "2026-07-20",
+        tags: ["editor"]
+      }
+    });
+    const initial = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await runtime.updateDatabaseSchema({
+      databasePath: "Tasks",
+      baseVersion: initial.schemaVersion,
+      properties: {
+        status: {
+          type: "select",
+          options: [{ name: "doing" }, { name: "done" }]
+        },
+        priority: { type: "number" },
+        due: { type: "date" },
+        tags: {
+          type: "multi-select",
+          options: [{ name: "editor" }, { name: "urgent" }]
+        }
+      },
+      recordPage: { hiddenProperties: ["priority"] },
+      views: [
+        {
+          id: "active",
+          name: "Active",
+          type: "table",
+          columns: ["status", "due"],
+          filterMode: "and",
+          filters: [
+            { property: "status", operator: "not-equals", value: "done" },
+            {
+              filterMode: "or",
+              filters: [
+                { property: "priority", operator: "greater-than", value: 2 },
+                { property: "due", operator: "less-than", value: "2026-08-01" }
+              ]
+            }
+          ]
+        },
+        {
+          id: "editor-only",
+          name: "Editor only",
+          type: "table",
+          columns: ["tags"],
+          filters: [{
+            property: "tags",
+            operator: "equals",
+            value: ["editor"]
+          }]
+        }
+      ]
+    });
+
+    const active = await runtime.queryDatabase({
+      databasePath: "Tasks",
+      viewId: "active"
+    });
+    expect(active.records.map((record) => record.title)).toEqual(["High"]);
+    expect(active.schema.views.map((view) => view.type)).toEqual(["table", "table"]);
+    expect(active.schema.views[0]?.columns).toEqual(["status", "due"]);
+    expect(active.schema.recordPage.hiddenProperties).toEqual(["priority"]);
+
+    const searched = await runtime.queryDatabase({
+      databasePath: "Tasks",
+      viewId: "active",
+      filters: [{ property: "title", operator: "contains", value: "low" }]
+    });
+    expect(searched.records).toEqual([]);
+
+    const exactSet = await runtime.queryDatabase({
+      databasePath: "Tasks",
+      viewId: "editor-only"
+    });
+    expect(exactSet.records.map((record) => record.title)).toEqual(["Done", "Low"]);
+  });
+
+  it("recursively repairs saved filters and record-page visibility", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    const initial = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await runtime.updateDatabaseSchema({
+      databasePath: "Tasks",
+      baseVersion: initial.schemaVersion,
+      properties: {
+        status: {
+          type: "select",
+          options: [{ name: "doing" }, { name: "done" }]
+        },
+        tags: {
+          type: "multi-select",
+          options: [{ name: "editor" }]
+        }
+      },
+      recordPage: { hiddenProperties: ["status"] },
+      views: [{
+        id: "all",
+        name: "All",
+        type: "table",
+        columns: ["status", "tags"],
+        filters: [{
+          filterMode: "or",
+          filters: [
+            { property: "status", operator: "equals", value: "doing" },
+            { property: "tags", operator: "equals", value: ["editor"] }
+          ]
+        }]
+      }]
+    });
+    let query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await runtime.renameDatabaseProperty({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "status",
+      newName: "state"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.recordPage.hiddenProperties).toEqual(["state"]);
+    expect(query.schema.views[0]?.filters).toMatchObject([
+      {
+        filters: [
+          { property: "state", value: "doing" },
+          { property: "tags", value: ["editor"] }
+        ]
+      }
+    ]);
+
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "state",
+      option: "doing",
+      action: "rename",
+      newName: "review"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.views[0]?.filters).toMatchObject([
+      {
+        filters: [
+          { property: "state", value: "review" },
+          { property: "tags", value: ["editor"] }
+        ]
+      }
+    ]);
+
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "state",
+      option: "review",
+      action: "delete"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.views[0]?.filters).toMatchObject([
+      { filters: [{ property: "tags", value: ["editor"] }] }
+    ]);
+
+    await runtime.updateDatabasePropertyOption({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "tags",
+      option: "editor",
+      action: "delete"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.views[0]?.filters).toBeUndefined();
+  });
+
+  it("owns view, property, and record-page visibility mutations", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createDatabase({ parentPath: "", name: "Tasks" });
+    let query = await runtime.queryDatabase({ databasePath: "Tasks" });
+
+    await runtime.createDatabaseProperty({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "status",
+      type: "text",
+      viewId: "all"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await runtime.createDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      name: "All",
+      type: "table",
+      sourceViewId: "all"
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    const duplicate = query.schema.views.find((view) => view.id !== "all");
+    expect(duplicate).toMatchObject({ name: "All (2)", columns: ["status"] });
+
+    await runtime.createDatabaseProperty({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "priority",
+      type: "number",
+      viewId: duplicate!.id
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.views.find((view) => view.id === "all")?.columns).toEqual(["status"]);
+    expect(query.schema.views.find((view) => view.id === duplicate!.id)?.columns).toEqual([
+      "status",
+      "priority"
+    ]);
+
+    await expect(runtime.updateDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      viewId: duplicate!.id,
+      name: duplicate!.name,
+      columns: ["status", "priority"],
+      filters: [{ property: "status", operator: "contains", value: "" }]
+    })).rejects.toThrow(/text filter requires a value/);
+    await expect(runtime.updateDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      viewId: duplicate!.id,
+      name: duplicate!.name,
+      columns: ["status", "priority"],
+      sorts: [{ property: "priority", direction: "sideways" }]
+    } as unknown as Parameters<typeof runtime.updateDatabaseView>[0])).rejects.toThrow(
+      /sort is invalid/
+    );
+    await runtime.updateDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      viewId: duplicate!.id,
+      name: duplicate!.name,
+      columns: ["status", "priority"],
+      filters: [
+        { filterMode: "or", filters: [] },
+        { property: "status", operator: "is-empty", value: "ignored" }
+      ]
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.views.find((view) => view.id === duplicate!.id)?.filters).toEqual([
+      { property: "status", operator: "is-empty" }
+    ]);
+
+    await runtime.setDatabaseRecordPagePropertyVisibility({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      property: "priority",
+      visible: false
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    expect(query.schema.recordPage.hiddenProperties).toEqual(["priority"]);
+
+    await runtime.deleteDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      viewId: duplicate!.id
+    });
+    query = await runtime.queryDatabase({ databasePath: "Tasks" });
+    await expect(runtime.deleteDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: query.schemaVersion,
+      viewId: "all"
+    })).rejects.toThrow(/at least one view/);
+
+    await expect(runtime.createDatabaseView({
+      databasePath: "Tasks",
+      baseVersion: "",
+      name: "Unsafe",
+      type: "table"
+    })).rejects.toThrow(/base version is required/);
   });
 
   it("stores content-addressed snapshots without Git and restores a selected revision", async () => {

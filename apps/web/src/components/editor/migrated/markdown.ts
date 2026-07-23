@@ -368,7 +368,7 @@ function convertCodeBlock(node: Code, schema: Schema): ProseMirrorNode | null {
 
   // Check if it's a database embed
   if (node.lang === "db" && schema.nodes.database_embed) {
-    const attrs: Record<string, string> = { source: "", viewType: "table", filter: "", sort: "" }
+    const attrs: Record<string, string> = { source: "", viewType: "", filter: "", sort: "" }
     const lines = (node.value || "").split("\n")
     for (const line of lines) {
       const match = line.match(/^(\w+):\s*(.*)$/)
@@ -723,7 +723,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
     case "database_embed":
       lines.push(indent + "```db")
       if (node.attrs.source) lines.push(indent + "source: " + node.attrs.source)
-      if (node.attrs.viewType && node.attrs.viewType !== "table") lines.push(indent + "view: " + node.attrs.viewType)
+      if (node.attrs.viewType) lines.push(indent + "view: " + node.attrs.viewType)
       if (node.attrs.filter) lines.push(indent + "filter: " + node.attrs.filter)
       if (node.attrs.sort) lines.push(indent + "sort: " + node.attrs.sort)
       lines.push(indent + "```")

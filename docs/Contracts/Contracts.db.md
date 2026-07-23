@@ -21,6 +21,8 @@ properties:
         color: yellow
       - name: editor
         color: purple
+      - name: database
+        color: green
       - name: cli
         color: cyan
       - name: file-format

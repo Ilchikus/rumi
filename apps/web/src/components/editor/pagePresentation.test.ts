@@ -19,10 +19,6 @@ import {
   databaseOptionColor,
   randomDatabaseOptionColor
 } from "./DatabaseOptionPill";
-import {
-  addDatabasePropertyToPrimaryView,
-  databasePropertyDefinition
-} from "../database/databaseSchema";
 
 describe("page editor presentation", () => {
   it("derives page titles from each canonical filename shape", () => {
@@ -178,12 +174,19 @@ describe("page editor presentation", () => {
           schema: {
             type: "database",
             unsupportedProperties: [],
+            unsupportedViews: [],
+            recordPage: { hiddenProperties: [] },
             properties: {
               status: { type: "select", options: [{ name: "todo" }, { name: "doing" }] },
               areas: { type: "multi-select", options: [{ name: "editor" }] },
               approved: { type: "checkbox" }
             },
-            views: [{ name: "All", type: "table", columns: ["status", "areas", "approved"] }]
+            views: [{
+              id: "all",
+              name: "All",
+              type: "table",
+              columns: ["status", "areas", "approved"]
+            }]
           }
         },
         onChange: () => undefined,
@@ -198,16 +201,44 @@ describe("page editor presentation", () => {
     expect(markup).toContain("Create new property");
   });
 
-  it("uses one schema update shape for database table and record property creation", () => {
-    expect(databasePropertyDefinition("select")).toEqual({ type: "select", options: [] });
-    expect(databasePropertyDefinition("text")).toEqual({ type: "text" });
-    expect(addDatabasePropertyToPrimaryView([
-      { name: "All", type: "table", columns: ["status"] },
-      { name: "Done", type: "table", columns: ["status"] }
-    ], "owner")).toEqual([
-      { name: "All", type: "table", columns: ["status", "owner"] },
-      { name: "Done", type: "table", columns: ["status"] }
-    ]);
+  it("keeps record-page visibility independent while preserving unknown frontmatter", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PageProperties, {
+        frontmatter: {
+          status: "doing",
+          notes: "Visible detail",
+          external: "Preserved"
+        },
+        database: {
+          databasePath: "Tasks",
+          schemaVersion: "schema-v2",
+          schema: {
+            type: "database",
+            unsupportedProperties: [],
+            unsupportedViews: [],
+            properties: {
+              status: { type: "text" },
+              notes: { type: "text" }
+            },
+            recordPage: { hiddenProperties: ["status"] },
+            views: [{
+              id: "compact",
+              name: "Compact",
+              type: "table",
+              columns: ["status"]
+            }]
+          }
+        },
+        onChange: () => undefined,
+        onCreateDatabaseProperty: async () => true,
+        onSetDatabasePropertyVisibility: async () => true
+      })
+    );
+
+    expect(markup).not.toContain(">status<");
+    expect(markup).toContain("Visible detail");
+    expect(markup).toContain("Preserved");
+    expect(markup).toContain('aria-label="Record page properties"');
   });
 
   it("ranks exact, prefix, and substring option matches in that order", () => {

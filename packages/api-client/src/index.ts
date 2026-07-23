@@ -4,13 +4,16 @@ import type {
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
   ConvertContainerRequest,
+  CreateDatabasePropertyRequest,
   CreateDatabasePropertyOptionRequest,
   CreateDatabaseRecordRequest,
   CreateDatabaseRequest,
+  CreateDatabaseViewRequest,
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
   DeleteDatabasePropertyRequest,
+  DeleteDatabaseViewRequest,
   MoveNodeRequest,
   OpenWorkspaceResult,
   PageDocument,
@@ -29,10 +32,12 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
+  SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
+  UpdateDatabaseViewRequest,
   WorkspaceMutationResult,
   WorkspaceNode
 } from "@rumi/contracts";
@@ -202,6 +207,48 @@ export class RumiApiClient {
 
   async updateDatabaseSchema(request: UpdateDatabaseSchemaRequest): Promise<SavePageResult> {
     return this.request<SavePageResult>("/api/database/schema", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async createDatabaseProperty(request: CreateDatabasePropertyRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/schema/property", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async createDatabaseView(request: CreateDatabaseViewRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/views", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async updateDatabaseView(request: UpdateDatabaseViewRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/views/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async deleteDatabaseView(request: DeleteDatabaseViewRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/views/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async setDatabaseRecordPagePropertyVisibility(
+    request: SetDatabaseRecordPagePropertyVisibilityRequest
+  ): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/database/record-page/property-visibility", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

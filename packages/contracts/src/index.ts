@@ -62,7 +62,7 @@ export interface DatabasePropertyDefinition {
   options?: DatabasePropertyOption[];
 }
 
-export interface DatabaseFilter {
+export interface DatabaseFilterRule {
   property: string;
   operator:
     | "equals"
@@ -76,26 +76,41 @@ export interface DatabaseFilter {
   value?: unknown;
 }
 
+export interface DatabaseFilterGroup {
+  filters: DatabaseFilterItem[];
+  filterMode?: "and" | "or";
+}
+
+export type DatabaseFilterItem = DatabaseFilterRule | DatabaseFilterGroup;
+export type DatabaseFilter = DatabaseFilterRule;
+
 export interface DatabaseSort {
   property: string;
   direction: "asc" | "desc";
 }
 
 export interface DatabaseTableView {
+  id: string;
   name: string;
   type: "table";
   columns: string[];
-  filters?: DatabaseFilter[];
+  filters?: DatabaseFilterItem[];
   filterMode?: "and" | "or";
   sorts?: DatabaseSort[];
 }
 
 export type DatabaseView = DatabaseTableView;
 
+export interface DatabaseRecordPageConfig {
+  hiddenProperties: string[];
+}
+
 export interface DatabaseSchema {
   type: "database";
   properties: Record<string, DatabasePropertyDefinition>;
   unsupportedProperties: string[];
+  unsupportedViews: unknown[];
+  recordPage: DatabaseRecordPageConfig;
   views: DatabaseView[];
 }
 
@@ -126,7 +141,8 @@ export interface CreateDatabaseRecordRequest {
 
 export interface QueryDatabaseRequest {
   databasePath: string;
-  filters?: DatabaseFilter[];
+  viewId?: string;
+  filters?: DatabaseFilterItem[];
   filterMode?: "and" | "or";
   sorts?: DatabaseSort[];
 }
@@ -151,7 +167,48 @@ export interface UpdateDatabaseSchemaRequest {
   databasePath: string;
   properties: Record<string, DatabasePropertyDefinition>;
   views: DatabaseView[];
+  recordPage?: DatabaseRecordPageConfig;
   baseVersion?: string;
+}
+
+export interface CreateDatabasePropertyRequest {
+  databasePath: string;
+  property: string;
+  type: DatabasePropertyType;
+  viewId?: string;
+  baseVersion: string;
+}
+
+export interface CreateDatabaseViewRequest {
+  databasePath: string;
+  name: string;
+  type: "table";
+  sourceViewId?: string;
+  baseVersion: string;
+}
+
+export interface UpdateDatabaseViewRequest {
+  databasePath: string;
+  viewId: string;
+  name: string;
+  columns: string[];
+  filters?: DatabaseFilterItem[];
+  filterMode?: "and" | "or";
+  sorts?: DatabaseSort[];
+  baseVersion: string;
+}
+
+export interface DeleteDatabaseViewRequest {
+  databasePath: string;
+  viewId: string;
+  baseVersion: string;
+}
+
+export interface SetDatabaseRecordPagePropertyVisibilityRequest {
+  databasePath: string;
+  property: string;
+  visible: boolean;
+  baseVersion: string;
 }
 
 export interface CreateDatabasePropertyOptionRequest {

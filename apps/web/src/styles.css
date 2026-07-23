@@ -44,6 +44,14 @@
 }
 
 @layer components {
+  .rumi-database-view-tabs {
+    scrollbar-width: none;
+  }
+
+  .rumi-database-view-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
   @media (hover: hover) and (pointer: fine) {
     .rumi-sidebar-node .rumi-sidebar-node-menu {
       opacity: 0;

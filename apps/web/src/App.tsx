@@ -29,10 +29,7 @@ import {
   databaseRefreshRevisionFor
 } from "./components/database/databaseRefresh";
 import type { DatabaseRefreshRevisions } from "./components/database/databaseRefresh";
-import {
-  addDatabasePropertyToPrimaryView,
-  databasePropertyDefinition
-} from "./components/database/databaseSchema";
+import { mergeRefreshedDatabaseContext } from "./components/database/databasePageContext";
 import { PageProperties } from "./components/editor/PageProperties";
 import { EditablePageTitle } from "./components/editor/EditablePageTitle";
 import type { EditableTitleSplitContext } from "./components/editor/EditablePageTitle";
@@ -258,6 +255,38 @@ export function App(): ReactElement {
     pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
   }, []);
 
+  const refreshOpenPageDatabaseContext = useCallback(async (
+    expectedPagePath?: string
+  ): Promise<boolean> => {
+    const currentPage = pageRef.current;
+
+    if (
+      !currentPage?.database
+      || (expectedPagePath !== undefined && currentPage.path !== expectedPagePath)
+    ) {
+      return false;
+    }
+
+    try {
+      forgetCachedPage(currentPage.path);
+      const refreshedPage = await api.openPage(currentPage.path);
+      const latestPage = pageRef.current;
+
+      // Refresh only the database-owned context. The open record may still have
+      // unsaved frontmatter or Markdown that must remain authoritative locally.
+      const nextPage = latestPage
+        ? mergeRefreshedDatabaseContext(latestPage, refreshedPage)
+        : null;
+      if (!nextPage) return false;
+      pageRef.current = nextPage;
+      setPage(nextPage);
+      return true;
+    } catch (error) {
+      setMessage(errorMessage(error));
+      return false;
+    }
+  }, [api, forgetCachedPage]);
+
   const createOpenPageDatabaseProperty = useCallback(
     async (name: string, type: DatabasePropertyType): Promise<boolean> => {
       const currentPage = pageRef.current;
@@ -274,18 +303,12 @@ export function App(): ReactElement {
         return false;
       }
 
-      const properties = {
-        ...database.schema.properties,
-        [property]: databasePropertyDefinition(type)
-      };
-      const views = addDatabasePropertyToPrimaryView(database.schema.views, property);
-
       try {
-        const result = await api.updateDatabaseSchema({
+        const result = await api.createDatabaseProperty({
           databasePath: database.databasePath,
           baseVersion: database.schemaVersion,
-          properties,
-          views
+          property,
+          type
         });
 
         if (result.status === "conflict") {
@@ -294,33 +317,15 @@ export function App(): ReactElement {
           return false;
         }
 
-        const latestPage = pageRef.current;
-        if (latestPage?.path !== currentPage.path || !latestPage.database) return false;
-
-        const nextPage: PageDocument = {
-          ...latestPage,
-          database: {
-            ...latestPage.database,
-            schemaVersion: result.version,
-            schema: {
-              ...latestPage.database.schema,
-              properties,
-              views
-            }
-          }
-        };
-
-        forgetCachedPage(currentPage.path);
-        pageRef.current = nextPage;
-        setPage(nextPage);
-        setMessage("");
-        return true;
+        const refreshed = await refreshOpenPageDatabaseContext(currentPage.path);
+        if (refreshed) setMessage("");
+        return refreshed;
       } catch (error) {
         setMessage(errorMessage(error));
         return false;
       }
     },
-    [api, forgetCachedPage]
+    [api, forgetCachedPage, refreshOpenPageDatabaseContext]
   );
 
   const createOpenPageDatabaseOption = useCallback(
@@ -442,20 +447,15 @@ export function App(): ReactElement {
           return false;
         }
 
-        forgetCachedPage(currentPage.path);
-        const nextPage = await api.openPage(currentPage.path);
-        if (pageRef.current?.path !== currentPage.path) return false;
-        pageRef.current = nextPage;
-        setPage(nextPage);
-        cacheResolvedPage(nextPage);
-        setMessage("");
-        return true;
+        const refreshed = await refreshOpenPageDatabaseContext(currentPage.path);
+        if (refreshed) setMessage("");
+        return refreshed;
       } catch (error) {
         setMessage(errorMessage(error));
         return false;
       }
     },
-    [api, cacheResolvedPage, forgetCachedPage]
+    [api, forgetCachedPage, refreshOpenPageDatabaseContext]
   );
 
   const updateOpenPageDatabaseProperty = useCallback(
@@ -488,20 +488,45 @@ export function App(): ReactElement {
           return false;
         }
 
-        forgetCachedPage(currentPage.path);
-        const nextPage = await api.openPage(currentPage.path);
-        if (pageRef.current?.path !== currentPage.path) return false;
-        pageRef.current = nextPage;
-        setPage(nextPage);
-        cacheResolvedPage(nextPage);
-        setMessage("");
-        return true;
+        const refreshed = await refreshOpenPageDatabaseContext(currentPage.path);
+        if (refreshed) setMessage("");
+        return refreshed;
       } catch (error) {
         setMessage(errorMessage(error));
         return false;
       }
     },
-    [api, cacheResolvedPage, forgetCachedPage]
+    [api, forgetCachedPage, refreshOpenPageDatabaseContext]
+  );
+
+  const setOpenPageDatabasePropertyVisibility = useCallback(
+    async (property: string, visible: boolean): Promise<boolean> => {
+      const currentPage = pageRef.current;
+      const database = currentPage?.database;
+      if (!currentPage || !database || !database.schema.properties[property]) return false;
+
+      try {
+        const result = await api.setDatabaseRecordPagePropertyVisibility({
+          databasePath: database.databasePath,
+          baseVersion: database.schemaVersion,
+          property,
+          visible
+        });
+        if (result.status === "conflict") {
+          forgetCachedPage(currentPage.path);
+          setMessage("The database presentation changed elsewhere. Reopen this record and try again.");
+          return false;
+        }
+
+        const refreshed = await refreshOpenPageDatabaseContext(currentPage.path);
+        if (refreshed) setMessage("");
+        return refreshed;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    },
+    [api, forgetCachedPage, refreshOpenPageDatabaseContext]
   );
 
   const loadPage = useCallback(
@@ -535,30 +560,6 @@ export function App(): ReactElement {
     },
     [api, cacheResolvedPage]
   );
-
-  const refreshOpenPageDatabaseContext = useCallback(async () => {
-    const currentPage = pageRef.current;
-
-    if (!currentPage?.database) {
-      return;
-    }
-
-    try {
-      forgetCachedPage(currentPage.path);
-      const refreshedPage = await api.openPage(currentPage.path);
-      const latestPage = pageRef.current;
-
-      if (latestPage?.path !== currentPage.path || !refreshedPage.database) {
-        return;
-      }
-
-      const nextPage = { ...latestPage, database: refreshedPage.database };
-      pageRef.current = nextPage;
-      setPage(nextPage);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  }, [api, forgetCachedPage]);
 
   const prefetchNode = useCallback(
     (node: WorkspaceNode) => {
@@ -1962,6 +1963,7 @@ export function App(): ReactElement {
 
                 {page.kind === "database" ? (
                   <DatabaseView
+                    variant="original"
                     api={api}
                     databasePath={parentPathForPage(page.path)}
                     preferenceScope={workspaceRootPath}
@@ -1998,6 +2000,7 @@ export function App(): ReactElement {
                     onDeleteDatabaseProperty={(property) =>
                       updateOpenPageDatabaseProperty(property, { action: "delete" })
                     }
+                    onSetDatabasePropertyVisibility={setOpenPageDatabasePropertyVisibility}
                   />
                 )}
               </div>

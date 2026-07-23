@@ -48,6 +48,7 @@ The milestone database is the source of structured planning:
 - [M05 Watcher Index Reconciliation](Milestones/M05-watcher-index-reconciliation.md)
 - [M06 Databases](Milestones/M06-databases.md)
 - [M07 Assets Search Polish](Milestones/M07-assets-search-polish.md)
+- [M08 Database Views And Filters](Milestones/M08-database-views-and-filters.md)
 
 ## Later
 

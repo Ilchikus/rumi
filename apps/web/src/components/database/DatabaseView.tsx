@@ -19,12 +19,15 @@ import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { Copy } from "@phosphor-icons/react/dist/csr/Copy";
 import { Folder } from "@phosphor-icons/react/dist/csr/Folder";
+import { EyeSlash } from "@phosphor-icons/react/dist/csr/EyeSlash";
+import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { WarningCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
+import { X } from "@phosphor-icons/react/dist/csr/X";
 import type { RumiApiClient } from "@rumi/api-client";
 import type {
   DatabasePropertyDefinition,
@@ -32,6 +35,7 @@ import type {
   DatabasePropertyType,
   DatabaseRecord,
   DatabaseSort,
+  DatabaseView as DatabaseViewConfig,
   QueryDatabaseResult,
   WorkspaceNode
 } from "@rumi/contracts";
@@ -71,11 +75,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
-import { Input } from "../ui/input";
-import {
-  addDatabasePropertyToPrimaryView,
-  databasePropertyDefinition
-} from "./databaseSchema";
+import { PropertyCreateMenu } from "../editor/PropertyCreateMenu";
 import {
   clampDatabaseColumnWidth,
   databaseColumnWidth,
@@ -83,6 +83,8 @@ import {
   writeDatabaseColumnWidths,
   type DatabaseColumnWidths
 } from "./databasePreferences";
+import { DatabaseViewTabs } from "./DatabaseViewTabs";
+import { DatabaseFilterMenu } from "./DatabaseFilterMenu";
 
 const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; label: string }> = [
   { value: "text", label: "Text" },
@@ -96,6 +98,16 @@ const DATABASE_PROPERTY_TYPES: ReadonlyArray<{ value: DatabasePropertyType; labe
 export const DATABASE_RECORD_BATCH_SIZE = 20;
 export const DATABASE_RECORD_NAME_LAYOUT_CLASS =
   "box-border block min-h-7 w-full min-w-0 break-words whitespace-pre-wrap px-1 py-1 text-left leading-5";
+
+interface DatabaseSelectionControlPosition {
+  top: number;
+  height: number;
+}
+
+interface DatabaseSelectionControlPositions {
+  header: DatabaseSelectionControlPosition;
+  records: Record<string, DatabaseSelectionControlPosition>;
+}
 
 export function databaseColumnWidthClass(property: string): string {
   return property === "title" ? "w-60 min-w-60" : "w-44 min-w-44";
@@ -131,15 +143,27 @@ export function databaseRecordTitleFromPath(recordPath: string): string {
   return fileName.replace(/\.md$/iu, "");
 }
 
-export interface DatabaseViewProps {
+interface DatabaseViewBaseProps {
   api: RumiApiClient;
   databasePath: string;
   preferenceScope?: string;
   refreshRevision: number;
   onOpenRecord: (recordPath: string) => void;
   onMessage: (message: string) => void;
-  toolbarStart?: ReactNode;
+  initialViewId?: string;
+  onActiveViewChange?: (viewId: string) => void;
 }
+
+export type DatabaseViewProps = DatabaseViewBaseProps & (
+  | {
+      variant: "embed";
+      embedSourceControl: ReactNode;
+    }
+  | {
+      variant?: "original";
+      embedSourceControl?: never;
+    }
+);
 
 export function DatabaseView({
   api,
@@ -148,16 +172,18 @@ export function DatabaseView({
   refreshRevision,
   onOpenRecord,
   onMessage,
-  toolbarStart
+  variant = "original",
+  embedSourceControl,
+  initialViewId = "",
+  onActiveViewChange
 }: DatabaseViewProps): ReactElement {
   const [result, setResult] = useState<QueryDatabaseResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [creatingRecord, setCreatingRecord] = useState(false);
   const [search, setSearch] = useState("");
-  const [sorts, setSorts] = useState<DatabaseSort[]>([]);
-  const [newPropertyName, setNewPropertyName] = useState("");
-  const [newPropertyType, setNewPropertyType] = useState<DatabasePropertyType>("text");
-  const [addingProperty, setAddingProperty] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeViewId, setActiveViewId] = useState(initialViewId);
+  const [viewActionBusy, setViewActionBusy] = useState(false);
   const [selectedRecordPaths, setSelectedRecordPaths] = useState<Set<string>>(() => new Set());
   const [selectionAction, setSelectionAction] = useState<"duplicate" | "move" | "delete" | null>(null);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
@@ -170,56 +196,111 @@ export function DatabaseView({
   } | null>(null);
   const [renamingRecordPath, setRenamingRecordPath] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState<DatabaseColumnWidths>(() =>
-    readDatabaseColumnWidths(browserStorage(), preferenceScope, databasePath, "All")
+    readDatabaseColumnWidths(browserStorage(), preferenceScope, databasePath, initialViewId || "all")
   );
   const [resizingColumn, setResizingColumn] = useState<{
     property: string;
     startX: number;
     startWidth: number;
   } | null>(null);
+  const [selectionControlPositions, setSelectionControlPositions] =
+    useState<DatabaseSelectionControlPositions>({
+      header: { top: 0, height: 40 },
+      records: {}
+    });
+  const [hoveredSelectionControl, setHoveredSelectionControl] = useState<string | null>(null);
   const activeLoadRequestRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const tableFrameRef = useRef<HTMLDivElement>(null);
+  const tableHeaderRowRef = useRef<HTMLTableRowElement>(null);
+  const tableRecordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const selectionHoverTimeoutRef = useRef<number | null>(null);
   const activeDatabasePathRef = useRef(databasePath);
   const recordMutationRef = useRef(false);
   const columnWidthsRef = useRef(columnWidths);
   activeDatabasePathRef.current = databasePath;
   columnWidthsRef.current = columnWidths;
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  const cancelToolbarModes = useCallback(() => {
+    setSearch("");
+    setSearchOpen(false);
+    setSelectedRecordPaths(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (!searchOpen && selectedRecordPaths.size === 0) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      cancelToolbarModes();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [cancelToolbarModes, searchOpen, selectedRecordPaths.size]);
+
+  const load = useCallback(async (): Promise<QueryDatabaseResult | null> => {
     const requestId = activeLoadRequestRef.current + 1;
     activeLoadRequestRef.current = requestId;
     setLoading(true);
 
     try {
-      const nextResult = await api.queryDatabase({
+      const query = (viewId?: string) => api.queryDatabase({
         databasePath,
+        ...(viewId ? { viewId } : {}),
         ...(search.trim()
           ? {
-              filters: [
-                {
-                  property: "title",
-                  operator: "contains" as const,
-                  value: search.trim()
-                }
-              ]
+              filters: [{
+                property: "title",
+                operator: "contains" as const,
+                value: search.trim()
+              }]
             }
-          : {}),
-        ...(sorts.length > 0 ? { sorts } : {})
+          : {})
       });
+      let nextResult: QueryDatabaseResult;
+      try {
+        nextResult = await query(activeViewId || initialViewId || undefined);
+      } catch (error) {
+        if (!(activeViewId || initialViewId)) throw error;
+        if (!errorMessage(error).includes("Database view does not exist")) throw error;
+        nextResult = await query();
+      }
+      const resolvedViewId = nextResult.schema.views.some(
+        (view) => view.id === (activeViewId || initialViewId)
+      )
+        ? (activeViewId || initialViewId)
+        : (nextResult.schema.views[0]?.id ?? "");
+      if (
+        resolvedViewId &&
+        resolvedViewId !== (activeViewId || initialViewId)
+      ) {
+        nextResult = await query(resolvedViewId);
+      }
       if (
         activeLoadRequestRef.current === requestId &&
         activeDatabasePathRef.current === databasePath
       ) {
-        const viewName = nextResult.schema.views[0]?.name ?? "All";
+        if (resolvedViewId && resolvedViewId !== activeViewId) {
+          setActiveViewId(resolvedViewId);
+        }
         const savedColumnWidths = readDatabaseColumnWidths(
           browserStorage(),
           preferenceScope,
           databasePath,
-          viewName
+          resolvedViewId || "all"
         );
         columnWidthsRef.current = savedColumnWidths;
         setColumnWidths(savedColumnWidths);
         setResult(nextResult);
+        return nextResult;
       }
+      return null;
     } catch (error) {
       if (
         activeLoadRequestRef.current === requestId &&
@@ -227,6 +308,7 @@ export function DatabaseView({
       ) {
         onMessage(errorMessage(error));
       }
+      return null;
     } finally {
       if (
         activeLoadRequestRef.current === requestId &&
@@ -235,7 +317,15 @@ export function DatabaseView({
         setLoading(false);
       }
     }
-  }, [api, databasePath, onMessage, preferenceScope, search, sorts]);
+  }, [
+    activeViewId,
+    api,
+    databasePath,
+    initialViewId,
+    onMessage,
+    preferenceScope,
+    search
+  ]);
 
   useEffect(() => {
     if (recordMutationRef.current) return;
@@ -246,18 +336,22 @@ export function DatabaseView({
     return () => window.clearTimeout(timeout);
   }, [load, refreshRevision, search]);
 
+  const activeView = useMemo(
+    () => result?.schema.views.find((view) => view.id === activeViewId)
+      ?? result?.schema.views[0],
+    [activeViewId, result]
+  );
   const columns = useMemo(() => {
-    if (!result) {
-      return [];
-    }
-
-    const activeView = result.schema.views[0];
-    const configured = activeView?.columns ?? [];
-    const available = Object.keys(result.schema.properties);
-    return configured.length > 0
-      ? [...configured.filter((column) => available.includes(column)), ...available.filter((column) => !configured.includes(column))]
-      : available;
-  }, [result]);
+    if (!result || !activeView) return [];
+    const available = new Set(Object.keys(result.schema.properties));
+    return activeView.columns.filter((column) => available.has(column));
+  }, [activeView, result]);
+  const hiddenProperties = useMemo(
+    () => Object.keys(result?.schema.properties ?? {}).filter(
+      (property) => !columns.includes(property)
+    ),
+    [columns, result?.schema.properties]
+  );
 
   const selectedRecords = useMemo(
     () => result?.records.filter((record) => selectedRecordPaths.has(record.path)) ?? [],
@@ -281,7 +375,70 @@ export function DatabaseView({
     visibleRecordPaths.length > 0 && visibleRecordPaths.every((path) => selectedRecordPaths.has(path));
   const someVisibleRecordsSelected =
     !allVisibleRecordsSelected && visibleRecordPaths.some((path) => selectedRecordPaths.has(path));
-  const activeViewName = result?.schema.views[0]?.name ?? "All";
+  const activeViewName = activeView?.id ?? "all";
+  const sorts = activeView?.sorts ?? [];
+
+  const measureSelectionControls = useCallback(() => {
+    const frame = tableFrameRef.current;
+    if (!frame) return;
+    const frameRect = frame.getBoundingClientRect();
+    const rowPosition = (
+      row: HTMLTableRowElement | null
+    ): DatabaseSelectionControlPosition | null => {
+      if (!row) return null;
+      const rect = row.getBoundingClientRect();
+      return {
+        top: rect.top - frameRect.top,
+        height: rect.height
+      };
+    };
+    const records: Record<string, DatabaseSelectionControlPosition> = {};
+    for (const record of displayedRecords) {
+      const position = rowPosition(tableRecordRowRefs.current.get(record.path) ?? null);
+      if (position !== null) records[record.path] = position;
+    }
+    const next: DatabaseSelectionControlPositions = {
+      header: rowPosition(tableHeaderRowRef.current) ?? { top: 0, height: 40 },
+      records
+    };
+    setSelectionControlPositions((current) => (
+      databaseSelectionControlPositionsEqual(current, next) ? current : next
+    ));
+  }, [displayedRecords]);
+
+  useLayoutEffect(() => {
+    measureSelectionControls();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureSelectionControls);
+    if (tableFrameRef.current) observer.observe(tableFrameRef.current);
+    if (tableHeaderRowRef.current) observer.observe(tableHeaderRowRef.current);
+    for (const row of tableRecordRowRefs.current.values()) observer.observe(row);
+    return () => observer.disconnect();
+  }, [measureSelectionControls]);
+
+  const revealSelectionControl = useCallback((key: string) => {
+    if (selectionHoverTimeoutRef.current !== null) {
+      window.clearTimeout(selectionHoverTimeoutRef.current);
+      selectionHoverTimeoutRef.current = null;
+    }
+    setHoveredSelectionControl(key);
+  }, []);
+
+  const scheduleSelectionControlHide = useCallback(() => {
+    if (selectionHoverTimeoutRef.current !== null) {
+      window.clearTimeout(selectionHoverTimeoutRef.current);
+    }
+    selectionHoverTimeoutRef.current = window.setTimeout(() => {
+      selectionHoverTimeoutRef.current = null;
+      setHoveredSelectionControl(null);
+    }, 80);
+  }, []);
+
+  useEffect(() => () => {
+    if (selectionHoverTimeoutRef.current !== null) {
+      window.clearTimeout(selectionHoverTimeoutRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!resizingColumn) return;
@@ -354,7 +511,8 @@ export function DatabaseView({
     setRecordNameEdit(null);
     setRenamingRecordPath(null);
     setResizingColumn(null);
-  }, [databasePath]);
+    setActiveViewId(initialViewId);
+  }, [databasePath, initialViewId]);
 
   const toggleRecordSelection = useCallback((recordPath: string) => {
     setSelectedRecordPaths((current) => {
@@ -736,42 +894,41 @@ export function DatabaseView({
     [api, databasePath, load, onMessage, result]
   );
 
-  const addProperty = useCallback(async () => {
-    const propertyName = newPropertyName.trim();
-
+  const addProperty = useCallback(async (
+    propertyName: string,
+    propertyType: DatabasePropertyType
+  ): Promise<boolean> => {
     if (
       !result ||
       !propertyName ||
       result.schema.properties[propertyName] ||
       result.schema.unsupportedProperties.includes(propertyName)
     ) {
-      return;
+      return false;
     }
 
-    const definition = databasePropertyDefinition(newPropertyType);
-    const properties = { ...result.schema.properties, [propertyName]: definition };
-    const views = addDatabasePropertyToPrimaryView(result.schema.views, propertyName);
-
     try {
-      const saved = await api.updateDatabaseSchema({
+      const saved = await api.createDatabaseProperty({
         databasePath,
         baseVersion: result.schemaVersion,
-        properties,
-        views
+        property: propertyName,
+        type: propertyType,
+        ...(activeView ? { viewId: activeView.id } : {})
       });
 
       if (saved.status === "conflict") {
         onMessage("The database schema changed elsewhere. Reloaded the latest version.");
-      } else {
-        setNewPropertyName("");
-        setAddingProperty(false);
+        await load();
+        return false;
       }
 
       await load();
+      return true;
     } catch (error) {
       onMessage(errorMessage(error));
+      return false;
     }
-  }, [api, databasePath, load, newPropertyName, newPropertyType, onMessage, result]);
+  }, [activeView, api, databasePath, load, onMessage, result]);
 
   const renameProperty = useCallback(
     async (property: string, newName: string): Promise<boolean> => {
@@ -874,22 +1031,190 @@ export function DatabaseView({
     [api, databasePath, load, onMessage, result]
   );
 
-  const toggleSort = useCallback((property: string) => {
+  const selectView = useCallback((viewId: string) => {
     setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
-    setSorts((current) => {
-      const existing = current.find((sort) => sort.property === property);
+    setSelectedRecordPaths(new Set());
+    setActiveViewId(viewId);
+    onActiveViewChange?.(viewId);
+  }, [onActiveViewChange]);
 
-      if (!existing) {
-        return [{ property, direction: "asc" }];
+  const saveView = useCallback(async (
+    view: DatabaseViewConfig
+  ): Promise<boolean> => {
+    if (!result || viewActionBusy) return false;
+    setViewActionBusy(true);
+    try {
+      const saved = await api.updateDatabaseView({
+        databasePath,
+        baseVersion: result.schemaVersion,
+        viewId: view.id,
+        name: view.name,
+        columns: view.columns,
+        ...(view.filters && view.filters.length > 0
+          ? {
+              filters: view.filters,
+              ...(view.filterMode ? { filterMode: view.filterMode } : {})
+            }
+          : {}),
+        ...(view.sorts && view.sorts.length > 0 ? { sorts: view.sorts } : {})
+      });
+      if (saved.status === "conflict") {
+        await load();
+        return false;
       }
+      await load();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setViewActionBusy(false);
+    }
+  }, [api, databasePath, load, result, viewActionBusy]);
 
-      if (existing.direction === "asc") {
-        return [{ property, direction: "desc" }];
+  const toggleSort = useCallback((property: string) => {
+    if (!activeView) return;
+    const existing = activeView.sorts?.find((sort) => sort.property === property);
+    const nextSorts: DatabaseSort[] = !existing
+      ? [{ property, direction: "asc" }]
+      : existing.direction === "asc"
+        ? [{ property, direction: "desc" }]
+        : [];
+    const { sorts: _sorts, ...viewWithoutSorts } = activeView;
+    void saveView(nextSorts.length > 0
+      ? { ...viewWithoutSorts, sorts: nextSorts }
+      : viewWithoutSorts
+    );
+  }, [activeView, saveView]);
+
+  const createView = useCallback(async () => {
+    if (!result || viewActionBusy) return;
+    const previousIds = new Set(result.schema.views.map((view) => view.id));
+    setViewActionBusy(true);
+    try {
+      const saved = await api.createDatabaseView({
+        databasePath,
+        baseVersion: result.schemaVersion,
+        name: "Table",
+        type: "table"
+      });
+      if (saved.status === "conflict") {
+        await load();
+        return;
       }
+      const next = await load();
+      const created = next?.schema.views.find((view) => !previousIds.has(view.id));
+      if (created) selectView(created.id);
+    } catch {
+      // View actions intentionally stay quiet; the current configuration remains visible.
+    } finally {
+      setViewActionBusy(false);
+    }
+  }, [api, databasePath, load, result, selectView, viewActionBusy]);
 
-      return [];
-    });
-  }, []);
+  const renameView = useCallback(async (viewId: string, name: string): Promise<boolean> => {
+    const view = result?.schema.views.find((candidate) => candidate.id === viewId);
+    return view ? saveView({ ...view, name }) : false;
+  }, [result, saveView]);
+
+  const duplicateView = useCallback(async (viewId: string) => {
+    const view = result?.schema.views.find((candidate) => candidate.id === viewId);
+    if (!result || !view || viewActionBusy) return;
+    const previousIds = new Set(result.schema.views.map((candidate) => candidate.id));
+    setViewActionBusy(true);
+    try {
+      const saved = await api.createDatabaseView({
+        databasePath,
+        baseVersion: result.schemaVersion,
+        name: `${view.name} copy`,
+        type: "table",
+        sourceViewId: view.id
+      });
+      if (saved.status === "conflict") {
+        await load();
+        return;
+      }
+      const next = await load();
+      const created = next?.schema.views.find((candidate) => !previousIds.has(candidate.id));
+      if (created) selectView(created.id);
+    } catch {
+      // View actions intentionally stay quiet; the current configuration remains visible.
+    } finally {
+      setViewActionBusy(false);
+    }
+  }, [api, databasePath, load, result, selectView, viewActionBusy]);
+
+  const deleteView = useCallback(async (viewId: string) => {
+    if (!result || viewActionBusy || result.schema.views.length <= 1) return;
+    setViewActionBusy(true);
+    try {
+      const saved = await api.deleteDatabaseView({
+        databasePath,
+        baseVersion: result.schemaVersion,
+        viewId
+      });
+      if (saved.status === "conflict") {
+        await load();
+        return;
+      }
+      const fallback = result.schema.views.find((view) => view.id !== viewId);
+      if (viewId === activeViewId && fallback) selectView(fallback.id);
+      await load();
+    } catch {
+      // View actions intentionally stay quiet; the current configuration remains visible.
+    } finally {
+      setViewActionBusy(false);
+    }
+  }, [
+    activeViewId,
+    api,
+    databasePath,
+    load,
+    result,
+    selectView,
+    viewActionBusy
+  ]);
+
+  const saveFilters = useCallback(async (
+    filters: NonNullable<DatabaseViewConfig["filters"]>,
+    filterMode: "and" | "or"
+  ): Promise<boolean> => {
+    if (!activeView) return false;
+    const {
+      filters: _filters,
+      filterMode: _filterMode,
+      ...viewWithoutFilters
+    } = activeView;
+    return saveView(filters.length > 0
+      ? { ...viewWithoutFilters, filters, filterMode }
+      : viewWithoutFilters
+    );
+  }, [activeView, saveView]);
+
+  const setViewPropertyVisible = useCallback(async (
+    property: string,
+    visible: boolean
+  ): Promise<boolean> => {
+    if (!activeView) return false;
+    const columns = visible
+      ? activeView.columns.includes(property)
+        ? activeView.columns
+        : [...activeView.columns, property]
+      : activeView.columns.filter((column) => column !== property);
+    return saveView({ ...activeView, columns });
+  }, [activeView, saveView]);
+
+  const viewTabs = result ? (
+    <DatabaseViewTabs
+      views={result.schema.views}
+      activeViewId={activeView?.id ?? ""}
+      busy={viewActionBusy}
+      onSelect={selectView}
+      onCreate={() => void createView()}
+      onRename={renameView}
+      onDuplicate={(viewId) => void duplicateView(viewId)}
+      onDelete={(viewId) => void deleteView(viewId)}
+    />
+  ) : null;
 
   return (
     <section
@@ -899,58 +1224,144 @@ export function DatabaseView({
     >
       {selectedRecords.length > 0 ? (
         <div
-          className="mb-3 flex min-h-8 flex-wrap items-center gap-1 rounded-md bg-muted/70 px-2 py-1"
+          className="mb-1.5 flex h-12 min-w-0 flex-nowrap items-center gap-2 py-1"
+          data-database-toolbar="true"
           data-database-selection-actions="true"
         >
-          <span className="mr-2 text-xs font-medium text-muted-foreground">
-            {selectedRecords.length} selected
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={selectionAction !== null}
-            onClick={() => void duplicateSelectedRecords()}
-          >
-            <Copy size={15} />
-            {selectionAction === "duplicate" ? "Duplicating" : "Duplicate"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={selectionAction !== null}
-            onClick={() => void openMoveDialog()}
-          >
-            <ArrowRight size={15} />
-            Move
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            disabled={selectionAction !== null}
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            <Trash size={15} />
-            Delete
-          </Button>
+          {viewTabs}
+          <div className="relative ml-auto h-10 shrink-0">
+            <DatabaseToolbarFade />
+            <div
+              className="relative z-10 flex h-10 items-center gap-1 bg-white"
+              data-database-selection-surface="true"
+            >
+              <button
+                type="button"
+                className="group/clear-selection mr-2 grid h-8 grid-cols-1 items-center text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                aria-label={`Clear all ${selectedRecords.length} selected records`}
+                disabled={selectionAction !== null}
+                onClick={() => setSelectedRecordPaths(new Set())}
+              >
+                <span className="col-start-1 row-start-1 group-hover/clear-selection:opacity-0 group-focus-visible/clear-selection:opacity-0">
+                  {selectedRecords.length} selected
+                </span>
+                <span className="col-start-1 row-start-1 text-sky-600 underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
+                  Clear all
+                </span>
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8"
+                disabled={selectionAction !== null}
+                onClick={() => void duplicateSelectedRecords()}
+              >
+                <Copy size={15} />
+                {selectionAction === "duplicate" ? "Duplicating" : "Duplicate"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8"
+                disabled={selectionAction !== null}
+                onClick={() => void openMoveDialog()}
+              >
+                <ArrowRight size={15} />
+                Move
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 text-destructive hover:text-destructive"
+                disabled={selectionAction !== null}
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash size={15} />
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {toolbarStart}
-          <Input
-            value={search}
-            className="h-8 max-w-xs"
-            placeholder="Filter records"
-            aria-label="Filter records"
-            onChange={(event) => {
-              setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
-              setSearch(event.target.value);
-            }}
-          />
-          <div className="ml-auto flex items-center gap-1.5">
+        <div
+          className="mb-1.5 flex h-12 min-w-0 flex-nowrap items-center gap-2 py-1"
+          data-database-toolbar="true"
+        >
+          {viewTabs}
+          <div className="ml-auto flex h-10 items-center gap-1.5">
+            <div
+              className={cn(
+                "relative z-40 flex h-10 shrink-0 items-center",
+                searchOpen ? "w-56" : "w-8"
+              )}
+            >
+              {searchOpen ? (
+                <div className="absolute bottom-0 right-0 z-50 h-10 w-56">
+                  <DatabaseToolbarFade />
+                  <div
+                    className="relative z-10 flex h-10 w-full items-center border-b border-border bg-white"
+                    data-database-search-surface="true"
+                  >
+                    <MagnifyingGlass
+                      size={15}
+                      className="ml-2 shrink-0 text-neutral-500"
+                      aria-hidden="true"
+                    />
+                    <input
+                      ref={searchInputRef}
+                      value={search}
+                      className="h-full min-w-0 flex-1 bg-white px-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                      placeholder="Search records"
+                      aria-label="Search records"
+                      onChange={(event) => {
+                        setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
+                        setSearch(event.currentTarget.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelToolbarModes();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                      aria-label="Close search"
+                      onClick={() => {
+                        setSearch("");
+                        setSearchOpen(false);
+                      }}
+                    >
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Search database"
+                  title="Search"
+                  onClick={() => setSearchOpen(true)}
+                >
+                  <MagnifyingGlass size={16} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            {activeView && result && (
+              <DatabaseFilterMenu
+                properties={result.schema.properties}
+                filters={activeView.filters ?? []}
+                {...(activeView.filterMode ? { filterMode: activeView.filterMode } : {})}
+                disabled={viewActionBusy}
+                onChange={saveFilters}
+              />
+            )}
+            {variant === "embed" ? embedSourceControl : null}
             <Button type="button" size="sm" onClick={() => void createRecord()} disabled={creatingRecord}>
               <Plus size={15} />
               {creatingRecord ? "Creating" : "New"}
@@ -960,137 +1371,217 @@ export function DatabaseView({
       )}
 
       <div
-        className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
-        data-database-table-scroll="true"
+        ref={tableFrameRef}
+        className="relative w-full min-w-0 max-w-full"
+        data-database-table-frame="true"
       >
-        <table className="w-max min-w-[max(100%,620px)] border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-muted text-left text-xs font-medium text-muted-foreground">
-            <tr>
-              <th
-                className="w-10 min-w-10 max-w-10 border-b border-border px-2 py-2 text-center"
-                data-database-selection-column="true"
+        <div
+          className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
+          data-database-table-scroll="true"
+        >
+          <table className="w-max min-w-[max(100%,620px)] border-separate border-spacing-0 text-sm">
+            <thead className="group/table-header sticky top-0 z-10 bg-white text-left text-xs font-medium text-neutral-600">
+              <tr
+                ref={tableHeaderRowRef}
+                className="h-10"
+                onPointerEnter={() => revealSelectionControl("header")}
+                onPointerLeave={scheduleSelectionControlHide}
               >
-                <SelectionCheckbox
-                  ariaLabel="Select all records"
-                  checked={allVisibleRecordsSelected}
-                  mixed={someVisibleRecordsSelected}
-                  disabled={visibleRecordPaths.length === 0 || selectionAction !== null}
-                  onChange={toggleAllVisibleRecords}
-                />
-              </th>
-              <SortableHeader
-                label="Name"
-                property="title"
-                width={databaseColumnWidth(columnWidths, "title")}
-                resizing={resizingColumn?.property === "title"}
-                sorts={sorts}
-                onSort={toggleSort}
-                onResizeStart={startColumnResize}
-              />
-              {columns.map((column) => (
                 <SortableHeader
-                  key={column}
-                  label={column}
-                  property={column}
-                  width={databaseColumnWidth(columnWidths, column)}
-                  resizing={resizingColumn?.property === column}
-                  definition={result?.schema.properties[column]}
+                  label="Name"
+                  property="title"
+                  width={databaseColumnWidth(columnWidths, "title")}
+                  resizing={resizingColumn?.property === "title"}
                   sorts={sorts}
+                  hiddenProperties={hiddenProperties}
+                  onShowProperty={(property) => setViewPropertyVisible(property, true)}
                   onSort={toggleSort}
                   onResizeStart={startColumnResize}
-                  onRename={(newName) => renameProperty(column, newName)}
-                  onChangeType={(type) => changePropertyType(column, type)}
-                  onDelete={() => deleteProperty(column)}
                 />
-              ))}
-              <th className="w-12 min-w-12 max-w-12 border-b border-border px-2 py-2">
-                <button
-                  type="button"
-                  className="grid h-6 w-7 place-items-center rounded hover:bg-background"
-                  aria-label="Add property"
-                  title="Add property"
-                  onClick={() => setAddingProperty((current) => !current)}
+                {columns.map((column) => (
+                  <SortableHeader
+                    key={column}
+                    label={column}
+                    property={column}
+                    width={databaseColumnWidth(columnWidths, column)}
+                    resizing={resizingColumn?.property === column}
+                    definition={result?.schema.properties[column]}
+                    sorts={sorts}
+                    hiddenProperties={hiddenProperties}
+                    onShowProperty={(property) => setViewPropertyVisible(property, true)}
+                    onSort={toggleSort}
+                    onResizeStart={startColumnResize}
+                    onRename={(newName) => renameProperty(column, newName)}
+                    onChangeType={(type) => changePropertyType(column, type)}
+                    onHide={() => setViewPropertyVisible(column, false)}
+                    onDelete={() => deleteProperty(column)}
+                  />
+                ))}
+                <th className="w-12 min-w-12 max-w-12 border-y border-border bg-white px-2 py-1.5">
+                  <PropertyCreateMenu
+                    types={DATABASE_PROPERTY_TYPES}
+                    existingNames={[
+                      ...Object.keys(result?.schema.properties ?? {}),
+                      ...(result?.schema.unsupportedProperties ?? [])
+                    ]}
+                    disabled={!result}
+                    onCreate={addProperty}
+                    trigger={(
+                      <button
+                        type="button"
+                        className="grid h-6 w-7 place-items-center rounded hover:bg-background"
+                        aria-label="Add property"
+                        title="Add property"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    )}
+                  />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedRecords.map((record) => (
+                <tr
+                  ref={(element) => {
+                    if (element) tableRecordRowRefs.current.set(record.path, element);
+                    else tableRecordRowRefs.current.delete(record.path);
+                  }}
+                  key={record.path}
+                  className={cn(
+                    "group hover:bg-muted/30 last:[&>td]:border-b-0",
+                    selectedRecordPaths.has(record.path) && "bg-muted/55"
+                  )}
+                  data-database-record-selected={selectedRecordPaths.has(record.path) ? "true" : undefined}
+                  onPointerEnter={() => revealSelectionControl(record.path)}
+                  onPointerLeave={scheduleSelectionControlHide}
                 >
-                  <Plus size={14} />
-                </button>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedRecords.map((record) => (
-              <tr
+                  <td
+                    className="group/name relative w-60 min-w-60 border-b border-border p-1 font-medium"
+                    style={databaseColumnStyle(columnWidths, "title")}
+                  >
+                    <DatabaseRecordNameCell
+                      record={record}
+                      edit={recordNameEdit?.path === record.path ? recordNameEdit : null}
+                      saving={renamingRecordPath === record.path}
+                      onStartEditing={() => setRecordNameEdit({
+                        path: record.path,
+                        draft: record.title
+                      })}
+                      onChange={(draft) => setRecordNameEdit((current) =>
+                        current?.path === record.path ? { ...current, draft } : current
+                      )}
+                      onCommit={(draft) => void renameRecord(record, draft)}
+                      onOpen={() => onOpenRecord(record.path)}
+                    />
+                  </td>
+                  {columns.map((column) => (
+                    <td
+                      key={column}
+                      className="w-44 min-w-44 border-b border-border px-2 py-1"
+                      style={databaseColumnStyle(columnWidths, column)}
+                    >
+                      <PropertyCell
+                        property={column}
+                        definition={result?.schema.properties[column] ?? { type: "text" }}
+                        value={record.frontmatter[column]}
+                        onChange={(value) => void updateProperty(record, column, value)}
+                        onCreateOption={(option) => createOption(column, option)}
+                        onChangeOptionColor={(option, color) =>
+                          updateOption(column, option, { action: "change-color", color })
+                        }
+                        onRenameOption={(option, newName) =>
+                          updateOption(column, option, { action: "rename", newName })
+                        }
+                        onDeleteOption={(option) =>
+                          updateOption(column, option, { action: "delete" })
+                        }
+                      />
+                    </td>
+                  ))}
+                  <td className="w-12 min-w-12 max-w-12 border-b border-border" />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {result?.records.length === 0 && (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              {search ? "No records match this filter." : "No records yet. Create the first one."}
+            </div>
+          )}
+          {loading && !result && (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading records…</div>
+          )}
+        </div>
+
+        <div
+          className="pointer-events-none absolute inset-y-0 -left-7 z-30 w-7"
+          data-database-selection-overlay="true"
+        >
+          <div
+            className="group/selection-target pointer-events-auto absolute left-0 w-7"
+            style={{
+              top: selectionControlPositions.header.top,
+              height: selectionControlPositions.header.height
+            }}
+            data-database-selection-control="all"
+            data-rumi-area-selection-exclude="true"
+            onPointerEnter={() => revealSelectionControl("header")}
+            onPointerLeave={scheduleSelectionControlHide}
+          >
+            <div
+              className={cn(
+                "grid h-full w-5 place-items-center opacity-0 group-hover/selection-target:opacity-100 group-focus-within/selection-target:opacity-100",
+                (
+                  hoveredSelectionControl === "header"
+                  || allVisibleRecordsSelected
+                  || someVisibleRecordsSelected
+                ) && "opacity-100"
+              )}
+            >
+              <SelectionCheckbox
+                ariaLabel="Select all records"
+                checked={allVisibleRecordsSelected}
+                mixed={someVisibleRecordsSelected}
+                disabled={visibleRecordPaths.length === 0 || selectionAction !== null}
+                onChange={toggleAllVisibleRecords}
+              />
+            </div>
+          </div>
+          {displayedRecords.map((record) => {
+            const position = selectionControlPositions.records[record.path];
+            if (position === undefined) return null;
+            return (
+              <div
                 key={record.path}
-                className={cn(
-                  "group hover:bg-muted/30 last:[&>td]:border-b-0",
-                  selectedRecordPaths.has(record.path) && "bg-muted/55"
-                )}
-                data-database-record-selected={selectedRecordPaths.has(record.path) ? "true" : undefined}
+                className="group/selection-target pointer-events-auto absolute left-0 w-7"
+                style={{ top: position.top, height: position.height }}
+                data-database-selection-control="record"
+                data-rumi-area-selection-exclude="true"
+                onPointerEnter={() => revealSelectionControl(record.path)}
+                onPointerLeave={scheduleSelectionControlHide}
               >
-                <td className="w-10 min-w-10 max-w-10 border-b border-border px-2 py-1.5 text-center">
+                <div
+                  className={cn(
+                    "grid h-full w-5 place-items-center opacity-0 group-hover/selection-target:opacity-100 group-focus-within/selection-target:opacity-100",
+                    (
+                      hoveredSelectionControl === record.path
+                      || selectedRecordPaths.has(record.path)
+                    ) && "opacity-100"
+                  )}
+                >
                   <SelectionCheckbox
                     ariaLabel={`Select ${record.title}`}
                     checked={selectedRecordPaths.has(record.path)}
                     disabled={selectionAction !== null}
                     onChange={() => toggleRecordSelection(record.path)}
                   />
-                </td>
-                <td
-                  className="group/name relative w-60 min-w-60 border-b border-border p-1 font-medium"
-                  style={databaseColumnStyle(columnWidths, "title")}
-                >
-                  <DatabaseRecordNameCell
-                    record={record}
-                    edit={recordNameEdit?.path === record.path ? recordNameEdit : null}
-                    saving={renamingRecordPath === record.path}
-                    onStartEditing={() => setRecordNameEdit({
-                      path: record.path,
-                      draft: record.title
-                    })}
-                    onChange={(draft) => setRecordNameEdit((current) =>
-                      current?.path === record.path ? { ...current, draft } : current
-                    )}
-                    onCommit={(draft) => void renameRecord(record, draft)}
-                    onOpen={() => onOpenRecord(record.path)}
-                  />
-                </td>
-                {columns.map((column) => (
-                  <td
-                    key={column}
-                    className="w-44 min-w-44 border-b border-border px-2 py-1"
-                    style={databaseColumnStyle(columnWidths, column)}
-                  >
-                    <PropertyCell
-                      property={column}
-                      definition={result?.schema.properties[column] ?? { type: "text" }}
-                      value={record.frontmatter[column]}
-                      onChange={(value) => void updateProperty(record, column, value)}
-                      onCreateOption={(option) => createOption(column, option)}
-                      onChangeOptionColor={(option, color) =>
-                        updateOption(column, option, { action: "change-color", color })
-                      }
-                      onRenameOption={(option, newName) =>
-                        updateOption(column, option, { action: "rename", newName })
-                      }
-                      onDeleteOption={(option) =>
-                        updateOption(column, option, { action: "delete" })
-                      }
-                    />
-                  </td>
-                ))}
-                <td className="w-12 min-w-12 max-w-12 border-b border-border" />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {result?.records.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-            {search ? "No records match this filter." : "No records yet. Create the first one."}
-          </div>
-        )}
-        {loading && !result && (
-          <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading records…</div>
-        )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {hasMoreRecords && (
@@ -1106,42 +1597,6 @@ export function DatabaseView({
             }
           >
             Load more
-          </Button>
-        </div>
-      )}
-
-      {addingProperty && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/35 p-2">
-          <Input
-            value={newPropertyName}
-            className="h-8 max-w-xs"
-            placeholder="Property name"
-            autoFocus
-            onChange={(event) => setNewPropertyName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void addProperty();
-              }
-            }}
-          />
-          <select
-            value={newPropertyType}
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-            onChange={(event) => setNewPropertyType(event.target.value as DatabasePropertyType)}
-          >
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="checkbox">Checkbox</option>
-            <option value="select">Select</option>
-            <option value="multi-select">Multi-select</option>
-          </select>
-          <Button type="button" size="sm" onClick={() => void addProperty()} disabled={!newPropertyName.trim()}>
-            Add property
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setAddingProperty(false)}>
-            Cancel
           </Button>
         </div>
       )}
@@ -1196,6 +1651,39 @@ export function DatabaseView({
   );
 }
 
+function DatabaseToolbarFade(): ReactElement {
+  return (
+    <div
+      className="pointer-events-none absolute -left-[44px] top-0 h-10 w-[44px] bg-gradient-to-r from-white/0 via-white/50 via-[30%] to-white"
+      aria-hidden="true"
+      data-database-toolbar-fade="true"
+    />
+  );
+}
+
+function databaseSelectionControlPositionsEqual(
+  left: DatabaseSelectionControlPositions,
+  right: DatabaseSelectionControlPositions
+): boolean {
+  const leftEntries = Object.entries(left.records);
+  const rightEntries = Object.entries(right.records);
+  return databaseSelectionControlPositionEqual(left.header, right.header)
+    && leftEntries.length === rightEntries.length
+    && leftEntries.every(([path, position]) => {
+      const rightPosition = right.records[path];
+      return Boolean(
+        rightPosition && databaseSelectionControlPositionEqual(position, rightPosition)
+      );
+    });
+}
+
+function databaseSelectionControlPositionEqual(
+  left: DatabaseSelectionControlPosition,
+  right: DatabaseSelectionControlPosition
+): boolean {
+  return left.top === right.top && left.height === right.height;
+}
+
 function SelectionCheckbox({
   ariaLabel,
   checked,
@@ -1221,7 +1709,7 @@ function SelectionCheckbox({
     <input
       ref={inputRef}
       type="checkbox"
-      className="h-4 w-4 cursor-pointer accent-sky-600 disabled:cursor-default"
+      className="h-3.5 w-3.5 cursor-pointer accent-sky-600 disabled:cursor-default"
       aria-label={ariaLabel}
       aria-checked={mixed ? "mixed" : checked}
       checked={checked}
@@ -1388,10 +1876,13 @@ function SortableHeader({
   resizing,
   definition,
   sorts,
+  hiddenProperties,
   onSort,
   onResizeStart,
   onRename,
   onChangeType,
+  onHide,
+  onShowProperty,
   onDelete
 }: {
   label: string;
@@ -1400,10 +1891,13 @@ function SortableHeader({
   resizing: boolean;
   definition?: DatabasePropertyDefinition | undefined;
   sorts: DatabaseSort[];
+  hiddenProperties: readonly string[];
   onSort: (property: string) => void;
   onResizeStart: (property: string, event: ReactPointerEvent<HTMLButtonElement>) => void;
   onRename?: ((newName: string) => Promise<boolean>) | undefined;
   onChangeType?: ((type: DatabasePropertyType) => Promise<boolean>) | undefined;
+  onHide?: (() => Promise<boolean>) | undefined;
+  onShowProperty: (property: string) => Promise<boolean>;
   onDelete?: (() => Promise<boolean>) | undefined;
 }): ReactElement {
   const direction = sorts.find((sort) => sort.property === property)?.direction;
@@ -1411,7 +1905,8 @@ function SortableHeader({
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(label);
   const [busy, setBusy] = useState(false);
-  const manageable = Boolean(definition && onRename && onChangeType && onDelete);
+  const schemaManageable = Boolean(definition && onRename && onChangeType && onHide && onDelete);
+  const manageable = schemaManageable || hiddenProperties.length > 0;
 
   const commitRename = async () => {
     if (!onRename || busy) return;
@@ -1429,7 +1924,7 @@ function SortableHeader({
   return (
     <th
       className={cn(
-        "relative border-b border-r border-border px-2 py-1.5",
+        "group/header relative border-y border-border px-2 py-1.5",
         databaseColumnWidthClass(property)
       )}
       style={{ width, minWidth: width, maxWidth: width }}
@@ -1470,7 +1965,7 @@ function SortableHeader({
             {direction === "asc" ? <CaretUp size={12} /> : direction === "desc" ? <CaretDown size={12} /> : null}
           </button>
         )}
-        {definition && onRename && onChangeType && onDelete && (
+        {manageable && (
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button
@@ -1483,40 +1978,70 @@ function SortableHeader({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
-              <DropdownMenuItem
-                onSelect={() => {
-                  setRenameDraft(label);
-                  setRenaming(true);
-                }}
-              >
-                <PencilSimple size={16} aria-hidden="true" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Change type</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {DATABASE_PROPERTY_TYPES.map((type) => (
-                    <DropdownMenuItem
-                      key={type.value}
-                      disabled={definition.type === type.value}
-                      onSelect={() => void onChangeType(type.value)}
-                    >
-                      <span className="flex w-4 justify-center" aria-hidden="true">
-                        {definition.type === type.value && <Check size={14} />}
-                      </span>
-                      {type.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => void onDelete()}
-              >
-                <Trash size={16} aria-hidden="true" />
-                Delete
-              </DropdownMenuItem>
+              {definition && onRename && onChangeType && onHide && onDelete && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setRenameDraft(label);
+                      setRenaming(true);
+                    }}
+                  >
+                    <PencilSimple size={16} aria-hidden="true" />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Change type</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {DATABASE_PROPERTY_TYPES.map((type) => (
+                        <DropdownMenuItem
+                          key={type.value}
+                          disabled={definition.type === type.value}
+                          onSelect={() => void onChangeType(type.value)}
+                        >
+                          <span className="flex w-4 justify-center" aria-hidden="true">
+                            {definition.type === type.value && <Check size={14} />}
+                          </span>
+                          {type.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuItem onSelect={() => void onHide()}>
+                    <EyeSlash size={16} aria-hidden="true" />
+                    Hide in this view
+                  </DropdownMenuItem>
+                </>
+              )}
+              {hiddenProperties.length > 0 && (
+                <>
+                  {schemaManageable && <DropdownMenuSeparator />}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Show property</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+                      {hiddenProperties.map((hiddenProperty) => (
+                        <DropdownMenuItem
+                          key={hiddenProperty}
+                          onSelect={() => void onShowProperty(hiddenProperty)}
+                        >
+                          {hiddenProperty}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              )}
+              {schemaManageable && onDelete && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => void onDelete()}
+                  >
+                    <Trash size={16} aria-hidden="true" />
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -1526,7 +2051,7 @@ function SortableHeader({
         aria-label={`Resize ${label} column`}
         data-database-column-resizer={property}
         className={cn(
-          "absolute -right-1 top-0 z-20 h-full w-2 touch-none cursor-col-resize select-none outline-none after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full hover:after:bg-sky-600 focus-visible:after:bg-sky-600",
+          "absolute -right-1 top-0 z-20 h-full w-2 touch-none cursor-col-resize select-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 group-hover/header:after:bg-border hover:after:bg-sky-600 focus-visible:after:bg-sky-600",
           resizing && "after:bg-sky-600"
         )}
         onPointerDown={(event) => onResizeStart(property, event)}

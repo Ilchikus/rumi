@@ -1,6 +1,6 @@
 # How Codex Was Used
 
-I have my application running on a remote home server. I connected it to Codex through Tailscale.
+The Rumi project and Rumi Docs are hosted on my home server, a dedicated mini PC, in a dedicated virtual environment. I connected it to Codex through Tailscale. This means I can access it at any time from my laptop, desktop, or mobile. When I’m on the go, I also use mobile remote control to add ideas, check the progress, and so on.
 
 The Rumi application itself provides the structure for the documents, memory, tasks, roadmap, and questions. I either type the input myself or dictate it to Codex to create the documents as well.
 
@@ -10,4 +10,4 @@ Before writing it, we had a big brainstorming session to cover all the structura
 
 Normally I use one thread/Codex task per actual task. Sometimes I multithread with each Codex thread or task corresponding to a specific area: for example, the editor, backend, app layout, and so on.
 
-I also have an `agents.md` file that suggests the proper workflow to Codex. It tells Codex to create the corresponding task in the task database and to interview me if it does not have enough context. Usually though I work iteratively: first we implement, then we add more context. This added context is also added back to the initial task/prd `.md`.
+I also have an `agents.md` file that suggests the proper workflow to Codex. It tells Codex to create the corresponding task in the task database and to interview me if it does not have enough context. Usually though I work iteratively: first we implement, then we add more context. This added context is also added back to the initial task/PRD `.md`.

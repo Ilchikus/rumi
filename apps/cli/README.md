@@ -64,4 +64,4 @@ Do not expose a workspace publicly with authentication disabled.
 Rumi is free and open-source software. Source code, issue tracking, and contribution instructions
 are available at [github.com/Ilchikus/rumi](https://github.com/Ilchikus/rumi).
 
-Licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
+Licensed under the [MIT License](LICENSE).

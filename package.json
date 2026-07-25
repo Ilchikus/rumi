@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "File-first, open-source, self-hosted Markdown editor",
   "private": true,
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",

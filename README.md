@@ -107,7 +107,6 @@ change.
 
 ## License
 
-Rumi is free and open-source software licensed under the
-[GNU Affero General Public License v3.0 only](LICENSE). Anyone may use, study, modify, distribute,
-host, or sell Rumi under the terms of that license. Modified versions offered over a network must
-make their corresponding source available as required by the AGPL.
+Rumi is free and open-source software licensed under the [MIT License](LICENSE). Anyone may use,
+study, modify, distribute, host, or sell Rumi, including as part of proprietary software, provided
+the license and copyright notice are preserved.

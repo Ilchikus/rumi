@@ -1,8 +1,8 @@
 {
   "name": "@rumi-md/server",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "File-native Rumi workspace server and command-line interface",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "rumi": "dist/index.js"

@@ -11,6 +11,9 @@ const cliRoot = fileURLToPath(new URL("../", import.meta.url));
 const packageJson = JSON.parse(
   await fs.readFile(path.join(cliRoot, "package.json"), "utf8")
 );
+if (packageJson.license !== "MIT") {
+  throw new Error(`Expected the public package license to be MIT, received ${packageJson.license}`);
+}
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rumi-cli-package-"));
 const npmEnvironment = { ...process.env };
 delete npmEnvironment.npm_config_dry_run;
@@ -59,6 +62,22 @@ try {
   );
   if (/warn (?:allow-scripts|deprecated prebuild-install)/u.test(installed.stderr)) {
     throw new Error(`The package install emitted a native installer warning:\n${installed.stderr}`);
+  }
+
+  const installedPackageRoot = path.join(
+    installRoot,
+    "node_modules",
+    ...packageJson.name.split("/")
+  );
+  const installedManifest = JSON.parse(
+    await fs.readFile(path.join(installedPackageRoot, "package.json"), "utf8")
+  );
+  const installedLicense = await fs.readFile(
+    path.join(installedPackageRoot, "LICENSE"),
+    "utf8"
+  );
+  if (installedManifest.license !== "MIT" || !installedLicense.startsWith("MIT License\n")) {
+    throw new Error("The installed package does not contain the MIT license declaration and text");
   }
 
   const installedLock = JSON.parse(

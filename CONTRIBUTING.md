@@ -32,6 +32,6 @@ wiring. The project workflow and testing conventions are documented in
 
 ## Contribution license
 
-Rumi is licensed under the GNU Affero General Public License v3.0 only. By submitting a
-contribution, you agree to license it under `AGPL-3.0-only` and confirm that you have the right to do
-so. Contributors retain copyright in their contributions.
+Rumi is licensed under the MIT License. By submitting a contribution, you agree to license it under
+`MIT` and confirm that you have the right to do so. Contributors retain copyright in their
+contributions.

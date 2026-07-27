@@ -30,7 +30,7 @@ export function appShortcutAction(
   if (event.repeat || event.isComposing || event.shiftKey) return null;
 
   const isN = event.code === "KeyN" || event.key.toLocaleLowerCase() === "n";
-  const isBackquote = event.code === "Backquote" || event.key === "`";
+  const isS = event.code === "KeyS" || event.key.toLocaleLowerCase() === "s";
 
   if (
     isN &&
@@ -44,7 +44,7 @@ export function appShortcutAction(
   }
 
   if (
-    isBackquote &&
+    isS &&
     !event.altKey &&
     (
       platform === "mac"
@@ -82,6 +82,6 @@ export function shortcutLabels(platform: AppShortcutPlatform): {
   immediate: string;
 } {
   return platform === "mac"
-    ? { create: "⌃N", sidebar: "⌘`", immediate: "⌘↵" }
-    : { create: "Alt+N", sidebar: "Ctrl+`", immediate: "Ctrl+Enter" };
+    ? { create: "⌃N", sidebar: "⌘S", immediate: "⌘↵" }
+    : { create: "Alt+N", sidebar: "Ctrl+S", immediate: "Ctrl+Enter" };
 }

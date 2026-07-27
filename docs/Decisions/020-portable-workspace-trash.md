@@ -42,7 +42,8 @@ future deployment adapters, and it travels with the workspace when `.rumi/` is p
 - The runtime owns moves, metadata, collision handling, and restore events. HTTP and web layers do
   not manipulate `.rumi/trash/` directly.
 - The workspace root and `.rumi` internals can never be trashed through a content command.
-- Removing items permanently from Trash and retention policies are separate future features.
+- Permanent deletion is available only for an item already in Trash and removes that entry's
+  current payload and metadata. Automatic retention policies remain a separate future feature.
 
 ## Public Surface
 
@@ -50,6 +51,10 @@ future deployment adapters, and it travels with the workspace when `.rumi/` is p
 - `listTrash` returns user-facing metadata only.
 - `openTrashPage` returns page content through a safe read-only boundary without exposing payload paths.
 - `restoreTrashItem` restores one entry and reports its actual path.
-- `GET /api/trash`, `GET /api/trash/:id`, and `POST /api/trash/restore` adapt those commands.
-- The sidebar keeps Trash at the bottom; Trash items open in the normal page canvas with editing
-  disabled, muted content, and a persistent Restore banner.
+- `deleteTrashItem` permanently removes one entry and publishes `trash.changed`.
+- `GET /api/trash`, `GET /api/trash/:id`, `POST /api/trash/restore`, and
+  `DELETE /api/trash/:id` adapt those commands.
+- The sidebar keeps Trash at the bottom. Trash uses a borderless whitespace list with Restore and
+  Delete forever actions. Viewable items open in the normal page canvas with editing disabled,
+  muted content, and a persistent Restore/Delete forever banner.
+- Moving to Trash is immediate because it is reversible. Delete forever requires confirmation.

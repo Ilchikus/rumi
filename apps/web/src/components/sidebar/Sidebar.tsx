@@ -14,7 +14,6 @@ import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
-import { WarningCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { sanitizeWorkspaceName } from "@rumi/workspace-format";
 import {
@@ -152,8 +151,6 @@ export function Sidebar({
   const [moveBusy, setMoveBusy] = useState(false);
   const [convertTarget, setConvertTarget] = useState<WorkspaceNode | null>(null);
   const [convertBusy, setConvertBusy] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<WorkspaceNode | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const updateExpandedPaths = useCallback((
     update: (current: Set<string>) => Set<string>
@@ -229,8 +226,8 @@ export function Sidebar({
     setFloatingMenu(null);
     setCreateTarget(null);
     setRenamingPath(null);
-    setDeleteTarget(node);
-  }, []);
+    void onDeleteNode(node);
+  }, [onDeleteNode]);
 
   const requestMove = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
@@ -260,21 +257,6 @@ export function Sidebar({
       setMoveBusy(false);
     }
   }, [moveBusy, moveTarget, onMoveNode]);
-
-  const confirmDelete = useCallback(async () => {
-    if (!deleteTarget || deleteBusy) {
-      return;
-    }
-
-    setDeleteBusy(true);
-
-    try {
-      await onDeleteNode(deleteTarget);
-      setDeleteTarget(null);
-    } finally {
-      setDeleteBusy(false);
-    }
-  }, [deleteBusy, deleteTarget, onDeleteNode]);
 
   const confirmConvert = useCallback(async () => {
     if (!convertTarget || convertBusy) return;
@@ -451,17 +433,6 @@ export function Sidebar({
           }
         }}
         onConfirm={confirmMove}
-      />
-
-      <DeleteNodeDialog
-        node={deleteTarget}
-        busy={deleteBusy}
-        onOpenChange={(open) => {
-          if (!open && !deleteBusy) {
-            setDeleteTarget(null);
-          }
-        }}
-        onConfirm={confirmDelete}
       />
 
       <ConvertNodeDialog
@@ -1032,55 +1003,6 @@ export function MoveNodeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function DeleteNodeDialog({
-  node,
-  busy,
-  onOpenChange,
-  onConfirm
-}: {
-  node: WorkspaceNode | null;
-  busy: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => Promise<void>;
-}): ReactElement {
-  return (
-    <AlertDialog open={Boolean(node)} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive">
-              <WarningCircle size={18} weight="fill" />
-            </span>
-            <AlertDialogTitle>Move item to Trash</AlertDialogTitle>
-          </div>
-          <AlertDialogDescription>
-            {node ? (
-              <>
-                Move <span className="font-medium text-foreground">{node.path}</span> to Trash? You can restore it later.
-              </>
-            ) : (
-              "Move this item to Trash? You can restore it later."
-            )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancelButton disabled={busy}>Cancel</AlertDialogCancelButton>
-          <AlertDialogActionButton
-            variant="destructive"
-            disabled={busy}
-            onClick={(event) => {
-              event.preventDefault();
-              void onConfirm();
-            }}
-          >
-            {busy ? "Moving" : "Move to Trash"}
-          </AlertDialogActionButton>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 

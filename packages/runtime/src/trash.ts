@@ -14,6 +14,10 @@ export interface TrashedNode {
   item: TrashItem;
 }
 
+export interface PermanentlyDeletedNode {
+  item: TrashItem;
+}
+
 export interface RestoredNode {
   item: TrashItem;
   path: string;
@@ -125,6 +129,12 @@ export class WorkspaceTrash {
       path: restoredPath,
       revisionObjects: metadata.revisionObjects
     };
+  }
+
+  async deleteForever(id: string): Promise<PermanentlyDeletedNode> {
+    const metadata = await this.readMetadata(id);
+    await fs.rm(path.join(this.trashRootPath, id), { recursive: true, force: false });
+    return { item: publicItem(metadata) };
   }
 
   async readPage(id: string, requestedOriginalPath?: string): Promise<TrashedPageContent> {

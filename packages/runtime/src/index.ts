@@ -21,6 +21,8 @@ import type {
   CreatePageRequest,
   DeleteNodeRequest,
   DeleteNodeResult,
+  DeleteTrashItemRequest,
+  DeleteTrashItemResult,
   DeleteDatabasePropertyRequest,
   DeleteDatabaseViewRequest,
   FrontmatterRecord,
@@ -1446,7 +1448,7 @@ export class WorkspaceRuntime {
     const stat = await fs.stat(absolutePath);
 
     if (stat.isDirectory() && !request.recursive) {
-      throw new Error("Deleting a folder or database requires recursive confirmation");
+      throw new Error("Moving a folder or database to Trash requires recursive mode");
     }
 
     await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
@@ -1509,6 +1511,23 @@ export class WorkspaceRuntime {
       path: restored.path,
       originalPath: restored.item.originalPath,
       restoredToOriginalPath: restored.path === restored.item.originalPath,
+      events: [event]
+    };
+  }
+
+  async deleteTrashItem(request: DeleteTrashItemRequest): Promise<DeleteTrashItemResult> {
+    const deleted = await this.trash.deleteForever(request.id);
+    const event: RumiEvent = {
+      name: "trash.changed",
+      path: deleted.item.originalPath,
+      changedBy: "trash.deleteForever",
+      trashItemId: deleted.item.id,
+      affects: ["trash"]
+    };
+    this.events.publish(event);
+    return {
+      status: "ok",
+      item: deleted.item,
       events: [event]
     };
   }

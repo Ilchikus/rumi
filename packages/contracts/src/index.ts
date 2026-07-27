@@ -306,6 +306,16 @@ export interface RestoreTrashItemResult {
   events: RumiEvent[];
 }
 
+export interface DeleteTrashItemRequest {
+  id: string;
+}
+
+export interface DeleteTrashItemResult {
+  status: "ok";
+  item: TrashItem;
+  events: RumiEvent[];
+}
+
 export interface WorkspaceMutationResult {
   status: "ok";
   path: string;
@@ -366,6 +376,7 @@ export interface SavePageRequest {
 
 export const RUMI_EVENT_NAMES = [
   "workspace.treeChanged",
+  "trash.changed",
   "page.changed",
   "page.moved",
   "page.deleted",

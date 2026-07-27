@@ -702,6 +702,13 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     return result;
   });
 
+  server.delete<{ Params: { id: string } }>("/api/trash/:id", async (request) => {
+    request.log.info({ trashItemId: request.params.id }, "trash.deleteForever");
+    const result = await runtime.deleteTrashItem({ id: request.params.id });
+    request.log.info({ trashItemId: request.params.id }, "trash.deleteForever.ok");
+    return result;
+  });
+
   return {
     server,
     runtime,

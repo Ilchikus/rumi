@@ -26,7 +26,6 @@ import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
-import { WarningCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { X } from "@phosphor-icons/react/dist/csr/X";
 import type { RumiApiClient } from "@rumi/api-client";
 import type {
@@ -47,16 +46,6 @@ import {
   randomDatabaseOptionColor
 } from "../editor/DatabaseOptionPill";
 import { Button } from "../ui/button";
-import {
-  AlertDialog,
-  AlertDialogActionButton,
-  AlertDialogCancelButton,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from "../ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -188,7 +177,6 @@ export function DatabaseView({
   const [selectionAction, setSelectionAction] = useState<"duplicate" | "move" | "delete" | null>(null);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTree, setMoveTree] = useState<WorkspaceNode | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [visibleRecordLimit, setVisibleRecordLimit] = useState(DATABASE_RECORD_BATCH_SIZE);
   const [recordNameEdit, setRecordNameEdit] = useState<{
     path: string;
@@ -506,7 +494,6 @@ export function DatabaseView({
     setSelectedRecordPaths(new Set());
     setMoveDialogOpen(false);
     setMoveTree(null);
-    setDeleteDialogOpen(false);
     setVisibleRecordLimit(DATABASE_RECORD_BATCH_SIZE);
     setRecordNameEdit(null);
     setRenamingRecordPath(null);
@@ -704,7 +691,6 @@ export function DatabaseView({
         pendingPaths.delete(record.path);
       }
       setSelectedRecordPaths(new Set());
-      setDeleteDialogOpen(false);
       await load();
     } catch (error) {
       setSelectedRecordPaths(new Set(pendingPaths));
@@ -1270,10 +1256,10 @@ export function DatabaseView({
                 variant="ghost"
                 className="h-8 text-destructive hover:text-destructive"
                 disabled={selectionAction !== null}
-                onClick={() => setDeleteDialogOpen(true)}
+                onClick={() => void deleteSelectedRecords()}
               >
                 <Trash size={15} />
-                Delete
+                {selectionAction === "delete" ? "Moving" : "Move to Trash"}
               </Button>
             </div>
           </div>
@@ -1606,40 +1592,6 @@ export function DatabaseView({
         onConfirm={moveSelectedRecords}
       />
 
-      <AlertDialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => {
-          if (selectionAction === null) setDeleteDialogOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive">
-                <WarningCircle size={18} weight="fill" />
-              </span>
-              <AlertDialogTitle>Move selected records to Trash</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription>
-              Move {selectedRecords.length} selected {selectedRecords.length === 1 ? "record" : "records"} to
-              Trash? You can restore {selectedRecords.length === 1 ? "it" : "them"} later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancelButton disabled={selectionAction !== null}>Cancel</AlertDialogCancelButton>
-            <AlertDialogActionButton
-              variant="destructive"
-              disabled={selectionAction !== null}
-              onClick={(event) => {
-                event.preventDefault();
-                void deleteSelectedRecords();
-              }}
-            >
-              {selectionAction === "delete" ? "Moving" : "Move to Trash"}
-            </AlertDialogActionButton>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </section>
   );
 }

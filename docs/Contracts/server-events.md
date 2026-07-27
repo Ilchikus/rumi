@@ -52,9 +52,12 @@ rewrite to its local draft and advances its base version, avoiding a false confl
 editing.
 
 Moving content to Trash publishes `page.deleted` with `changedBy: "trash.move"` and the recoverable
-`trashItemId`. An open page transitions to a muted read-only Trash view instead of disappearing.
+`trashItemId`. An open page navigates to the most recently visited surviving page.
 Restoring from Trash publishes `workspace.treeChanged` with the restored path, original path in
 `previousPath`, and `changedBy: "trash.restore"`.
+Permanent deletion publishes `trash.changed` with `changedBy: "trash.deleteForever"` and the
+removed `trashItemId`, allowing every client to refresh its Trash list or leave the removed
+read-only Trash route.
 
 ## Transport
 

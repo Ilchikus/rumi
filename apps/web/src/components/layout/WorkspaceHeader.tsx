@@ -9,7 +9,7 @@ import type { WorkspaceNode } from "@rumi/contracts";
 import { findWorkspaceNode } from "../../lib/lastOpenedPage";
 import { cn } from "../../lib/utils";
 import type { SidebarSelection } from "../sidebar/Sidebar";
-import { DeleteNodeDialog, MoveNodeDialog } from "../sidebar/Sidebar";
+import { MoveNodeDialog } from "../sidebar/Sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,8 +60,6 @@ export function WorkspaceHeader({
   const canManageActiveNode = Boolean(activeNode && activeNode.kind !== "workspace" && !trashOpen);
   const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
   const [moveBusy, setMoveBusy] = useState(false);
-  const [trashTarget, setTrashTarget] = useState<WorkspaceNode | null>(null);
-  const [trashBusy, setTrashBusy] = useState(false);
 
   const confirmMove = async (newParentPath: string) => {
     if (!moveTarget || moveBusy) return;
@@ -70,16 +68,6 @@ export function WorkspaceHeader({
       if (await onMoveNode(moveTarget, newParentPath)) setMoveTarget(null);
     } finally {
       setMoveBusy(false);
-    }
-  };
-
-  const confirmTrash = async () => {
-    if (!trashTarget || trashBusy) return;
-    setTrashBusy(true);
-    try {
-      if (await onMoveToTrash(trashTarget)) setTrashTarget(null);
-    } finally {
-      setTrashBusy(false);
     }
   };
 
@@ -181,7 +169,7 @@ export function WorkspaceHeader({
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
-                        onSelect={() => setTrashTarget(activeNode)}
+                        onSelect={() => void onMoveToTrash(activeNode)}
                       >
                         <Trash size={16} />
                         Move to Trash
@@ -212,14 +200,6 @@ export function WorkspaceHeader({
         onConfirm={confirmMove}
       />
 
-      <DeleteNodeDialog
-        node={trashTarget}
-        busy={trashBusy}
-        onOpenChange={(open) => {
-          if (!open && !trashBusy) setTrashTarget(null);
-        }}
-        onConfirm={confirmTrash}
-      />
     </header>
   );
 }

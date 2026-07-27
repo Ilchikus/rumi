@@ -7,7 +7,7 @@ Rumi currently supports macOS and Linux.
 | Action | macOS | Linux |
 | --- | --- | --- |
 | Create a page, folder, or database | `Control+N` | `Alt+N` |
-| Show or hide the sidebar | `Command+Backquote` | `Ctrl+Backquote` |
+| Show or hide the sidebar | `Command+S` | `Ctrl+S` |
 | Open or close search | `Command+K` | `Ctrl+K` |
 | Close the current menu or dialog | `Escape` | `Escape` |
 

@@ -46,17 +46,17 @@ describe("browser-safe app shortcuts", () => {
     }, "linux")).toBeNull();
   });
 
-  it("toggles the sidebar with the platform primary modifier and backquote", () => {
+  it("toggles the sidebar with the platform primary save shortcut", () => {
     expect(appShortcutAction({
       ...baseEvent,
-      key: "`",
-      code: "Backquote",
+      key: "s",
+      code: "KeyS",
       metaKey: true
     }, "mac")).toBe("toggle-sidebar");
     expect(appShortcutAction({
       ...baseEvent,
-      key: "`",
-      code: "Backquote",
+      key: "s",
+      code: "KeyS",
       ctrlKey: true
     }, "linux")).toBe("toggle-sidebar");
   });
@@ -83,12 +83,12 @@ describe("browser-safe app shortcuts", () => {
   it("provides discoverable platform labels", () => {
     expect(shortcutLabels("mac")).toEqual({
       create: "⌃N",
-      sidebar: "⌘`",
+      sidebar: "⌘S",
       immediate: "⌘↵"
     });
     expect(shortcutLabels("linux")).toEqual({
       create: "Alt+N",
-      sidebar: "Ctrl+`",
+      sidebar: "Ctrl+S",
       immediate: "Ctrl+Enter"
     });
   });

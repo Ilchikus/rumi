@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
+import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { RumiApiClient } from "@rumi/api-client";
 import { toast } from "sonner";
 import {
@@ -45,7 +46,7 @@ import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/S
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { SearchDialog } from "./components/search/SearchDialog";
-import { TrashView } from "./components/trash/TrashView";
+import { DeleteTrashItemDialog, TrashView } from "./components/trash/TrashView";
 import {
   clearLastOpenedPage,
   findWorkspaceNode,
@@ -57,7 +58,8 @@ import {
   parseWorkspaceRoute,
   workspaceUrlForNode
 } from "./lib/workspaceRoute";
-import { appShortcutAction, appShortcutPlatform } from "./lib/appShortcuts";
+import { appShortcutAction, appShortcutPlatform, shortcutLabels } from "./lib/appShortcuts";
+import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
@@ -115,6 +117,8 @@ export function App(): ReactElement {
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashLoadState, setTrashLoadState] = useState<LoadState>("idle");
   const [restoringTrashId, setRestoringTrashId] = useState<string | null>(null);
+  const [deletingTrashId, setDeletingTrashId] = useState<string | null>(null);
+  const [deleteForeverTarget, setDeleteForeverTarget] = useState<TrashItem | null>(null);
   const [activeTrashPage, setActiveTrashPage] = useState<TrashPageResult | null>(null);
   const [selection, setSelection] = useState<SidebarSelection | null>(null);
   const [page, setPage] = useState<PageDocument | null>(null);
@@ -157,7 +161,9 @@ export function App(): ReactElement {
   const pageLoadCacheGenerationRef = useRef(0);
   const openRequestIdRef = useRef(0);
   const restoredWorkspaceRef = useRef<string | null>(null);
+  const pageVisitHistoryRef = useRef<string[]>([]);
   const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
+  const shortcutLabel = useMemo(() => shortcutLabels(shortcutPlatform), [shortcutPlatform]);
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
@@ -717,8 +723,17 @@ export function App(): ReactElement {
     async (node: WorkspaceNode, historyAction: "push" | "replace" = "push") => {
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
+      if (historyAction === "push") {
+        pageVisitHistoryRef.current = rememberVisitedPath(
+          pageVisitHistoryRef.current,
+          selectionRef.current?.nodePath ?? null,
+          node.path
+        );
+      }
+      const nextSelection = { nodePath: node.path, openPath, kind: node.kind };
       pendingHistoryActionRef.current = historyAction;
-      setSelection({ nodePath: node.path, openPath, kind: node.kind });
+      selectionRef.current = nextSelection;
+      setSelection(nextSelection);
       saveStateRef.current = "idle";
       setSaveState("idle");
       setMessage("");
@@ -758,6 +773,40 @@ export function App(): ReactElement {
     },
     [isNarrow, loadPage]
   );
+
+  const redirectAfterDeletedNode = useCallback(async (deletedPath: string): Promise<void> => {
+    if (trashOpen) return;
+    const currentSelection = selectionRef.current;
+    if (!currentSelection || !isSameOrDescendant(currentSelection.nodePath, deletedPath)) return;
+
+    const previous = tree
+      ? takePreviousVisitedNode(pageVisitHistoryRef.current, tree, deletedPath)
+      : { history: [], node: null };
+    pageVisitHistoryRef.current = previous.history;
+    dirtyBodyRef.current = false;
+    dirtyFrontmatterRef.current = false;
+    saveStateRef.current = "idle";
+    setSaveState("idle");
+
+    if (previous.node) {
+      await openNode(previous.node, "replace");
+      return;
+    }
+
+    if (tree) {
+      await openNode(tree, "replace");
+      return;
+    }
+
+    pendingHistoryActionRef.current = "replace";
+    selectionRef.current = null;
+    setPage(null);
+    setDraftBody("");
+    setSelection(null);
+    setTrashOpen(false);
+    setActiveTrashPage(null);
+    clearLastOpenedPage(window.localStorage, workspaceRootPath);
+  }, [openNode, trashOpen, tree, workspaceRootPath]);
 
   const openDocumentLink = useCallback((path: string) => {
     const linkedNode = resolveWorkspaceDocumentLink(tree, path, pageRef.current?.path);
@@ -1166,7 +1215,6 @@ export function App(): ReactElement {
         const deletingOpenPage = Boolean(
           currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)
         );
-        const deletingPagePath = deletingOpenPage ? pageRef.current?.path : undefined;
 
         if (deletingOpenPage) {
           const pendingSave = saveInFlightRef.current ??
@@ -1176,19 +1224,12 @@ export function App(): ReactElement {
           if (pendingSave && !(await pendingSave)) return false;
         }
 
-        const result = await api.deleteNode({ path: node.path, recursive: isFolder });
+        await api.deleteNode({ path: node.path, recursive: isFolder });
         clearPageLoadCache();
         await Promise.all([loadTree(), loadTrash()]);
 
         if (deletingOpenPage) {
-          const trashedPage = await api.openTrashPage(result.trashItem.id, deletingPagePath);
-          pendingHistoryActionRef.current = "replace";
-          setPage(null);
-          setDraftBody("");
-          setSelection(null);
-          setTrashOpen(true);
-          setActiveTrashPage(trashedPage);
-          clearLastOpenedPage(window.localStorage, workspaceRootPath);
+          await redirectAfterDeletedNode(node.path);
         }
 
         setMessage("");
@@ -1199,7 +1240,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, clearPageLoadCache, loadTrash, loadTree, setMessage, workspaceRootPath]
+    [api, clearPageLoadCache, loadTrash, loadTree, redirectAfterDeletedNode, setMessage]
   );
 
   const openTrash = useCallback(() => {
@@ -1258,6 +1299,26 @@ export function App(): ReactElement {
       setRestoringTrashId(null);
     }
   }, [activeTrashPage, api, clearPageLoadCache, loadPage, loadTrash, loadTree, restoringTrashId, setMessage]);
+
+  const deleteTrashItemForever = useCallback(async (): Promise<void> => {
+    if (!deleteForeverTarget || deletingTrashId) return;
+    const item = deleteForeverTarget;
+    setDeletingTrashId(item.id);
+
+    try {
+      await api.deleteTrashItem(item.id);
+      await loadTrash();
+      pendingHistoryActionRef.current = "replace";
+      setActiveTrashPage((current) => current?.item.id === item.id ? null : current);
+      setTrashOpen(true);
+      setDeleteForeverTarget(null);
+      setMessage("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setDeletingTrashId(null);
+    }
+  }, [api, deleteForeverTarget, deletingTrashId, loadTrash, setMessage]);
 
   const moveNode = useCallback(
     async (node: WorkspaceNode, newParentPath: string): Promise<boolean> => {
@@ -2021,33 +2082,9 @@ export function App(): ReactElement {
       clearPageLoadCache();
       await Promise.all([loadTree(), loadTrash()]);
 
-      const currentSelection = selectionRef.current;
-
-      if (currentSelection && isSameOrDescendant(currentSelection.nodePath, event.path)) {
-        const currentPagePath = pageRef.current?.path;
-        const trashedPage = event.changedBy === "trash.move" && event.trashItemId
-          ? await api.openTrashPage(event.trashItemId, currentPagePath).catch(() => null)
-          : null;
-        pendingHistoryActionRef.current = "replace";
-        setPage(null);
-        setDraftBody("");
-        setSelection(null);
-        clearLastOpenedPage(window.localStorage, workspaceRootPath);
-        setSaveState("idle");
-        dirtyBodyRef.current = false;
-        dirtyFrontmatterRef.current = false;
-
-        if (trashedPage) {
-          setTrashOpen(true);
-          setActiveTrashPage(trashedPage);
-        } else {
-          setTrashOpen(false);
-          setActiveTrashPage(null);
-          setMessage("The open page was removed and could not be restored from Trash.");
-        }
-      }
+      await redirectAfterDeletedNode(event.path);
     },
-    [api, clearPageLoadCache, loadTrash, loadTree, setMessage, workspaceRootPath]
+    [clearPageLoadCache, loadTrash, loadTree, redirectAfterDeletedNode]
   );
 
   useEffect(() => {
@@ -2062,6 +2099,18 @@ export function App(): ReactElement {
 
       if (event.name === "page.deleted") {
         void handleDeletedEvent(event);
+      }
+
+      if (event.name === "trash.changed") {
+        void loadTrash();
+        if (event.changedBy === "trash.deleteForever" && event.trashItemId) {
+          setActiveTrashPage((current) => {
+            if (current?.item.id !== event.trashItemId) return current;
+            pendingHistoryActionRef.current = "replace";
+            setTrashOpen(true);
+            return null;
+          });
+        }
       }
 
       if (event.name === "folder.childrenChanged" || event.name === "workspace.treeChanged") {
@@ -2159,7 +2208,7 @@ export function App(): ReactElement {
           variant="outline"
           className="fixed left-3 top-3 z-30 bg-background shadow-sm"
           onClick={() => setSidebarCollapsedState(false, setSidebarCollapsed)}
-          title="Open sidebar"
+          title={`Open sidebar (${shortcutLabel.sidebar})`}
         >
           <SidebarSimple size={17} />
         </Button>
@@ -2172,7 +2221,7 @@ export function App(): ReactElement {
           variant="outline"
           className="fixed left-3 top-3 z-30 bg-background shadow-sm"
           onClick={() => setSidebarCollapsedState(false, setSidebarCollapsed)}
-          title="Open sidebar"
+          title={`Open sidebar (${shortcutLabel.sidebar})`}
         >
           <SidebarSimple size={17} />
         </Button>
@@ -2203,24 +2252,38 @@ export function App(): ReactElement {
             items={trashItems}
             loadState={trashLoadState}
             restoringId={restoringTrashId}
+            deletingId={deletingTrashId}
             onOpen={(item) => void openTrashPage(item)}
             onRestore={restoreTrashItem}
+            onDeleteForever={setDeleteForeverTarget}
           />
         ) : activeTrashPage ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-muted/70 px-6 py-3 text-sm">
+            <div className="flex shrink-0 flex-col items-start justify-between gap-3 border-b border-border bg-muted/70 px-6 py-3 text-sm sm:flex-row sm:items-center">
               <p className="text-muted-foreground">
                 This page is in Trash. Restore it to continue editing.
               </p>
-              <Button
-                type="button"
-                size="sm"
-                disabled={restoringTrashId !== null}
-                onClick={() => void restoreTrashItem(activeTrashPage.item, true)}
-              >
-                <ArrowCounterClockwise size={15} />
-                {restoringTrashId === activeTrashPage.item.id ? "Restoring" : "Restore"}
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={restoringTrashId !== null || deletingTrashId !== null}
+                  onClick={() => void restoreTrashItem(activeTrashPage.item, true)}
+                >
+                  <ArrowCounterClockwise size={15} />
+                  {restoringTrashId === activeTrashPage.item.id ? "Restoring" : "Restore"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={restoringTrashId !== null || deletingTrashId !== null}
+                  onClick={() => setDeleteForeverTarget(activeTrashPage.item)}
+                >
+                  <Trash size={15} />
+                  {deletingTrashId === activeTrashPage.item.id ? "Deleting" : "Delete forever"}
+                </Button>
+              </div>
             </div>
             <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
               <article className="mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 text-muted-foreground opacity-65 sm:px-10 sm:pt-16 lg:px-12">
@@ -2347,6 +2410,15 @@ export function App(): ReactElement {
           </div>
         )}
       </section>
+
+      <DeleteTrashItemDialog
+        item={deleteForeverTarget}
+        busy={deletingTrashId !== null}
+        onOpenChange={(open) => {
+          if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
+        }}
+        onConfirm={deleteTrashItemForever}
+      />
 
       {page && !trashOpen && (
         <RevisionHistoryDialog

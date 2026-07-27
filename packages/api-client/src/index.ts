@@ -13,6 +13,7 @@ import type {
   CreatePageRequest,
   DeleteNodeRequest,
   DeleteNodeResult,
+  DeleteTrashItemResult,
   DeleteDatabasePropertyRequest,
   DeleteDatabaseViewRequest,
   MoveNodeRequest,
@@ -346,6 +347,12 @@ export class RumiApiClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)
+    });
+  }
+
+  async deleteTrashItem(id: string): Promise<DeleteTrashItemResult> {
+    return this.request<DeleteTrashItemResult>(`/api/trash/${encodeURIComponent(id)}`, {
+      method: "DELETE"
     });
   }
 

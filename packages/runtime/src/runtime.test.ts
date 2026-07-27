@@ -673,6 +673,7 @@ describe("WorkspaceRuntime", () => {
     const root = await tempWorkspace();
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
     await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "# Original" });
+    await runtime.createPage({ parentPath: "", name: "Permanent", markdownBody: "# Gone" });
     await runtime.createFolder({ parentPath: "", name: "Projects", markdownBody: "# Projects" });
     await fs.writeFile(path.join(root, "Projects", "Nested.md"), "# Nested", "utf8");
     await runtime.createDatabase({ parentPath: "", name: "Tasks" });
@@ -682,6 +683,7 @@ describe("WorkspaceRuntime", () => {
     );
 
     await runtime.deleteNode({ path: "Note.md" });
+    await runtime.deleteNode({ path: "Permanent.md" });
     await runtime.deleteNode({ path: "Projects", recursive: true });
     await runtime.deleteNode({ path: "Tasks", recursive: true });
     await runtime.deleteNode({ path: asset.path });
@@ -699,10 +701,27 @@ describe("WorkspaceRuntime", () => {
 
     await fs.writeFile(path.join(root, "Note.md"), "# Replacement", "utf8");
     const noteItem = trash.items.find((item) => item.originalPath === "Note.md");
+    const permanentItem = trash.items.find((item) => item.originalPath === "Permanent.md");
     const databaseItem = trash.items.find((item) => item.originalPath === "Tasks");
     const folderItem = trash.items.find((item) => item.originalPath === "Projects");
     const assetItem = trash.items.find((item) => item.originalPath === ".assets/diagram.png");
-    expect(noteItem && databaseItem && folderItem && assetItem).toBeTruthy();
+    expect(noteItem && permanentItem && databaseItem && folderItem && assetItem).toBeTruthy();
+
+    const permanentlyDeleted = await runtime.deleteTrashItem({ id: permanentItem!.id });
+    expect(permanentlyDeleted).toMatchObject({
+      status: "ok",
+      item: { id: permanentItem!.id, originalPath: "Permanent.md" },
+      events: [{
+        name: "trash.changed",
+        changedBy: "trash.deleteForever",
+        trashItemId: permanentItem!.id
+      }]
+    });
+    await expect(runtime.openTrashPage(permanentItem!.id)).rejects.toThrow();
+    await expect(runtime.restoreTrashItem({ id: permanentItem!.id })).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(root, ".rumi", "trash", permanentItem!.id))
+    ).rejects.toThrow();
 
     await expect(runtime.openTrashPage(noteItem!.id)).resolves.toMatchObject({
       item: { id: noteItem!.id, originalPath: "Note.md" },

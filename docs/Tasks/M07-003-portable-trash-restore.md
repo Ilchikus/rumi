@@ -24,13 +24,15 @@ implementation.
 - Safe deletion for pages, folders, databases, uploaded assets, and other files.
 - Original-path restore with missing-parent creation and collision-safe fallback names.
 - Folder/database companion rename handling and revision-object continuity.
-- Typed runtime, HTTP, and client list/restore commands.
-- Bottom sidebar Trash entry, count, listing, original paths, deletion times, and restore actions.
-- Delete confirmation and completion copy that accurately describes moving to Trash.
+- Typed runtime, HTTP, and client list/restore/permanent-delete commands.
+- Bottom sidebar Trash entry, count, borderless listing, original paths, deletion times, restore,
+  read-only page access, and confirmed permanent-delete actions.
+- Immediate reversible moves to Trash, with the open page redirected to the latest surviving page
+  in its visit history.
 
 ## Coverage
 
 - [x] Runtime coverage for every supported item kind, collisions, companion names, and protected paths.
-- [x] API list/delete/restore flow.
+- [x] API list/move/restore/permanent-delete flow.
 - [x] Typecheck and production web build.
 - [ ] Manual browser smoke test for sidebar navigation and restore feedback.

@@ -60,7 +60,7 @@ is one of its descendants. Later navigation can still reveal the ancestors of a 
 Follow-up UI pass switched app tokens to neutral/white/black defaults, reduced nested tree indentation to roughly 20px per level, and settled sidebar entity marks on neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
 
 The browser shell now reserves `Control-N` on macOS (`Alt-N` on Linux, where `Control-N` belongs to
-the browser) for the root create menu, and `Command-\`` on macOS (`Control-\`` on Linux) for the left
+the browser) for the root create menu, and `Command-S` on macOS (`Control-S` on Linux) for the left
 sidebar. Opening the create menu focuses Page first. Arrow keys and `1`/`2`/`3` move focus without
 selecting. Enter starts the existing inline-name flow. Primary-modifier Enter or click creates the
 chosen item immediately with its collision-safe default name, opens it, and selects the complete

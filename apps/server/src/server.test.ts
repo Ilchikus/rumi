@@ -349,6 +349,29 @@ describe("Rumi server API", () => {
       restoredToOriginalPath: true
     });
     await expect(fs.readFile(path.join(root, "Archive", "Moved idea.md"), "utf8")).resolves.toBe("# Idea");
+
+    await server.inject({
+      method: "POST",
+      url: "/api/nodes/delete",
+      payload: { path: "Archive/Moved idea.md" }
+    });
+    const nextTrash = await server.inject({ method: "GET", url: "/api/trash" });
+    const permanentItemId = (nextTrash.json() as { items: Array<{ id: string }> }).items[0]!.id;
+    const deleteForever = await server.inject({
+      method: "DELETE",
+      url: `/api/trash/${encodeURIComponent(permanentItemId)}`
+    });
+    expect(deleteForever.statusCode).toBe(200);
+    expect(deleteForever.json()).toMatchObject({
+      status: "ok",
+      item: { id: permanentItemId, originalPath: "Archive/Moved idea.md" },
+      events: [{ name: "trash.changed", changedBy: "trash.deleteForever" }]
+    });
+    expect((await server.inject({ method: "GET", url: "/api/trash" })).json()).toEqual({ items: [] });
+    expect((await server.inject({
+      method: "GET",
+      url: `/api/trash/${encodeURIComponent(permanentItemId)}`
+    })).statusCode).not.toBe(200);
     await server.close();
   });
 

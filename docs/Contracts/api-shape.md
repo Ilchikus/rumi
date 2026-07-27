@@ -52,6 +52,8 @@ safe workspace paths. The client never receives a raw workspace filesystem path.
 `GET /api/trash/:id` reads a recoverable page for the muted read-only Trash view.
 `POST /api/trash/restore` accepts a trash item ID and returns both the original and actual restored
 path; the actual path differs when collision-safe restore is required.
+`DELETE /api/trash/:id` permanently removes the selected Trash payload after the client obtains
+explicit user confirmation.
 
 Create, rename, move, asset upload, and restore commands never overwrite an occupied destination.
 They return the actual selected path, using `Name (1)`, `Name (2)`, and later parenthesized suffixes

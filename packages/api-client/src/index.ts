@@ -12,6 +12,7 @@ import type {
   CreateFolderRequest,
   CreatePageRequest,
   DeleteNodeRequest,
+  DeleteNodeResult,
   DeleteDatabasePropertyRequest,
   DeleteDatabaseViewRequest,
   MoveNodeRequest,
@@ -34,6 +35,7 @@ import type {
   SearchWorkspaceResult,
   SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
+  TrashPageResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -47,14 +49,17 @@ export interface RumiApiClientOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   eventSourceImpl?: typeof EventSource;
+  clientId?: string;
 }
 
 export class RumiApiClient {
+  readonly clientId: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly eventSourceImpl?: typeof EventSource;
 
   constructor(options: RumiApiClientOptions = {}) {
+    this.clientId = options.clientId ?? createClientId();
     this.baseUrl = options.baseUrl ?? "";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.eventSourceImpl = options.eventSourceImpl ?? globalThis.EventSource;
@@ -317,8 +322,8 @@ export class RumiApiClient {
     });
   }
 
-  async deleteNode(request: DeleteNodeRequest): Promise<WorkspaceMutationResult> {
-    return this.request<WorkspaceMutationResult>("/api/nodes/delete", {
+  async deleteNode(request: DeleteNodeRequest): Promise<DeleteNodeResult> {
+    return this.request<DeleteNodeResult>("/api/nodes/delete", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)
@@ -327,6 +332,13 @@ export class RumiApiClient {
 
   async listTrash(): Promise<TrashListResult> {
     return this.request<TrashListResult>("/api/trash");
+  }
+
+  async openTrashPage(id: string, originalPagePath?: string): Promise<TrashPageResult> {
+    const search = originalPagePath
+      ? `?${new URLSearchParams({ path: originalPagePath }).toString()}`
+      : "";
+    return this.request<TrashPageResult>(`/api/trash/${encodeURIComponent(id)}${search}`);
   }
 
   async restoreTrashItem(request: RestoreTrashItemRequest): Promise<RestoreTrashItemResult> {
@@ -373,9 +385,12 @@ export class RumiApiClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const headers = new Headers(init?.headers);
+    headers.set("x-rumi-client-id", this.clientId);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       credentials: "include",
-      ...init
+      ...init,
+      headers
     });
     const data = (await response.json()) as unknown;
 
@@ -393,6 +408,12 @@ export class RumiApiClient {
 
     return data as T;
   }
+}
+
+function createClientId(): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.bind(globalThis.crypto);
+  if (randomUuid) return randomUuid();
+  return `rumi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function parseRumiEvent(data: string): RumiEvent | null {

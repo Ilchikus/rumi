@@ -49,6 +49,7 @@ safe workspace paths. The client never receives a raw workspace filesystem path.
 
 `POST /api/nodes/delete` moves the requested user-content payload to workspace-local Trash.
 `GET /api/trash` lists recoverable items and their original relative paths.
+`GET /api/trash/:id` reads a recoverable page for the muted read-only Trash view.
 `POST /api/trash/restore` accepts a trash item ID and returns both the original and actual restored
 path; the actual path differs when collision-safe restore is required.
 

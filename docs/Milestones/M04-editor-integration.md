@@ -7,8 +7,8 @@ areas:
   - api
 depends_on:
   - M03
-created: "2026-06-22"
-updated: "2026-06-23"
+created: 2026-06-22
+updated: 2026-06-23
 ---
 # M04 Editor Integration
 

@@ -80,13 +80,6 @@ export function buildRumiInputRules(schema: Schema) {
   pushMarkRule(rules, /(?<!_)_([^_]+)_(?!_)$/, schema.marks.em);
   pushMarkRule(rules, /~~([^~]+)~~$/, schema.marks.strike);
   pushMarkRule(rules, /`([^`]+)`$/, schema.marks.code);
-  pushMarkRule(
-    rules,
-    /==([A-Za-z]+)::([^=]+)==$/,
-    schema.marks.highlight,
-    2,
-    (match) => ({ color: normalizeHighlightColor(match[1]) })
-  );
   pushMarkRule(rules, /==([^=]+)==$/, schema.marks.highlight);
   pushMarkRule(rules, /\+\+([^+]+)\+\+$/, schema.marks.underline);
   pushMarkRule(rules, /__([^_]+)__$/, schema.marks.underline);
@@ -251,13 +244,6 @@ function pushMarkRule(
       return transaction;
     })
   );
-}
-
-function normalizeHighlightColor(value: string | undefined): string {
-  const color = value?.toLocaleLowerCase() ?? "yellow";
-  return ["yellow", "green", "blue", "purple", "pink", "red", "orange", "gray"].includes(color)
-    ? color
-    : "yellow";
 }
 
 function consumeListCommand(command: Command, listItem: NodeType): Command {

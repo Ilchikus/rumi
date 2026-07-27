@@ -6,7 +6,7 @@ export interface EditablePageTitleProps {
   editable: boolean;
   renaming?: boolean;
   emptyTitle?: string;
-  editRequest?: { id: number; caretOffset?: number };
+  editRequest?: { id: number; caretOffset?: number; selectAll?: boolean };
   onRename: (title: string) => Promise<boolean>;
   onSplit?: (
     title: string,
@@ -54,6 +54,7 @@ export function EditablePageTitle({
   const editableRef = useRef<HTMLSpanElement | null>(null);
   const draftRef = useRef(title);
   const activationOffsetRef = useRef<number | null>(null);
+  const selectAllOnActivationRef = useRef(false);
   const cancelRef = useRef(false);
   const committingRef = useRef(false);
   const handledEditRequestRef = useRef<number | null>(null);
@@ -70,11 +71,16 @@ export function EditablePageTitle({
     if (!editableTitle) return;
 
     editableTitle.focus({ preventScroll: true });
-    setTextCaretOffset(
-      editableTitle,
-      activationOffsetRef.current ?? editableTitle.textContent?.length ?? 0
-    );
+    if (selectAllOnActivationRef.current) {
+      selectTextContents(editableTitle);
+    } else {
+      setTextCaretOffset(
+        editableTitle,
+        activationOffsetRef.current ?? editableTitle.textContent?.length ?? 0
+      );
+    }
     activationOffsetRef.current = null;
+    selectAllOnActivationRef.current = false;
   }, [editing]);
 
   useEffect(() => {
@@ -87,6 +93,7 @@ export function EditablePageTitle({
 
     handledEditRequestRef.current = editRequest.id;
     activationOffsetRef.current = editRequest.caretOffset ?? title.length;
+    selectAllOnActivationRef.current = Boolean(editRequest.selectAll);
     draftRef.current = title;
     setDraft(title);
     setEditing(true);
@@ -282,6 +289,16 @@ function rangeAt(node: Node, offset: number): Range {
   range.setStart(node, offset);
   range.collapse(true);
   return range;
+}
+
+function selectTextContents(root: HTMLElement): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function textCaretOffset(root: HTMLElement): number {

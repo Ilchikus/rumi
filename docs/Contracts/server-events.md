@@ -51,10 +51,10 @@ An open clean page refetches normally. An open dirty page applies the same deter
 rewrite to its local draft and advances its base version, avoiding a false conflict or loss of local
 editing.
 
-Moving content to Trash publishes the existing `page.deleted` invalidation event. Restoring from
-Trash publishes `workspace.treeChanged` with the restored path, original path in `previousPath`, and
-`changedBy: "trash.restore"`. Clients refresh both the workspace tree and Trash listing for these
-events.
+Moving content to Trash publishes `page.deleted` with `changedBy: "trash.move"` and the recoverable
+`trashItemId`. An open page transitions to a muted read-only Trash view instead of disappearing.
+Restoring from Trash publishes `workspace.treeChanged` with the restored path, original path in
+`previousPath`, and `changedBy: "trash.restore"`.
 
 ## Transport
 
@@ -82,15 +82,21 @@ Clients may listen to individual named events such as `page.changed`, or use the
 
 Stale/conflict saves do not publish `page.changed`.
 
-The first client behavior is invalidation/refetch:
+The official client behavior is optimistic reconciliation:
 
 - Always refresh the tree on `page.changed`.
 - If the changed page is open and the editor is clean, refetch the page.
-- If the changed page is open and the editor is dirty, keep the local draft and show a conflict/refresh notice.
+- If the changed page is open and the editor is dirty, refetch the new base, retain locally dirty
+  fields, advance the base version, and autosave again without a conflict notification.
+- A stale save response triggers the same refetch/rebase flow with bounded retries. It never disables
+  the live editor.
 
 ## Watcher Reconciliation
 
 The server starts a runtime-owned filesystem watcher for the served workspace. Raw watcher events are debounced and reconciled against an in-memory workspace snapshot before anything is published.
+
+Runtime-owned writes are recorded by path and resulting content hash. Matching watcher observations
+advance the snapshot without publishing a duplicate `filesystem` event.
 
 Watcher-originated events use the same event names as runtime commands:
 

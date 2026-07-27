@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-06-23"
-updated: "2026-07-22"
+updated: "2026-07-27"
 ---
 # M07-001 Rumi Block Editor Preset
 
@@ -101,3 +101,22 @@ the active line without per-scroll JavaScript. It opens below the active line wh
 above near the bottom edge, clamps horizontally, and uses the larger available side with an internally
 scrolling height when neither side can show the complete menu. Focused geometry tests protect the
 placement boundaries and the conversion from viewport to canvas coordinates.
+
+Task input rules now recognize `[]` and `[x]` with an optional leading dash and optional space after
+that dash, including the intermediate bullet block created by typing `- `. The shortcut converts
+only after a trailing Space, so incomplete bracket sequences remain literal. The Markdown bridge
+reads standard spaced GFM task markers and compact unchecked markers, then writes the canonical
+`- []` or `- [x]` form without trailing whitespace on empty items. Enter preserves an empty bullet,
+number, or task row and creates the next row. Backspace/Delete exits an empty list item in place by
+replacing it with a plain blank paragraph; a subsequent deletion follows the ordinary blank-block
+behavior. Focused input-rule, keyboard-command, and Markdown roundtrip tests protect these
+interactions.
+
+The root [Markdown syntax reference](../../MARKDOWN.md) now names GFM as the portability baseline
+and documents Rumi's highlight, underline, compact-task, embed, and read-time compatibility
+extensions. Focused Markdown coverage also follows `==highlighted==` through parsing to the web
+schema's semantic `<mark>` output contract.
+
+Triple-click selection now stops at explicit row boundaries inside a text block, including hard
+breaks and literal code-block newlines. This keeps whole-block selection on Mod-A and has focused
+selection-command coverage.

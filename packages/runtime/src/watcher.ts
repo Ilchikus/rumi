@@ -49,7 +49,8 @@ export class WorkspaceWatcher {
   private reconcileInFlight = false;
   private reconcileAgain = false;
   private activeWatcherReconcile: Promise<void> | null = null;
-  private stopped = false;
+  private readonly internalPageWrites = new Map<string, Map<string, number>>();
+  private stopped = true;
 
   private constructor(options: WorkspaceWatcherOptions, snapshot: WorkspaceSnapshot) {
     this.rootPath = options.rootPath;
@@ -84,7 +85,7 @@ export class WorkspaceWatcher {
   }
 
   async reconcile(): Promise<WorkspaceReconcileResult> {
-    const events = await this.reconcileSnapshot();
+    const events = this.filterInternalPageWrites(await this.reconcileSnapshot());
 
     if (events.length > 0) {
       await this.onEvents?.(events);
@@ -95,6 +96,14 @@ export class WorkspaceWatcher {
       reconciledAt: new Date().toISOString(),
       events
     };
+  }
+
+  recordInternalPageWrite(inputPath: string, contentHash: string): void {
+    const relPath = normalizeWorkspacePath(inputPath);
+    const hashes = this.internalPageWrites.get(relPath) ?? new Map<string, number>();
+    hashes.set(contentHash, Date.now() + 30_000);
+    this.internalPageWrites.set(relPath, hashes);
+    this.pruneInternalPageWrites();
   }
 
   private scheduleReconcile(): void {
@@ -140,6 +149,45 @@ export class WorkspaceWatcher {
     this.snapshot = nextSnapshot;
     await this.refreshDirectoryWatchers();
     return events;
+  }
+
+  private filterInternalPageWrites(events: RumiEvent[]): RumiEvent[] {
+    this.pruneInternalPageWrites();
+    return events.filter((event) => {
+      if (
+        event.name !== "page.changed" ||
+        event.changedBy !== "filesystem" ||
+        !event.path ||
+        !(event.contentHash ?? event.version)
+      ) {
+        return true;
+      }
+
+      const hashes = this.internalPageWrites.get(event.path);
+      const contentHash = event.contentHash ?? event.version!;
+      if (!hashes) return true;
+      if (!hashes.has(contentHash)) {
+        this.internalPageWrites.delete(event.path);
+        return true;
+      }
+
+      for (const knownHash of hashes.keys()) {
+        hashes.delete(knownHash);
+        if (knownHash === contentHash) break;
+      }
+      if (hashes.size === 0) this.internalPageWrites.delete(event.path);
+      return false;
+    });
+  }
+
+  private pruneInternalPageWrites(): void {
+    const now = Date.now();
+    for (const [relPath, hashes] of this.internalPageWrites) {
+      for (const [contentHash, expiresAt] of hashes) {
+        if (expiresAt <= now) hashes.delete(contentHash);
+      }
+      if (hashes.size === 0) this.internalPageWrites.delete(relPath);
+    }
   }
 
   private async refreshDirectoryWatchers(): Promise<void> {

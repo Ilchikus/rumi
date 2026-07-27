@@ -50,7 +50,10 @@ Save response:
 
 The editor keeps ProseMirror as live state. Markdown is serialized for save.
 
-The client must not silently overwrite if `baseVersion` is stale.
+If `baseVersion` is stale, the client refetches the latest page, retains fields changed in the live
+editor, advances the base version, and retries. Routine reconciliation is silent. Only a repeated
+failure to load or persist after bounded retries is surfaced as a destructive toast, and the local
+draft remains editable.
 
 ## Database Records
 

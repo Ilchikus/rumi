@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { RumiApiClient } from "@rumi/api-client";
+import { toast } from "sonner";
 import {
   parseMarkdownFile,
   rewriteMarkdownReferences,
@@ -17,6 +19,7 @@ import type {
   SavePageResult,
   SearchWorkspaceResultItem,
   TrashItem,
+  TrashPageResult,
   WorkspaceNode
 } from "@rumi/contracts";
 import type {
@@ -38,8 +41,9 @@ import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog
 import { emptyPageTitle, pageTitleFromPath } from "./components/editor/pagePresentation";
 import { WorkspaceHeader } from "./components/layout/WorkspaceHeader";
 import { Sidebar } from "./components/sidebar/Sidebar";
-import type { SidebarSelection } from "./components/sidebar/Sidebar";
+import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
+import { Toaster } from "./components/ui/sonner";
 import { SearchDialog } from "./components/search/SearchDialog";
 import { TrashView } from "./components/trash/TrashView";
 import {
@@ -53,6 +57,8 @@ import {
   parseWorkspaceRoute,
   workspaceUrlForNode
 } from "./lib/workspaceRoute";
+import { appShortcutAction, appShortcutPlatform } from "./lib/appShortcuts";
+import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 
@@ -62,7 +68,7 @@ const RumiBlockEditor = lazy(async () => {
 });
 
 type LoadState = "idle" | "loading" | "error";
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";
+type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type PageRenameIntent = {
   previousNodePath: string;
   expectedNodePath: string;
@@ -80,7 +86,8 @@ type PageTitleUndoAction = {
 type PageTitleEditRequest = {
   id: number;
   path: string;
-  caretOffset: number;
+  caretOffset?: number;
+  selectAll?: boolean;
 };
 
 const SIDEBAR_WIDTH_KEY = "rumi-new-sidebar-width";
@@ -90,6 +97,7 @@ const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 520;
 const MOBILE_SIDEBAR_TRANSITION_MS = 200;
 const AUTOSAVE_DELAY_MS = 800;
+const MAX_SAVE_REBASE_ATTEMPTS = 3;
 
 function waitForEditorFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -97,6 +105,9 @@ function waitForEditorFrame(): Promise<void> {
 
 export function App(): ReactElement {
   const api = useMemo(() => new RumiApiClient(), []);
+  const setMessage = useCallback((message: string) => {
+    if (message) toast.error(message);
+  }, []);
   const [workspaceName, setWorkspaceName] = useState("Rumi");
   const [workspaceRootPath, setWorkspaceRootPath] = useState("");
   const [tree, setTree] = useState<WorkspaceNode | null>(null);
@@ -104,6 +115,7 @@ export function App(): ReactElement {
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashLoadState, setTrashLoadState] = useState<LoadState>("idle");
   const [restoringTrashId, setRestoringTrashId] = useState<string | null>(null);
+  const [activeTrashPage, setActiveTrashPage] = useState<TrashPageResult | null>(null);
   const [selection, setSelection] = useState<SidebarSelection | null>(null);
   const [page, setPage] = useState<PageDocument | null>(null);
   const [pageTitleOverride, setPageTitleOverride] = useState<{ path: string; title: string } | null>(null);
@@ -112,11 +124,11 @@ export function App(): ReactElement {
   const [draftBody, setDraftBody] = useState("");
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [message, setMessage] = useState("");
   const [editorRevision, setEditorRevision] = useState(0);
   const [databaseRefreshRevisions, setDatabaseRefreshRevisions] = useState<DatabaseRefreshRevisions>({});
   const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSavedSidebarCollapsed());
@@ -129,8 +141,12 @@ export function App(): ReactElement {
   const selectionRef = useRef<SidebarSelection | null>(null);
   const editorRef = useRef<RumiBlockEditorHandle | null>(null);
   const editorRevisionRef = useRef(0);
+  const dirtyBodyRef = useRef(false);
+  const dirtyFrontmatterRef = useRef(false);
+  const dirtyDocumentPathRef = useRef<string | null>(null);
   const saveReasonRef = useRef<SavePageReason>("editor-autosave");
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const savePageRef = useRef<(() => Promise<boolean>) | null>(null);
   const pageRenameIntentRef = useRef<PageRenameIntent | null>(null);
   const pageTitleUndoRef = useRef<PageTitleUndoAction | null>(null);
   const pageTitleUndoInFlightRef = useRef(false);
@@ -141,6 +157,7 @@ export function App(): ReactElement {
   const pageLoadCacheGenerationRef = useRef(0);
   const openRequestIdRef = useRef(0);
   const restoredWorkspaceRef = useRef<string | null>(null);
+  const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
@@ -155,8 +172,12 @@ export function App(): ReactElement {
   const editorDocuments = useMemo(() => collectEditorDocuments(tree), [tree]);
 
   useEffect(() => {
-    document.title = trashOpen ? "Trash" : pageTitle ?? "Rumi";
-  }, [pageTitle, trashOpen]);
+    document.title = activeTrashPage
+      ? pageTitleFromPath(activeTrashPage.page.path, activeTrashPage.page.kind)
+      : trashOpen
+        ? "Trash"
+        : pageTitle ?? "Rumi";
+  }, [activeTrashPage, pageTitle, trashOpen]);
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -196,6 +217,14 @@ export function App(): ReactElement {
 
   useEffect(() => {
     pageRef.current = page;
+    const nextPath = page?.path ?? null;
+    if (dirtyDocumentPathRef.current !== nextPath) {
+      dirtyDocumentPathRef.current = nextPath;
+      if (saveStateRef.current !== "dirty") {
+        dirtyBodyRef.current = false;
+        dirtyFrontmatterRef.current = false;
+      }
+    }
   }, [page]);
 
   useEffect(() => {
@@ -218,6 +247,8 @@ export function App(): ReactElement {
 
   const markPageDirty = useCallback((reason: SavePageReason) => {
     saveReasonRef.current = reason;
+    if (reason === "editor-autosave") dirtyBodyRef.current = true;
+    if (reason === "property-edit") dirtyFrontmatterRef.current = true;
     editorRevisionRef.current += 1;
     setEditorRevision(editorRevisionRef.current);
     saveStateRef.current = "dirty";
@@ -313,7 +344,7 @@ export function App(): ReactElement {
 
         if (result.status === "conflict") {
           forgetCachedPage(currentPage.path);
-          setMessage("The database schema changed elsewhere. Reopen this record and try again.");
+          await refreshOpenPageDatabaseContext(currentPage.path);
           return false;
         }
 
@@ -356,7 +387,7 @@ export function App(): ReactElement {
 
         if (result.status === "conflict") {
           forgetCachedPage(currentPage.path);
-          setMessage("The database options changed elsewhere. Reopen this record and try again.");
+          await refreshOpenPageDatabaseContext(currentPage.path);
           return false;
         }
 
@@ -443,7 +474,7 @@ export function App(): ReactElement {
 
         if (result.status === "conflict") {
           forgetCachedPage(currentPage.path);
-          setMessage("The database options changed elsewhere. Reopen this record and try again.");
+          await refreshOpenPageDatabaseContext(currentPage.path);
           return false;
         }
 
@@ -484,7 +515,7 @@ export function App(): ReactElement {
 
         if (result.status === "conflict") {
           forgetCachedPage(currentPage.path);
-          setMessage("The database schema changed elsewhere. Reopen this record and try again.");
+          await refreshOpenPageDatabaseContext(currentPage.path);
           return false;
         }
 
@@ -514,7 +545,7 @@ export function App(): ReactElement {
         });
         if (result.status === "conflict") {
           forgetCachedPage(currentPage.path);
-          setMessage("The database presentation changed elsewhere. Reopen this record and try again.");
+          await refreshOpenPageDatabaseContext(currentPage.path);
           return false;
         }
 
@@ -598,6 +629,33 @@ export function App(): ReactElement {
   }, []);
 
   useEffect(() => {
+    const handleAppShortcut = (event: globalThis.KeyboardEvent) => {
+      const action = appShortcutAction(event, shortcutPlatform);
+      if (!action) return;
+
+      if (action === "open-create-menu" && !tree) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (action === "open-create-menu") {
+        setRootCreateMenuOpen(true);
+        if (sidebarCollapsed) {
+          setSidebarCollapsedState(false, setSidebarCollapsed);
+        }
+        return;
+      }
+
+      const nextCollapsed = !sidebarCollapsed;
+      if (nextCollapsed) setRootCreateMenuOpen(false);
+      setSidebarCollapsedState(nextCollapsed, setSidebarCollapsed);
+    };
+
+    window.addEventListener("keydown", handleAppShortcut, true);
+    return () => window.removeEventListener("keydown", handleAppShortcut, true);
+  }, [shortcutPlatform, sidebarCollapsed, tree]);
+
+  useEffect(() => {
     if (!isNarrow || sidebarCollapsed) {
       return;
     }
@@ -661,9 +719,11 @@ export function App(): ReactElement {
       const openPath = openPathForNode(node);
       pendingHistoryActionRef.current = historyAction;
       setSelection({ nodePath: node.path, openPath, kind: node.kind });
+      saveStateRef.current = "idle";
       setSaveState("idle");
       setMessage("");
       setTrashOpen(false);
+      setActiveTrashPage(null);
 
       if (isNarrow && openPath) {
         setSidebarCollapsedState(true, setSidebarCollapsed);
@@ -702,7 +762,6 @@ export function App(): ReactElement {
   const openDocumentLink = useCallback((path: string) => {
     const linkedNode = resolveWorkspaceDocumentLink(tree, path, pageRef.current?.path);
     if (!linkedNode) {
-      setMessage(`Document link not found: ${path}`);
       return;
     }
     void openNode(linkedNode);
@@ -713,6 +772,31 @@ export function App(): ReactElement {
     setMessage("");
     return result.path;
   }, [api]);
+
+  const openTrashPage = useCallback(async (
+    itemOrId: TrashItem | string,
+    historyAction: "push" | "replace" = "push",
+    originalPagePath?: string
+  ): Promise<void> => {
+    const id = typeof itemOrId === "string" ? itemOrId : itemOrId.id;
+    pendingHistoryActionRef.current = historyAction;
+    setLoadState("loading");
+    try {
+      const result = await api.openTrashPage(id, originalPagePath);
+      openRequestIdRef.current += 1;
+      setPage(null);
+      setDraftBody("");
+      setSelection(null);
+      setSaveState("idle");
+      setTrashOpen(true);
+      setActiveTrashPage(result);
+      setLoadState("idle");
+      if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
+    } catch (error) {
+      setLoadState("error");
+      setMessage(errorMessage(error));
+    }
+  }, [api, isNarrow, setMessage]);
 
   useEffect(() => {
     if (!tree || !workspaceRootPath || restoredWorkspaceRef.current === workspaceRootPath) {
@@ -725,8 +809,16 @@ export function App(): ReactElement {
     if (route?.view === "trash") {
       pendingHistoryActionRef.current = "replace";
       setTrashOpen(true);
+      setActiveTrashPage(null);
       setRouteSyncReady(true);
       void loadTrash();
+      return;
+    }
+
+    if (route?.view === "trash-item") {
+      setRouteSyncReady(true);
+      const originalPagePath = new URLSearchParams(window.location.search).get("path") ?? undefined;
+      void openTrashPage(route.id, "replace", originalPagePath);
       return;
     }
 
@@ -739,7 +831,7 @@ export function App(): ReactElement {
       }
 
       pendingHistoryActionRef.current = "replace";
-      setMessage(`No workspace item matches ${window.location.pathname}.`);
+      window.history.replaceState(null, "", "/");
       setRouteSyncReady(true);
       return;
     }
@@ -752,7 +844,7 @@ export function App(): ReactElement {
 
     if (!route) {
       pendingHistoryActionRef.current = "replace";
-      setMessage(`Unsupported workspace URL: ${window.location.pathname}`);
+      window.history.replaceState(null, "", "/");
       setRouteSyncReady(true);
       return;
     }
@@ -774,7 +866,7 @@ export function App(): ReactElement {
 
     setRouteSyncReady(true);
     void openNode(node, "replace");
-  }, [loadTrash, openNode, tree, workspaceRootPath]);
+  }, [loadTrash, openNode, openTrashPage, tree, workspaceRootPath]);
 
   useEffect(() => {
     if (!routeSyncReady || !tree) return;
@@ -785,8 +877,15 @@ export function App(): ReactElement {
 
       if (route?.view === "trash") {
         setTrashOpen(true);
+        setActiveTrashPage(null);
         setMessage("");
         void loadTrash();
+        return;
+      }
+
+      if (route?.view === "trash-item") {
+        const originalPagePath = new URLSearchParams(window.location.search).get("path") ?? undefined;
+        void openTrashPage(route.id, "replace", originalPagePath);
         return;
       }
 
@@ -805,27 +904,31 @@ export function App(): ReactElement {
 
       openRequestIdRef.current += 1;
       setTrashOpen(false);
+      setActiveTrashPage(null);
       setPage(null);
       setDraftBody("");
       setSelection(null);
       setSaveState("idle");
       window.history.replaceState(null, "", "/");
-      setMessage("That workspace URL no longer matches an item.");
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [loadTrash, openNode, routeSyncReady, tree]);
+  }, [loadTrash, openNode, openTrashPage, routeSyncReady, tree]);
 
   useEffect(() => {
     if (!routeSyncReady) return;
-    const nextUrl = trashOpen
+    const nextUrl = activeTrashPage
+      ? `/trash/${activeTrashPage.item.id}?${new URLSearchParams({
+          path: activeTrashPage.page.path
+        }).toString()}`
+      : trashOpen
       ? "/trash"
       : selection
         ? workspaceUrlForNode({ path: selection.nodePath, kind: selection.kind }, tree)
         : "/";
 
-    if (window.location.pathname === nextUrl) {
+    if (`${window.location.pathname}${window.location.search}` === nextUrl) {
       pendingHistoryActionRef.current = "replace";
       return;
     }
@@ -833,7 +936,7 @@ export function App(): ReactElement {
     const action = pendingHistoryActionRef.current;
     window.history[action === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
     pendingHistoryActionRef.current = "replace";
-  }, [routeSyncReady, selection, trashOpen, tree]);
+  }, [activeTrashPage, routeSyncReady, selection, trashOpen, tree]);
 
   useEffect(() => {
     if (!workspaceRootPath || !page || !selection || selection.openPath !== page.path) {
@@ -847,8 +950,17 @@ export function App(): ReactElement {
     });
   }, [page, selection, workspaceRootPath]);
 
+  const requestPageTitleSelection = useCallback((path: string) => {
+    pageTitleEditRequestIdRef.current += 1;
+    setPageTitleEditRequest({
+      id: pageTitleEditRequestIdRef.current,
+      path,
+      selectAll: true
+    });
+  }, []);
+
   const refreshAfterMutation = useCallback(
-    async (openPath?: string | null) => {
+    async (openPath?: string | null): Promise<PageDocument | null> => {
       await loadTree();
 
       if (openPath) {
@@ -861,12 +973,19 @@ export function App(): ReactElement {
           openPath: nextPage.path,
           kind: pageKindToNodeKind(nextPage.kind)
         });
+        return nextPage;
       }
+
+      return null;
     },
     [loadPage, loadTree]
   );
 
-  const createPage = useCallback(async (parentPath: string, name: string) => {
+  const createPage = useCallback(async (
+    parentPath: string,
+    name: string,
+    selectTitleAfterCreate = false
+  ) => {
     try {
       const result = await api.createPage({
         parentPath,
@@ -874,29 +993,43 @@ export function App(): ReactElement {
         markdownBody: ""
       });
       clearPageLoadCache();
-      await refreshAfterMutation(result.path);
+      const nextPage = await refreshAfterMutation(result.path);
+      if (selectTitleAfterCreate && nextPage) {
+        requestPageTitleSelection(nextPage.path);
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, refreshAfterMutation]);
+  }, [api, clearPageLoadCache, refreshAfterMutation, requestPageTitleSelection]);
 
-  const createFolder = useCallback(async (parentPath: string, name: string) => {
+  const createFolder = useCallback(async (
+    parentPath: string,
+    name: string,
+    selectTitleAfterCreate = false
+  ) => {
     try {
       const result = await api.createFolder({ parentPath, name, markdownBody: "" });
       clearPageLoadCache();
-      await refreshAfterMutation(result.path);
+      const nextPage = await refreshAfterMutation(result.path);
+      if (selectTitleAfterCreate && nextPage) {
+        requestPageTitleSelection(nextPage.path);
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, refreshAfterMutation]);
+  }, [api, clearPageLoadCache, refreshAfterMutation, requestPageTitleSelection]);
 
-  const createDatabase = useCallback(async (parentPath: string, name: string) => {
+  const createDatabase = useCallback(async (
+    parentPath: string,
+    name: string,
+    selectTitleAfterCreate = false
+  ) => {
     try {
       const result = await api.createDatabase({ parentPath, name });
       clearPageLoadCache();
@@ -906,22 +1039,42 @@ export function App(): ReactElement {
       setPage(nextPage);
       setDraftBody(nextPage.markdownBody);
       setSelection({ nodePath: result.path, openPath: nextPage.path, kind: "database" });
+      if (selectTitleAfterCreate) {
+        requestPageTitleSelection(nextPage.path);
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, loadPage, loadTree]);
+  }, [api, clearPageLoadCache, loadPage, loadTree, requestPageTitleSelection]);
+
+  const createDefaultItem = useCallback(async (
+    parentPath: string,
+    kind: SidebarCreateKind
+  ) => {
+    const defaultName = emptyPageTitle(kind);
+
+    if (kind === "page") {
+      await createPage(parentPath, defaultName, true);
+    } else if (kind === "folder") {
+      await createFolder(parentPath, defaultName, true);
+    } else {
+      await createDatabase(parentPath, defaultName, true);
+    }
+  }, [createDatabase, createFolder, createPage]);
 
   const openRecordPath = useCallback(async (recordPath: string) => {
     try {
       setTrashOpen(false);
+      setActiveTrashPage(null);
       const nextPage = await loadPage(recordPath);
       pendingHistoryActionRef.current = "push";
       setPage(nextPage);
       setDraftBody(nextPage.markdownBody);
       setSelection({ nodePath: recordPath, openPath: nextPage.path, kind: "page" });
+      saveStateRef.current = "idle";
       setSaveState("idle");
       setMessage("");
     } catch (error) {
@@ -933,6 +1086,7 @@ export function App(): ReactElement {
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
     try {
       setTrashOpen(false);
+      setActiveTrashPage(null);
       const nextPage = await loadPage(item.path);
       pendingHistoryActionRef.current = "push";
       setPage(nextPage);
@@ -942,6 +1096,7 @@ export function App(): ReactElement {
         openPath: nextPage.path,
         kind: item.kind
       });
+      saveStateRef.current = "idle";
       setSaveState("idle");
       setMessage("");
     } catch (error) {
@@ -1007,17 +1162,32 @@ export function App(): ReactElement {
 
       try {
         const isFolder = node.kind === "folder" || node.kind === "database";
-        await api.deleteNode({ path: node.path, recursive: isFolder });
+        const currentSelection = selectionRef.current;
+        const deletingOpenPage = Boolean(
+          currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)
+        );
+        const deletingPagePath = deletingOpenPage ? pageRef.current?.path : undefined;
+
+        if (deletingOpenPage) {
+          const pendingSave = saveInFlightRef.current ??
+            (saveStateRef.current === "dirty" || saveStateRef.current === "error"
+              ? savePageRef.current?.()
+              : null);
+          if (pendingSave && !(await pendingSave)) return false;
+        }
+
+        const result = await api.deleteNode({ path: node.path, recursive: isFolder });
         clearPageLoadCache();
         await Promise.all([loadTree(), loadTrash()]);
 
-        const currentSelection = selectionRef.current;
-
-        if (currentSelection && isSameOrDescendant(currentSelection.nodePath, node.path)) {
+        if (deletingOpenPage) {
+          const trashedPage = await api.openTrashPage(result.trashItem.id, deletingPagePath);
           pendingHistoryActionRef.current = "replace";
           setPage(null);
           setDraftBody("");
           setSelection(null);
+          setTrashOpen(true);
+          setActiveTrashPage(trashedPage);
           clearLastOpenedPage(window.localStorage, workspaceRootPath);
         }
 
@@ -1029,24 +1199,57 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, clearPageLoadCache, loadTrash, loadTree, workspaceRootPath]
+    [api, clearPageLoadCache, loadTrash, loadTree, setMessage, workspaceRootPath]
   );
 
   const openTrash = useCallback(() => {
     pendingHistoryActionRef.current = "push";
     setTrashOpen(true);
+    setActiveTrashPage(null);
     setMessage("");
     void loadTrash();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
   }, [isNarrow, loadTrash]);
 
-  const restoreTrashItem = useCallback(async (item: TrashItem): Promise<void> => {
+  const restoreTrashItem = useCallback(async (
+    item: TrashItem,
+    openAfterRestore = false
+  ): Promise<void> => {
     if (restoringTrashId) return;
     setRestoringTrashId(item.id);
     try {
-      await api.restoreTrashItem({ id: item.id });
+      const result = await api.restoreTrashItem({ id: item.id });
       clearPageLoadCache();
       await Promise.all([loadTree(), loadTrash()]);
+      if (openAfterRestore) {
+        const restoringActivePage = activeTrashPage?.item.id === item.id;
+        const restoringTrashRootPage = restoringActivePage && (
+          item.kind === "page" ||
+          (
+            activeTrashPage.page.kind === item.kind &&
+            parentPathForPage(activeTrashPage.page.path) === item.originalPath
+          )
+        );
+        const restoredOpenPath = restoringActivePage && !restoringTrashRootPage
+          ? replacePathPrefix(activeTrashPage.page.path, item.originalPath, result.path)
+          : result.path;
+        const nextPage = await loadPage(restoredOpenPath);
+        pendingHistoryActionRef.current = "replace";
+        pageRef.current = nextPage;
+        setPage(nextPage);
+        setDraftBody(nextPage.markdownBody);
+        setSelection({
+          nodePath: nextPage.kind === "page"
+            ? nextPage.path
+            : parentPathForPage(nextPage.path),
+          openPath: nextPage.path,
+          kind: pageKindToNodeKind(nextPage.kind)
+        });
+        setTrashOpen(false);
+        setActiveTrashPage(null);
+        saveStateRef.current = "idle";
+        setSaveState("idle");
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
@@ -1054,7 +1257,7 @@ export function App(): ReactElement {
     } finally {
       setRestoringTrashId(null);
     }
-  }, [api, clearPageLoadCache, loadTrash, loadTree, restoringTrashId]);
+  }, [activeTrashPage, api, clearPageLoadCache, loadPage, loadTrash, loadTree, restoringTrashId, setMessage]);
 
   const moveNode = useCallback(
     async (node: WorkspaceNode, newParentPath: string): Promise<boolean> => {
@@ -1141,28 +1344,63 @@ export function App(): ReactElement {
 
     task = (async () => {
       try {
-        const result: SavePageResult = await api.savePage({
-          path: savingPage.path,
-          baseVersion: savingPage.version,
-          frontmatter,
-          markdownBody,
-          reason: saveReason
-        });
+        let saveBase = savingPage;
+        let saveBody = markdownBody;
+        let saveFrontmatter = frontmatter;
+        let result: SavePageResult | null = null;
+
+        for (let attempt = 0; attempt < MAX_SAVE_REBASE_ATTEMPTS; attempt += 1) {
+          result = await api.savePage({
+            path: savingPage.path,
+            baseVersion: saveBase.version,
+            frontmatter: saveFrontmatter,
+            markdownBody: saveBody,
+            reason: saveReason
+          });
+
+          if (result.status === "saved") break;
+
+          forgetCachedPage(savingPage.path);
+          const latest = await api.openPage(savingPage.path);
+          saveBase = rebasePageDocument(latest, savingPage, markdownBody, {
+            body: dirtyBodyRef.current,
+            frontmatter: dirtyFrontmatterRef.current
+          });
+          saveBody = saveBase.markdownBody;
+          saveFrontmatter = saveBase.frontmatter;
+
+          if (pageRef.current?.path === savingPage.path) {
+            if (editorRevisionRef.current === savingRevision) {
+              pageRef.current = saveBase;
+              setPage(saveBase);
+              setDraftBody(saveBody);
+            } else {
+              const currentPage = pageRef.current;
+              const rebasedCurrentPage = {
+                ...currentPage,
+                frontmatter: dirtyFrontmatterRef.current
+                  ? currentPage.frontmatter
+                  : latest.frontmatter,
+                version: latest.version,
+                contentHash: latest.contentHash,
+                ...(latest.database ? { database: latest.database } : {})
+              };
+              pageRef.current = rebasedCurrentPage;
+              setPage(rebasedCurrentPage);
+            }
+          }
+        }
 
         if (pageRef.current?.path !== savingPage.path) return false;
 
-        if (result.status === "conflict") {
-          forgetCachedPage(savingPage.path);
-          saveStateRef.current = "conflict";
-          setSaveState("conflict");
-          setMessage("This page changed on disk. Reopen it from the sidebar before editing again.");
-          return false;
+        if (!result || result.status !== "saved") {
+          throw new Error("Rumi could not save this page after refreshing its latest version.");
         }
 
         const savedPage = {
-          ...savingPage,
-          frontmatter,
-          markdownBody,
+          ...saveBase,
+          frontmatter: saveFrontmatter,
+          markdownBody: saveBody,
           version: result.version,
           contentHash: result.contentHash
         };
@@ -1172,8 +1410,10 @@ export function App(): ReactElement {
         if (editorRevisionRef.current === savingRevision) {
           pageRef.current = savedPage;
           setPage(savedPage);
-          editorRef.current?.markClean(markdownBody);
-          setDraftBody(markdownBody);
+          editorRef.current?.markClean(saveBody);
+          setDraftBody(saveBody);
+          dirtyBodyRef.current = false;
+          dirtyFrontmatterRef.current = false;
           saveStateRef.current = "saved";
           setSaveState("saved");
         } else {
@@ -1206,7 +1446,9 @@ export function App(): ReactElement {
 
     saveInFlightRef.current = task;
     return task;
-  }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody]);
+  }, [api, cacheResolvedPage, forgetCachedPage, getCurrentDraftBody, setMessage]);
+
+  savePageRef.current = savePage;
 
   const convertNode = useCallback(async (node: WorkspaceNode): Promise<boolean> => {
     if (node.kind !== "folder" && node.kind !== "database") return false;
@@ -1379,10 +1621,7 @@ export function App(): ReactElement {
       setMessage(errorMessage(error));
       if (pageRef.current?.path === intent.previousPagePath && saveStateRef.current === "dirty") {
         void savePage();
-      } else if (
-        pageRef.current?.path === intent.previousPagePath &&
-        saveStateRef.current !== "conflict"
-      ) {
+      } else if (pageRef.current?.path === intent.previousPagePath) {
         saveStateRef.current = "error";
         setSaveState("error");
       }
@@ -1656,29 +1895,43 @@ export function App(): ReactElement {
           setDraftBody(mergedPage.markdownBody);
           return;
         }
-
-        saveStateRef.current = "conflict";
-        setSaveState("conflict");
-        setMessage("This page changed elsewhere. Reopen it from the sidebar before editing again.");
-        return;
       }
 
-      if (saveStateRef.current === "saving") {
+      if (
+        saveStateRef.current === "saving" &&
+        event.sourceClientId === api.clientId
+      ) {
         return;
       }
 
       try {
-        const nextPage = await loadPage(event.path);
-        setPage(nextPage);
-        setDraftBody(nextPage.markdownBody);
-        setSaveState("idle");
+        const nextPage = await api.openPage(event.path);
+        const latestCurrentPage = pageRef.current;
+        if (!latestCurrentPage || latestCurrentPage.path !== event.path) return;
+
+        const currentDraftBody = getCurrentDraftBody();
+        const keepLocalBody = dirtyBodyRef.current;
+        const keepLocalFrontmatter = dirtyFrontmatterRef.current;
+        const rebasedPage = rebasePageDocument(
+          nextPage,
+          latestCurrentPage,
+          currentDraftBody,
+          { body: keepLocalBody, frontmatter: keepLocalFrontmatter }
+        );
+
+        pageRef.current = rebasedPage;
+        setPage(rebasedPage);
+        setDraftBody(rebasedPage.markdownBody);
+        const remainsDirty = keepLocalBody || keepLocalFrontmatter;
+        saveStateRef.current = remainsDirty ? "dirty" : "idle";
+        setSaveState(remainsDirty ? "dirty" : "idle");
         setMessage("");
       } catch (error) {
         setSaveState("error");
         setMessage(errorMessage(error));
       }
     },
-    [forgetCachedPage, getCurrentDraftBody, loadPage, loadTree]
+    [api, forgetCachedPage, getCurrentDraftBody, loadTree, setMessage]
   );
 
   const handleMovedEvent = useCallback(
@@ -1728,13 +1981,18 @@ export function App(): ReactElement {
 
       if (saveStateRef.current === "dirty") {
         const currentDraftBody = getCurrentDraftBody();
-        setSelection({ ...currentSelection, nodePath: nextNodePath, openPath: nextOpenTarget });
-        setPage((currentPage) =>
-          currentPage ? { ...currentPage, path: nextOpenTarget, markdownBody: currentDraftBody } : currentPage
-        );
+        const nextSelection = { ...currentSelection, nodePath: nextNodePath, openPath: nextOpenTarget };
+        setSelection(nextSelection);
+        selectionRef.current = nextSelection;
+        const currentPage = pageRef.current;
+        const movedPage = currentPage
+          ? { ...currentPage, path: nextOpenTarget, markdownBody: currentDraftBody }
+          : null;
+        pageRef.current = movedPage;
+        setPage(movedPage);
         setDraftBody(currentDraftBody);
-        setSaveState("conflict");
-        setMessage("This page moved elsewhere while it had local edits.");
+        saveStateRef.current = "dirty";
+        setSaveState("dirty");
         return;
       }
 
@@ -1766,15 +2024,30 @@ export function App(): ReactElement {
       const currentSelection = selectionRef.current;
 
       if (currentSelection && isSameOrDescendant(currentSelection.nodePath, event.path)) {
+        const currentPagePath = pageRef.current?.path;
+        const trashedPage = event.changedBy === "trash.move" && event.trashItemId
+          ? await api.openTrashPage(event.trashItemId, currentPagePath).catch(() => null)
+          : null;
+        pendingHistoryActionRef.current = "replace";
         setPage(null);
         setDraftBody("");
         setSelection(null);
         clearLastOpenedPage(window.localStorage, workspaceRootPath);
         setSaveState("idle");
-        setMessage("The open item was deleted.");
+        dirtyBodyRef.current = false;
+        dirtyFrontmatterRef.current = false;
+
+        if (trashedPage) {
+          setTrashOpen(true);
+          setActiveTrashPage(trashedPage);
+        } else {
+          setTrashOpen(false);
+          setActiveTrashPage(null);
+          setMessage("The open page was removed and could not be restored from Trash.");
+        }
       }
     },
-    [clearPageLoadCache, loadTrash, loadTree, workspaceRootPath]
+    [api, clearPageLoadCache, loadTrash, loadTree, setMessage, workspaceRootPath]
   );
 
   useEffect(() => {
@@ -1848,12 +2121,19 @@ export function App(): ReactElement {
             trashCount={trashItems.length}
             trashOpen={trashOpen}
             collapsed={sidebarCollapsed}
-            onToggleCollapsed={() => setSidebarCollapsedState(!sidebarCollapsed, setSidebarCollapsed)}
+            rootCreateMenuOpen={rootCreateMenuOpen}
+            onToggleCollapsed={() => {
+              const nextCollapsed = !sidebarCollapsed;
+              if (nextCollapsed) setRootCreateMenuOpen(false);
+              setSidebarCollapsedState(nextCollapsed, setSidebarCollapsed);
+            }}
+            onRootCreateMenuOpenChange={setRootCreateMenuOpen}
             onPrefetchNode={prefetchNode}
             onOpenNode={(node) => void openNode(node)}
             onCreatePage={createPage}
             onCreateFolder={createFolder}
             onCreateDatabase={createDatabase}
+            onCreateDefault={createDefaultItem}
             onRenameNode={renameNode}
             onMoveNode={moveNode}
             onConvertNode={convertNode}
@@ -1918,26 +2198,65 @@ export function App(): ReactElement {
           onSeeRevisions={() => setRevisionHistoryOpen(true)}
         />
 
-        {message && (
-          <div
-            className={cn(
-              "mx-4 mt-3 shrink-0 rounded-md border px-3 py-2 text-sm",
-              saveState === "conflict" || saveState === "error" || loadState === "error"
-                ? "border-destructive/40 bg-destructive/10 text-destructive"
-                : "border-border bg-muted"
-            )}
-          >
-            {message}
-          </div>
-        )}
-
-        {trashOpen ? (
+        {trashOpen && !activeTrashPage ? (
           <TrashView
             items={trashItems}
             loadState={trashLoadState}
             restoringId={restoringTrashId}
+            onOpen={(item) => void openTrashPage(item)}
             onRestore={restoreTrashItem}
           />
+        ) : activeTrashPage ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-muted/70 px-6 py-3 text-sm">
+              <p className="text-muted-foreground">
+                This page is in Trash. Restore it to continue editing.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                disabled={restoringTrashId !== null}
+                onClick={() => void restoreTrashItem(activeTrashPage.item, true)}
+              >
+                <ArrowCounterClockwise size={15} />
+                {restoringTrashId === activeTrashPage.item.id ? "Restoring" : "Restore"}
+              </Button>
+            </div>
+            <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
+              <article className="mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 text-muted-foreground opacity-65 sm:px-10 sm:pt-16 lg:px-12">
+                <div className="contents" data-rumi-area-selection-exclude="">
+                  <EditablePageTitle
+                    title={pageTitleFromPath(activeTrashPage.page.path, activeTrashPage.page.kind)}
+                    editable={false}
+                    renaming={false}
+                    emptyTitle={emptyPageTitle(activeTrashPage.page.kind)}
+                    onRename={async () => false}
+                    onSplit={async () => false}
+                  />
+                  <PageProperties
+                    frontmatter={activeTrashPage.page.frontmatter}
+                    disabled
+                  />
+                </div>
+                <div className={Object.keys(activeTrashPage.page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
+                  <Suspense fallback={<p className="py-4 text-sm text-muted-foreground">Loading page…</p>}>
+                    <div className="pointer-events-none">
+                      <RumiBlockEditor
+                        api={api}
+                        workspaceKey={workspaceRootPath}
+                        documentKey={`trash:${activeTrashPage.item.id}`}
+                        markdown={activeTrashPage.page.markdownBody}
+                        documents={editorDocuments}
+                        onMessage={setMessage}
+                        readOnly
+                        onDirty={() => undefined}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              </article>
+            </div>
+          </div>
         ) : page ? (
           <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
             <article className={cn(
@@ -1949,8 +2268,7 @@ export function App(): ReactElement {
                   editable={Boolean(
                     selection &&
                     selection.kind !== "workspace" &&
-                    selection.openPath === page.path &&
-                    saveState !== "conflict"
+                    selection.openPath === page.path
                   )}
                   renaming={pageRenamePending}
                   emptyTitle={emptyPageTitle(page.kind)}
@@ -1978,7 +2296,6 @@ export function App(): ReactElement {
                   <PageProperties
                     frontmatter={page.frontmatter}
                     database={page.database}
-                    disabled={saveState === "conflict"}
                     onChange={updatePageFrontmatter}
                     onCreateDatabaseProperty={createOpenPageDatabaseProperty}
                     onCreateDatabaseOption={createOpenPageDatabaseOption}
@@ -2050,6 +2367,7 @@ export function App(): ReactElement {
         onOpenItem={(item) => void openSearchResult(item)}
         onMessage={setMessage}
       />
+      <Toaster />
     </main>
   );
 }

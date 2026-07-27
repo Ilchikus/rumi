@@ -35,7 +35,7 @@ import type {
   UpdateDatabaseSchemaRequest,
   UpdateDatabaseViewRequest
 } from "@rumi/contracts";
-import { WorkspaceRuntime } from "@rumi/runtime";
+import { enterRumiEventSourceClient, WorkspaceRuntime } from "@rumi/runtime";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
 
 const SESSION_COOKIE_NAME = "rumi_session";
@@ -183,6 +183,7 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
   });
 
   server.addHook("onRequest", async (request, reply) => {
+    enterRumiEventSourceClient(readSourceClientId(request));
     const requestPath = request.url.split("?", 1)[0] ?? request.url;
 
     if (!requestPath.startsWith("/api/")) {
@@ -687,6 +688,10 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
 
   server.get("/api/trash", async () => runtime.listTrash());
 
+  server.get<{ Params: { id: string }; Querystring: { path?: string } }>("/api/trash/:id", async (request) => {
+    return runtime.openTrashPage(request.params.id, request.query.path);
+  });
+
   server.post<{ Body: RestoreTrashItemRequest }>("/api/trash/restore", async (request) => {
     request.log.info({ trashItemId: request.body.id }, "trash.restore");
     const result = await runtime.restoreTrashItem(request.body);
@@ -702,6 +707,12 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     runtime,
     url: ""
   };
+}
+
+function readSourceClientId(request: FastifyRequest): string | undefined {
+  const value = request.headers["x-rumi-client-id"];
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate && /^[A-Za-z0-9._:-]{1,128}$/u.test(candidate) ? candidate : undefined;
 }
 
 async function resolveWebRoot(configuredRoot: string | false | undefined): Promise<string | null> {

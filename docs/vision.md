@@ -1,5 +1,3 @@
-# Vision
-
 Rumi New is a file-native workspace runtime with a web client.
 
 It should feel like the best parts of Obsidian and Notion:
@@ -7,9 +5,6 @@ It should feel like the best parts of Obsidian and Notion:
 - Obsidian-like ownership through plain files.
 - Notion-like pages, folders, databases, and rich editing.
 - A server runtime that handles indexes, watching, APIs, CLI, agents, and future collaboration.
-
-
-
 
 ## Product Bet
 

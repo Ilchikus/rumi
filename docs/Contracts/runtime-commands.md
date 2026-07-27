@@ -35,6 +35,7 @@ renameNode
 moveNode
 deleteNode
 listTrash
+openTrashPage
 restoreTrashItem
 queryDatabase
 updateRecordProperty
@@ -71,9 +72,10 @@ Commands own side effects:
 
 `deleteNode` never permanently removes user content. Folder and database deletion still requires
 recursive confirmation, then the complete payload is moved atomically into Trash. `listTrash`
-returns display metadata without exposing internal payload paths. `restoreTrashItem` recreates
-missing parents, never overwrites an occupied path, updates indexes, and publishes
-`workspace.treeChanged` after the restored payload is durable.
+returns display metadata without exposing internal payload paths. `openTrashPage` safely reads a
+page, folder index, or database page from one Trash payload for read-only display.
+`restoreTrashItem` recreates missing parents, never overwrites an occupied path, updates indexes,
+and publishes `workspace.treeChanged` after the restored payload is durable.
 
 `renameNode` and `moveNode` choose an available destination, then update the target's filesystem
 path, revision identity, and search entry before returning the actual path. They run reference repair

@@ -22,6 +22,8 @@ Bring the new web sidebar up to the expected workspace navigation baseline witho
 - Inline create rows for pages and folders.
 - Inline rename from double-click or item menu.
 - Item dropdown menus and root create menu using shadcn-style primitives.
+- Browser-safe global shortcuts for the root create menu and left sidebar.
+- Keyboard and modifier-assisted root creation.
 - Delete action.
 - Active ancestor guides.
 - Resizable and collapsible sidebar shell.
@@ -56,6 +58,13 @@ On restoration, a saved collapsed folder or database remains collapsed even when
 is one of its descendants. Later navigation can still reveal the ancestors of a newly selected item.
 
 Follow-up UI pass switched app tokens to neutral/white/black defaults, reduced nested tree indentation to roughly 20px per level, and settled sidebar entity marks on neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
+
+The browser shell now reserves `Control-N` on macOS (`Alt-N` on Linux, where `Control-N` belongs to
+the browser) for the root create menu, and `Command-\`` on macOS (`Control-\`` on Linux) for the left
+sidebar. Opening the create menu focuses Page first. Arrow keys and `1`/`2`/`3` move focus without
+selecting. Enter starts the existing inline-name flow. Primary-modifier Enter or click creates the
+chosen item immediately with its collision-safe default name, opens it, and selects the complete
+filename title so the next typed character replaces it.
 
 ## Done When
 

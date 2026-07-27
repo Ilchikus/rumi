@@ -78,9 +78,9 @@ describe("live editor Markdown round trips", () => {
     expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
   })
 
-  it("preserves underline and one canonical yellow highlight mark", () => {
+  it("preserves underline and the canonical highlight mark", () => {
     const markdown = [
-      "Before __underlined__ ==highlighted== ==green::green highlight== and --legacy strike-- after.",
+      "Before __underlined__, ==highlighted text==, ~~struck through~~, and --plain hyphens-- after.",
       ""
     ].join("\n")
 
@@ -91,31 +91,42 @@ describe("live editor Markdown round trips", () => {
     expect(markedText.map((node) => [node.text, node.marks.map((mark) => mark.type.name)])).toEqual([
       ["Before ", []],
       ["underlined", ["underline"]],
-      [" ", []],
-      ["highlighted", ["highlight"]],
-      [" ", []],
-      ["green highlight", ["highlight"]],
-      [" and ", []],
-      ["legacy strike", ["strikethrough"]],
-      [" after.", []]
+      [", ", []],
+      ["highlighted text", ["highlight"]],
+      [", ", []],
+      ["struck through", ["strikethrough"]],
+      [", and --plain hyphens-- after.", []]
     ])
-    expect(serializeMarkdown(parsed)).toContain("==highlighted== ==green highlight==")
-    expect(serializeMarkdown(parsed)).not.toContain("==green::")
+    expect(serializeMarkdown(parsed)).toContain("==highlighted text==")
+    expect(serializeMarkdown(parsed)).toContain("~~struck through~~")
+    expect(serializeMarkdown(parsed)).toContain("--plain hyphens--")
     expect(markedText.filter((node) => node.marks.some((mark) => mark.type.name === "highlight"))
       .every((node) => Object.keys(node.marks.find((mark) => mark.type.name === "highlight")?.attrs ?? {}).length === 0))
       .toBe(true)
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
   })
 
+  it("renders Markdown highlights with the semantic mark element", () => {
+    const parsed = parseMarkdown("Before ==highlighted== after.\n", schema)
+    const highlightedText = parsed.firstChild?.content.content
+      .find((node) => node.text === "highlighted")
+    const highlight = highlightedText?.marks
+      .find((mark) => mark.type.name === "highlight")
+
+    expect(highlight).toBeDefined()
+    expect(highlight?.type.spec.parseDOM).toEqual([{ tag: "mark" }])
+    expect(highlight?.type.spec.toDOM?.(highlight, true)).toEqual(["mark", 0])
+  })
+
   it("does not preprocess custom marks inside code", () => {
     const markdown = [
-      "`__inline__ ==highlight== --strike--`",
+      "`__inline__ ==highlight== ~~strike~~`",
       "",
       "~~~~txt",
-      "__fenced__ ==highlight== --strike--",
+      "__fenced__ ==highlight== ~~strike~~",
       "~~~~",
       "",
-      "    __indented__ ==highlight== --strike--",
+      "    __indented__ ==highlight== ~~strike~~",
       ""
     ].join("\n")
 
@@ -123,9 +134,9 @@ describe("live editor Markdown round trips", () => {
     const serialized = serializeMarkdown(parsed)
     const reparsed = parseMarkdown(serialized, schema)
 
-    expect(parsed.firstChild?.textContent).toBe("__inline__ ==highlight== --strike--")
-    expect(parsed.child(1).textContent).toBe("__fenced__ ==highlight== --strike--")
-    expect(parsed.child(2).textContent).toBe("__indented__ ==highlight== --strike--")
+    expect(parsed.firstChild?.textContent).toBe("__inline__ ==highlight== ~~strike~~")
+    expect(parsed.child(1).textContent).toBe("__fenced__ ==highlight== ~~strike~~")
+    expect(parsed.child(2).textContent).toBe("__indented__ ==highlight== ~~strike~~")
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
   })
 
@@ -150,6 +161,51 @@ describe("live editor Markdown round trips", () => {
       ""
     ].join("\n"))
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("accepts GFM task markers and writes compact canonical checkbox markers", () => {
+    const markdown = [
+      "- [ ] Standard unchecked",
+      "- [] Compact unchecked",
+      "- [x] Checked",
+      ""
+    ].join("\n")
+    const parsed = parseMarkdown(markdown, schema)
+    const serialized = serializeMarkdown(parsed)
+
+    expect(parsed.content.content.map((node) => [
+      node.type.name,
+      node.attrs.checked,
+      node.textContent
+    ])).toEqual([
+      ["task_item", false, "Standard unchecked"],
+      ["task_item", false, "Compact unchecked"],
+      ["task_item", true, "Checked"]
+    ])
+    expect(serialized).toBe([
+      "- [] Standard unchecked",
+      "- [] Compact unchecked",
+      "- [x] Checked",
+      ""
+    ].join("\n"))
+    expect(parseMarkdown(serialized, schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("does not leave trailing spaces on empty task-item source lines", () => {
+    const doc = schema.nodes.doc!.create(null, [
+      schema.nodes.task_item!.create({ indent: 0, checked: false }),
+      schema.nodes.task_item!.create({ indent: 0, checked: true })
+    ])
+
+    expect(serializeMarkdown(doc)).toBe("- []\n- [x]\n")
+  })
+
+  it("roundtrips compact unchecked task markers inside blockquotes", () => {
+    const parsed = parseMarkdown("> - [ ] Quoted task\n", schema)
+    const serialized = serializeMarkdown(parsed)
+
+    expect(serialized).toContain("> - [] Quoted task")
+    expect(parseMarkdown(serialized, schema).toJSON()).toEqual(parsed.toJSON())
   })
 
   it("keeps aligned GFM tables as tables and preserves column alignment", () => {

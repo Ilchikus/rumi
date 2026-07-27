@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { TrashItem, TrashItemKind } from "@rumi/contracts";
+import type { PageDocumentKind, TrashItem, TrashItemKind } from "@rumi/contracts";
 import { classifyFilePath, normalizeWorkspacePath } from "@rumi/workspace-format";
 
 interface TrashMetadata extends TrashItem {
@@ -18,6 +18,13 @@ export interface RestoredNode {
   item: TrashItem;
   path: string;
   revisionObjects: Record<string, string>;
+}
+
+export interface TrashedPageContent {
+  item: TrashItem;
+  path: string;
+  kind: PageDocumentKind;
+  content: string;
 }
 
 export class WorkspaceTrash {
@@ -120,6 +127,67 @@ export class WorkspaceTrash {
     };
   }
 
+  async readPage(id: string, requestedOriginalPath?: string): Promise<TrashedPageContent> {
+    const metadata = await this.readMetadata(id);
+    const payloadPath = path.join(this.trashRootPath, id, "payload", metadata.payloadName);
+    let contentPath: string;
+    let originalPagePath: string;
+    let kind: PageDocumentKind;
+
+    if (requestedOriginalPath) {
+      const normalizedRequestedPath = safeWorkspacePath(requestedOriginalPath);
+      const relativePath = path.posix.relative(metadata.originalPath, normalizedRequestedPath);
+      if (
+        metadata.kind === "page" ||
+        !relativePath ||
+        relativePath === "." ||
+        relativePath === ".." ||
+        relativePath.startsWith("../")
+      ) {
+        if (normalizedRequestedPath !== metadata.originalPath || metadata.kind !== "page") {
+          throw new Error("Requested page is outside this Trash item");
+        }
+        contentPath = payloadPath;
+      } else {
+        contentPath = path.join(payloadPath, relativePath);
+      }
+      originalPagePath = normalizedRequestedPath;
+      kind = pageDocumentKindForPath(normalizedRequestedPath);
+    } else if (metadata.kind === "page") {
+      contentPath = payloadPath;
+      originalPagePath = metadata.originalPath;
+      kind = "page";
+    } else if (metadata.kind === "folder" || metadata.kind === "database") {
+      const suffix = metadata.kind === "database" ? ".db.md" : ".index.md";
+      contentPath = path.join(payloadPath, `${metadata.payloadName}${suffix}`);
+      originalPagePath = path.posix.join(
+        metadata.originalPath,
+        `${metadata.payloadName}${suffix}`
+      );
+      kind = metadata.kind;
+    } else {
+      throw new Error("This Trash item does not have editable page content");
+    }
+
+    const [realPayloadPath, realContentPath] = await Promise.all([
+      fs.realpath(payloadPath),
+      fs.realpath(contentPath)
+    ]);
+    const contentIsInsidePayload = metadata.kind === "page"
+      ? realContentPath === realPayloadPath
+      : realContentPath.startsWith(`${realPayloadPath}${path.sep}`);
+    if (!contentIsInsidePayload) {
+      throw new Error("Requested Trash page escapes its payload");
+    }
+
+    return {
+      item: publicItem(metadata),
+      path: originalPagePath,
+      kind,
+      content: await fs.readFile(realContentPath, "utf8")
+    };
+  }
+
   private async readMetadata(id: string): Promise<TrashMetadata> {
     if (!/^[A-Za-z0-9-]+$/.test(id)) throw new Error("Invalid trash item id");
     const metadataPath = path.join(this.trashRootPath, id, "metadata.json");
@@ -152,6 +220,14 @@ export class WorkspaceTrash {
     if (!resolved.startsWith(rootWithSeparator)) throw new Error(`Workspace path escapes root: ${relPath}`);
     return resolved;
   }
+}
+
+function pageDocumentKindForPath(relPath: string): PageDocumentKind {
+  const kind = classifyFilePath(relPath);
+  if (kind === "page") return "page";
+  if (kind === "folder-index") return "folder";
+  if (kind === "database-config") return "database";
+  throw new Error("Requested Trash content is not a page");
 }
 
 function safeWorkspacePath(inputPath: string): string {

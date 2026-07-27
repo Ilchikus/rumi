@@ -85,8 +85,12 @@ function preprocessCustomSyntax(markdown: string): string {
     // markers remain eligible for Rumi inline formatting.
     if (/^(?: {4}|\t)(?![-+*]\s|\d+[.)]\s)/.test(line)) return line
 
-    return preprocessOutsideCodeSpans(line)
+    return preprocessOutsideCodeSpans(normalizeCompactTaskMarker(line))
   }).join("\n")
+}
+
+function normalizeCompactTaskMarker(line: string): string {
+  return line.replace(/^((?:\s*>\s*)*\s*-\s+)\[\](?=\s|$)/u, "$1[ ]")
 }
 
 function preprocessOutsideCodeSpans(line: string): string {
@@ -142,16 +146,8 @@ function preprocessPlainCustomSyntax(markdown: string): string {
   // Our rule: __ at start of word followed by text and __ at end
   result = result.replace(/(?<!\w)__(?!\s)([^_]+?)__(?!\w)/g, '<u>$1</u>')
 
-  // Strikethrough alternative: --text-- -> <s>text</s>.
-  // Do not treat runs of three or more dashes as markup: those are used by
-  // horizontal rules and GFM table alignment delimiters.
-  result = result.replace(/(?<![\w-])--(?![\s-])([^\n]*?)(?<![\s-])--(?![\w-])/g, '<s>$1</s>')
-
-  // Legacy colored highlights are imported as the single default highlight.
-  result = result.replace(/==\w+::([^=]+)==/g, '<mark>$1</mark>')
-
   // Highlight default: ==text== -> <mark>text</mark>
-  result = result.replace(/==([^=:]+)==/g, '<mark>$1</mark>')
+  result = result.replace(/==([^=]+)==/g, '<mark>$1</mark>')
 
   return result
 }
@@ -435,17 +431,9 @@ function parseCustomMarkTag(html: string): {
 
   if (/^<u>$/i.test(tag)) return { closing: false, mark: { name: "underline" } }
   if (/^<\/u>$/i.test(tag)) return { closing: true, mark: { name: "underline" } }
-  if (/^<s>$/i.test(tag)) return { closing: false, mark: { name: "strikethrough" } }
-  if (/^<\/s>$/i.test(tag)) return { closing: true, mark: { name: "strikethrough" } }
   if (/^<\/mark>$/i.test(tag)) return { closing: true, mark: { name: "highlight" } }
 
-  const highlight = tag.match(/^<mark(?:\s+data-color="\w+")?>$/i)
-  if (highlight) {
-    return {
-      closing: false,
-      mark: { name: "highlight" }
-    }
-  }
+  if (/^<mark>$/i.test(tag)) return { closing: false, mark: { name: "highlight" } }
 
   return null
 }
@@ -532,20 +520,6 @@ function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ na
   const underlineMatch = html.match(/<u>([^<]+)<\/u>/)
   if (underlineMatch) {
     results.push(createTextWithMarks(underlineMatch[1], [...existingMarks, { name: "underline" }], schema))
-    return results
-  }
-
-  // Parse <s>text</s>
-  const strikeMatch = html.match(/<s>([^<]+)<\/s>/)
-  if (strikeMatch) {
-    results.push(createTextWithMarks(strikeMatch[1], [...existingMarks, { name: "strikethrough" }], schema))
-    return results
-  }
-
-  // Legacy colored mark HTML is imported as the single default highlight.
-  const markColorMatch = html.match(/<mark data-color="\w+">([^<]+)<\/mark>/)
-  if (markColorMatch) {
-    results.push(createTextWithMarks(markColorMatch[1], [...existingMarks, { name: "highlight" }], schema))
     return results
   }
 
@@ -687,9 +661,10 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "task_item": {
       const itemIndent = node.attrs.indent || 0
-      const checkbox = node.attrs.checked ? "[x]" : "[ ]"
+      const checkbox = node.attrs.checked ? "[x]" : "[]"
       const indentStr = "    ".repeat(itemIndent)
-      lines.push(indent + indentStr + `- ${checkbox} ` + serializeInline(node))
+      const content = serializeInline(node)
+      lines.push(indent + indentStr + `- ${checkbox}` + (content ? ` ${content}` : ""))
       state.prevNodeType = typeName
       state.prevIndent = itemIndent
       break

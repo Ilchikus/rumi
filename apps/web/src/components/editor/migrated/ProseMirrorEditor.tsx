@@ -63,6 +63,7 @@ export interface RumiBlockEditorProps {
   onOpenDocument?: (path: string) => void
   onUploadAsset?: (file: File) => Promise<string>
   onMessage?: (message: string) => void
+  readOnly?: boolean
   onDirty: () => void
 }
 
@@ -78,6 +79,7 @@ function ProseMirrorEditor(
     onOpenDocument,
     onUploadAsset,
     onMessage,
+    readOnly = false,
     onDirty
   },
   ref
@@ -163,6 +165,7 @@ function ProseMirrorEditor(
 
     const view = new EditorView(editorRef.current, {
       state,
+      editable: () => !readOnly,
       nodeViews: {
         heading: (node, view, getPos) => headingNodeView(node, view, getPos),
         code_block: (node, view, getPos) => codeBlockNodeView(node, view, getPos),
@@ -207,6 +210,10 @@ function ProseMirrorEditor(
       titleContentUndoRef.current = null
     }
   }, [documentKey, getFiles])
+
+  useEffect(() => {
+    viewRef.current?.setProps({ editable: () => !readOnly })
+  }, [readOnly])
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -313,6 +320,7 @@ function ProseMirrorEditor(
 
   // Handle click on bottom padding area - focus or create last paragraph
   const handlePaddingClick = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return
     const view = viewRef.current
     if (!view) return
 
@@ -344,7 +352,7 @@ function ProseMirrorEditor(
       view.dispatch(tr)
       view.focus()
     }
-  }, [])
+  }, [readOnly])
 
   return (
     <div

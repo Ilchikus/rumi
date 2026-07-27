@@ -59,7 +59,8 @@ properties:
   updated:
     type: date
 views:
-  - name: All
+  - id: all
+    name: All
     type: table
     columns:
       - status
@@ -67,12 +68,18 @@ views:
       - impact
       - created
       - updated
-  - name: Accepted
+  - id: accepted
+    name: Accepted
     type: table
     columns:
       - areas
       - impact
       - updated
+    sorts:
+      - property: updated
+        direction: desc
+recordPage:
+  hiddenProperties: []
 ---
 # Decisions
 

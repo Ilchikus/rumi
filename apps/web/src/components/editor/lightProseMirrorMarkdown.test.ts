@@ -96,20 +96,6 @@ describe("light ProseMirror Markdown bridge", () => {
     expect(markdown).toContain("==highlighted==");
   });
 
-  it("normalizes named highlight colors to the default highlight", () => {
-    const document = parseLightMarkdown("==blue::important==");
-    const text = document.firstChild?.firstChild;
-
-    expect(text?.marks.find((mark) => mark.type.name === "highlight")?.attrs).toEqual({});
-    expect(serializeLightMarkdown(document)).toBe("==important==");
-  });
-
-  it("does not normalize legacy highlight text inside fenced code", () => {
-    const document = parseLightMarkdown("```txt\n==blue::important==\n```");
-
-    expect(document.firstChild?.textContent).toBe("==blue::important==");
-  });
-
   it("preserves fenced code language, images, links, dividers, and blank documents", () => {
     const source = [
       "```mermaid",

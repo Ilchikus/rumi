@@ -50,6 +50,12 @@ import {
   shouldRevealSelectionAncestors,
   writeSidebarExpandedPaths
 } from "./sidebarPreferences";
+import {
+  appShortcutPlatform,
+  createMenuIndexForKey,
+  hasPrimaryModifier,
+  shortcutLabels
+} from "../../lib/appShortcuts";
 
 export interface SidebarSelection {
   nodePath: string;
@@ -66,12 +72,15 @@ interface SidebarProps {
   trashCount: number;
   trashOpen: boolean;
   collapsed: boolean;
+  rootCreateMenuOpen: boolean;
   onToggleCollapsed: () => void;
+  onRootCreateMenuOpenChange: (open: boolean) => void;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
   onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
+  onCreateDefault: (parentPath: string, kind: SidebarCreateKind) => Promise<void>;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
@@ -79,7 +88,8 @@ interface SidebarProps {
   onOpenTrash: () => void;
 }
 
-type CreateKind = "page" | "folder" | "database";
+export type SidebarCreateKind = "page" | "folder" | "database";
+type CreateKind = SidebarCreateKind;
 
 const TREE_INDENT_PX = 20;
 const TREE_ROW_PADDING_PX = 6;
@@ -114,18 +124,23 @@ export function Sidebar({
   trashCount,
   trashOpen,
   collapsed,
+  rootCreateMenuOpen,
   onToggleCollapsed,
+  onRootCreateMenuOpenChange,
   onPrefetchNode,
   onOpenNode,
   onCreatePage,
   onCreateFolder,
   onCreateDatabase,
+  onCreateDefault,
   onRenameNode,
   onMoveNode,
   onConvertNode,
   onDeleteNode,
   onOpenTrash
 }: SidebarProps): ReactElement {
+  const shortcutPlatform = appShortcutPlatform();
+  const labels = shortcutLabels(shortcutPlatform);
   const initializedExpansionScope = useRef<string | null>(null);
   const restoredExpansionScope = useRef<string | null>(null);
   const initialSelectionScope = useRef<string | null>(null);
@@ -325,13 +340,18 @@ export function Sidebar({
             </button>
           </h1>
           <div className="flex shrink-0 gap-1">
-            <RootCreateMenu onCreate={startCreate} />
+            <RootCreateMenu
+              open={rootCreateMenuOpen}
+              onOpenChange={onRootCreateMenuOpenChange}
+              onCreate={startCreate}
+              onCreateDefault={onCreateDefault}
+            />
             <Button
               type="button"
               size="icon"
               variant="ghost"
               onClick={onToggleCollapsed}
-              title={collapsed ? "Open sidebar" : "Close sidebar"}
+              title={`${collapsed ? "Open sidebar" : "Close sidebar"} (${labels.sidebar})`}
             >
               <SidebarSimple size={17} />
             </Button>
@@ -685,27 +705,99 @@ function NodeMenu({
   );
 }
 
-function RootCreateMenu({ onCreate }: { onCreate: (parentPath: string, kind: CreateKind) => void }): ReactElement {
+function RootCreateMenu({
+  open,
+  onOpenChange,
+  onCreate,
+  onCreateDefault
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (parentPath: string, kind: CreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
+}): ReactElement {
+  const platform = appShortcutPlatform();
+  const labels = shortcutLabels(platform);
+  const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const immediatePointerKindRef = useRef<CreateKind | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      itemRefs.current[0]?.focus();
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [open]);
+
+  const createImmediately = (kind: CreateKind) => {
+    onOpenChange(false);
+    void onCreateDefault("", kind).catch(() => undefined);
+  };
+
+  const createOptions: Array<{
+    kind: CreateKind;
+    label: string;
+    icon: ReactElement;
+  }> = [
+    { kind: "page", label: "New Page", icon: <NotePencil size={16} /> },
+    { kind: "folder", label: "New Folder", icon: <FolderPlus size={16} /> },
+    { kind: "database", label: "New Database", icon: <Table size={16} /> }
+  ];
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" size="icon" variant="ghost" title="Create">
+        <Button type="button" size="icon" variant="ghost" title={`Create (${labels.create})`}>
           <Plus size={17} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => onCreate("", "page")}>
-          <NotePencil size={16} />
-          New Page
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onCreate("", "folder")}>
-          <FolderPlus size={16} />
-          New Folder
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onCreate("", "database")}>
-          <Table size={16} />
-          New Database
-        </DropdownMenuItem>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-48"
+        onKeyDown={(event) => {
+          const index = createMenuIndexForKey(event);
+          if (index === null) return;
+          event.preventDefault();
+          event.stopPropagation();
+          itemRefs.current[index]?.focus();
+        }}
+      >
+        {createOptions.map((option, index) => (
+          <DropdownMenuItem
+            key={option.kind}
+            ref={(node) => {
+              itemRefs.current[index] = node;
+            }}
+            onPointerDown={(event) => {
+              immediatePointerKindRef.current = hasPrimaryModifier(event, platform)
+                ? option.kind
+                : null;
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !hasPrimaryModifier(event, platform)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              createImmediately(option.kind);
+            }}
+            onSelect={() => {
+              if (immediatePointerKindRef.current === option.kind) {
+                immediatePointerKindRef.current = null;
+                createImmediately(option.kind);
+                return;
+              }
+
+              immediatePointerKindRef.current = null;
+              onCreate("", option.kind);
+            }}
+          >
+            {option.icon}
+            <span>{option.label}</span>
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground" aria-hidden="true">
+              {index + 1}
+            </span>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

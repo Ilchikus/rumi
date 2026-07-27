@@ -1,6 +1,11 @@
 import { EditorState, NodeSelection, TextSelection } from "prosemirror-state"
 import { describe, expect, it } from "vitest"
-import { buildKeymap, removeEmptyParagraphBlock } from "./keymap"
+import {
+  buildKeymap,
+  exitEmptyFlatListItem,
+  removeEmptyParagraphBlock,
+  splitFlatListItem
+} from "./keymap"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import {
   createDuplicateBlocksTransaction,
@@ -158,4 +163,77 @@ describe("live editor blank block deletion", () => {
     expect(state.selection.$from.parent.textContent).toBe("Keep me")
     expect(state.selection.$from.parentOffset).toBe("Keep me".length)
   })
+
+  it.each(["bullet_item", "numbered_item", "task_item"])(
+    "exits an empty %s into a blank paragraph in the same position",
+    (typeName) => {
+      const content = schema.nodes.paragraph!.create(null, schema.text("Keep me"))
+      const attrs = typeName === "task_item" ? { indent: 0, checked: false } : { indent: 0 }
+      const emptyItem = schema.nodes[typeName]!.create(attrs)
+      const doc = schema.nodes.doc!.create(null, [content, emptyItem])
+      let state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, content.nodeSize + 1)
+      })
+
+      expect(exitEmptyFlatListItem(schema)(state, (transaction) => {
+        state = state.apply(transaction)
+      })).toBe(true)
+      expect(state.doc.childCount).toBe(2)
+      expect(state.doc.firstChild?.textContent).toBe("Keep me")
+      expect(state.doc.lastChild?.type).toBe(schema.nodes.paragraph)
+      expect(state.doc.lastChild?.content.size).toBe(0)
+      expect(state.selection.$from.parent).toBe(state.doc.lastChild)
+      expect(state.selection.$from.parentOffset).toBe(0)
+    }
+  )
+
+  it("turns the only empty list item into an editable paragraph", () => {
+    const item = schema.nodes.bullet_item!.create({ indent: 0 })
+    const doc = schema.nodes.doc!.create(null, item)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1)
+    })
+
+    expect(exitEmptyFlatListItem(schema)(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(state.selection.from).toBe(1)
+  })
+})
+
+describe("live editor empty list continuation", () => {
+  it.each(["bullet_item", "numbered_item", "task_item"])(
+    "preserves an empty %s and creates a new item on Enter",
+    (typeName) => {
+      const attrs = typeName === "task_item"
+        ? { indent: 1, checked: true }
+        : { indent: 1 }
+      const item = schema.nodes[typeName]!.create(attrs)
+      const doc = schema.nodes.doc!.create(null, item)
+      let state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1)
+      })
+
+      expect(splitFlatListItem(schema)(state, (transaction) => {
+        state = state.apply(transaction)
+      })).toBe(true)
+      expect(state.doc.childCount).toBe(2)
+      expect(state.doc.child(0).type.name).toBe(typeName)
+      expect(state.doc.child(0).content.size).toBe(0)
+      expect(state.doc.child(0).attrs.indent).toBe(1)
+      expect(state.doc.child(1).type.name).toBe(typeName)
+      expect(state.doc.child(1).content.size).toBe(0)
+      expect(state.doc.child(1).attrs.indent).toBe(1)
+      if (typeName === "task_item") {
+        expect(state.doc.child(0).attrs.checked).toBe(true)
+        expect(state.doc.child(1).attrs.checked).toBe(false)
+      }
+      expect(state.selection.$from.parent).toBe(state.doc.child(1))
+    }
+  )
 })

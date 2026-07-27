@@ -3,6 +3,7 @@ import type { WorkspaceNode } from "@rumi/contracts";
 export type WorkspaceRoute =
   | { view: "home" }
   | { view: "trash" }
+  | { view: "trash-item"; id: string }
   | { view: "node"; slugPath: string };
 
 interface WorkspaceRouteEntry {
@@ -30,6 +31,8 @@ export function parseWorkspaceRoute(pathname: string): WorkspaceRoute | null {
   const normalizedPathname = pathname !== "/" ? pathname.replace(/\/+$/u, "") : pathname;
   if (normalizedPathname === "/") return { view: "home" };
   if (normalizedPathname.toLowerCase() === "/trash") return { view: "trash" };
+  const trashItemMatch = /^\/trash\/([A-Za-z0-9-]+)$/u.exec(normalizedPathname);
+  if (trashItemMatch) return { view: "trash-item", id: trashItemMatch[1]! };
 
   const rawSegments = normalizedPathname.split("/").slice(1);
   if (rawSegments.length === 0) return null;

@@ -54,6 +54,12 @@ describe("web platform boundary", () => {
 
     expect(violations).toEqual([]);
   });
+
+  it("does not render a global editor message banner", () => {
+    const appSource = readFileSync(join(repositoryRoot, "apps/web/src/App.tsx"), "utf8");
+    expect(appSource).not.toMatch(/\{\s*message\s*&&/u);
+    expect(appSource).not.toMatch(/\[\s*message\s*,\s*setMessage\s*\]\s*=\s*useState/u);
+  });
 });
 
 interface PackageManifest {

@@ -742,7 +742,6 @@ export function DatabaseView({
         });
 
         if (saved.status === "conflict") {
-          onMessage(`Could not update ${record.title}: it changed elsewhere.`);
           await load();
           return;
         }
@@ -805,7 +804,6 @@ export function DatabaseView({
         });
 
         if (saved.status === "conflict") {
-          onMessage("The database options changed elsewhere. Reloaded the latest version.");
           await load();
           return false;
         }
@@ -879,7 +877,6 @@ export function DatabaseView({
         });
 
         if (saved.status === "conflict") {
-          onMessage("The database options changed elsewhere. Reloaded the latest version.");
           await load();
           return false;
         }
@@ -917,7 +914,6 @@ export function DatabaseView({
       });
 
       if (saved.status === "conflict") {
-        onMessage("The database schema changed elsewhere. Reloaded the latest version.");
         await load();
         return false;
       }
@@ -950,7 +946,6 @@ export function DatabaseView({
         });
 
         if (saved.status === "conflict") {
-          onMessage("The database schema changed elsewhere. Reloaded the latest version.");
           await load();
           return false;
         }
@@ -992,7 +987,6 @@ export function DatabaseView({
           type
         });
         if (saved.status === "conflict") {
-          onMessage("The database schema changed elsewhere. Reloaded the latest version.");
           await load();
           return false;
         }
@@ -1017,7 +1011,6 @@ export function DatabaseView({
           property
         });
         if (saved.status === "conflict") {
-          onMessage("The database schema changed elsewhere. Reloaded the latest version.");
           await load();
           return false;
         }

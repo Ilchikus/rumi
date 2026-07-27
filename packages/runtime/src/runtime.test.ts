@@ -259,6 +259,31 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
+  it("does not republish runtime page saves as filesystem edits", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Idea.md"), "# Idea", "utf8");
+
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+    const events: RumiEventEnvelope[] = [];
+    const unsubscribe = runtime.events.subscribe((event) => events.push(event));
+    const page = await runtime.openPage("Idea.md");
+
+    const result = await runtime.savePage({
+      path: page.path,
+      baseVersion: page.version,
+      frontmatter: page.frontmatter,
+      markdownBody: "# Updated",
+      reason: "editor-autosave"
+    });
+    const reconciled = await runtime.reconcileWorkspace();
+    unsubscribe();
+
+    expect(result.status).toBe("saved");
+    expect(reconciled.events).toEqual([]);
+    expect(events.map(({ event }) => event.changedBy)).toEqual(["editor-autosave"]);
+  });
+
   it("rejects stale saves without overwriting newer content", async () => {
     const root = await tempWorkspace();
     const filePath = path.join(root, "Idea.md");
@@ -649,6 +674,7 @@ describe("WorkspaceRuntime", () => {
     const runtime = await WorkspaceRuntime.open({ rootPath: root });
     await runtime.createPage({ parentPath: "", name: "Note", markdownBody: "# Original" });
     await runtime.createFolder({ parentPath: "", name: "Projects", markdownBody: "# Projects" });
+    await fs.writeFile(path.join(root, "Projects", "Nested.md"), "# Nested", "utf8");
     await runtime.createDatabase({ parentPath: "", name: "Tasks" });
     const asset = await runtime.saveAsset(
       "diagram.png",
@@ -677,6 +703,21 @@ describe("WorkspaceRuntime", () => {
     const folderItem = trash.items.find((item) => item.originalPath === "Projects");
     const assetItem = trash.items.find((item) => item.originalPath === ".assets/diagram.png");
     expect(noteItem && databaseItem && folderItem && assetItem).toBeTruthy();
+
+    await expect(runtime.openTrashPage(noteItem!.id)).resolves.toMatchObject({
+      item: { id: noteItem!.id, originalPath: "Note.md" },
+      page: { path: "Note.md", kind: "page", markdownBody: "# Original" }
+    });
+    await expect(runtime.openTrashPage(folderItem!.id)).resolves.toMatchObject({
+      page: { path: "Projects/Projects.index.md", kind: "folder" }
+    });
+    await expect(runtime.openTrashPage(folderItem!.id, "Projects/Nested.md")).resolves.toMatchObject({
+      page: { path: "Projects/Nested.md", kind: "page", markdownBody: "# Nested" }
+    });
+    await expect(runtime.openTrashPage(databaseItem!.id)).resolves.toMatchObject({
+      page: { path: "Tasks/Tasks.db.md", kind: "database" }
+    });
+    await expect(runtime.openTrashPage(assetItem!.id)).rejects.toThrow(/does not have editable page content/);
 
     const restoredNote = await runtime.restoreTrashItem({ id: noteItem!.id });
     expect(restoredNote).toMatchObject({

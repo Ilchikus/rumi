@@ -53,15 +53,12 @@ export function buildInputRules(schema: Schema) {
     rules.push(textblockTypeInputRule(/^```$/, schema.nodes.code_block))
   }
 
-  // Flat bullet item: - or * at start of line (but not - [ ] which is task item)
+  // Flat bullet item: - or * at start of line
   if (schema.nodes.bullet_item) {
     rules.push(new InputRule(/^\s*([-*])\s$/, (state, match, start, end) => {
       const $from = state.selection.$from
       // Only in paragraph
       if ($from.parent.type !== schema.nodes.paragraph) return null
-      // Make sure this isn't going to become a task item
-      const fullText = $from.parent.textContent
-      if (fullText.match(/^\s*-\s\[[ xX]?\]\s*$/)) return null
 
       const bulletItem = schema.nodes.bullet_item.create({ indent: 0 })
       const tr = state.tr.replaceWith($from.before(), $from.after(), bulletItem)
@@ -84,28 +81,25 @@ export function buildInputRules(schema: Schema) {
     }))
   }
 
-  // Flat task item: - [ ] or - [x] at start of line
+  // Flat task item: [], [x], and their dashed/GFM-spaced forms at the
+  // start of a line, completed by a trailing Space. A typed "- " is
+  // already a bullet item by then, so bullet items must be upgradable too.
   if (schema.nodes.task_item) {
-    // Unchecked: - [ ]
-    rules.push(new InputRule(/^\s*-\s\[\s?\]\s$/, (state, match, start, end) => {
+    rules.push(new InputRule(/^\s*(?:-\s*)?\[( |[xX])?\]\s$/, (state, match, start, end) => {
       const $from = state.selection.$from
-      // Only in paragraph
-      if ($from.parent.type !== schema.nodes.paragraph) return null
+      const parent = $from.parent
+      if (
+        parent.type !== schema.nodes.paragraph &&
+        parent.type !== schema.nodes.bullet_item
+      ) return null
 
-      const taskItem = schema.nodes.task_item.create({ indent: 0, checked: false })
-      const tr = state.tr.replaceWith($from.before(), $from.after(), taskItem)
-      tr.setSelection(TextSelection.create(tr.doc, $from.before() + 1))
-      return tr
-    }))
-    // Checked: - [x]
-    rules.push(new InputRule(/^\s*-\s\[[xX]\]\s$/, (state, match, start, end) => {
-      const $from = state.selection.$from
-      // Only in paragraph
-      if ($from.parent.type !== schema.nodes.paragraph) return null
-
-      const taskItem = schema.nodes.task_item.create({ indent: 0, checked: true })
-      const tr = state.tr.replaceWith($from.before(), $from.after(), taskItem)
-      tr.setSelection(TextSelection.create(tr.doc, $from.before() + 1))
+      const blockStart = $from.before()
+      const taskItem = schema.nodes.task_item.create({
+        indent: parent.type === schema.nodes.bullet_item ? parent.attrs.indent || 0 : 0,
+        checked: match[1]?.toLowerCase() === "x"
+      })
+      const tr = state.tr.replaceWith(blockStart, $from.after(), taskItem)
+      tr.setSelection(TextSelection.create(tr.doc, blockStart + 1))
       return tr
     }))
   }
@@ -150,10 +144,9 @@ export function buildInputRules(schema: Schema) {
     rules.push(markInputRule(/__([^_]+)__$/, schema.marks.underline))
   }
 
-  // Strikethrough: ~~text~~ or --text-- (our custom syntax)
+  // Strikethrough: GFM ~~text~~
   if (schema.marks.strikethrough) {
     rules.push(markInputRule(/~~([^~]+)~~$/, schema.marks.strikethrough))
-    rules.push(markInputRule(/--([^-]+)--$/, schema.marks.strikethrough))
   }
 
   // Inline code: `text`

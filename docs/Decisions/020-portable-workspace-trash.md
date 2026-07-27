@@ -48,6 +48,8 @@ future deployment adapters, and it travels with the workspace when `.rumi/` is p
 
 - `deleteNode` now means move to Trash.
 - `listTrash` returns user-facing metadata only.
+- `openTrashPage` returns page content through a safe read-only boundary without exposing payload paths.
 - `restoreTrashItem` restores one entry and reports its actual path.
-- `GET /api/trash` and `POST /api/trash/restore` adapt those commands.
-- The sidebar keeps Trash at the bottom and the Trash view exposes restore actions.
+- `GET /api/trash`, `GET /api/trash/:id`, and `POST /api/trash/restore` adapt those commands.
+- The sidebar keeps Trash at the bottom; Trash items open in the normal page canvas with editing
+  disabled, muted content, and a persistent Restore banner.

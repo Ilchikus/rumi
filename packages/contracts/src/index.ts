@@ -288,6 +288,11 @@ export interface TrashListResult {
   items: TrashItem[];
 }
 
+export interface TrashPageResult {
+  item: TrashItem;
+  page: PageDocument;
+}
+
 export interface RestoreTrashItemRequest {
   id: string;
 }
@@ -306,6 +311,10 @@ export interface WorkspaceMutationResult {
   path: string;
   previousPath?: string;
   events: RumiEvent[];
+}
+
+export interface DeleteNodeResult extends WorkspaceMutationResult {
+  trashItem: TrashItem;
 }
 
 export interface SaveAssetResult {
@@ -382,6 +391,7 @@ export interface RumiEvent {
   contentHash?: string;
   changedBy?: string;
   sourceClientId?: string;
+  trashItemId?: string;
   affects?: string[];
 }
 

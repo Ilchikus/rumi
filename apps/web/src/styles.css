@@ -395,15 +395,6 @@
     padding: 0 0.08rem;
   }
 
-  .rumi-prosemirror mark[data-color="yellow"] { background: #fef08a; }
-  .rumi-prosemirror mark[data-color="green"] { background: #bbf7d0; }
-  .rumi-prosemirror mark[data-color="blue"] { background: #bfdbfe; }
-  .rumi-prosemirror mark[data-color="purple"] { background: #ddd6fe; }
-  .rumi-prosemirror mark[data-color="pink"] { background: #fbcfe8; }
-  .rumi-prosemirror mark[data-color="red"] { background: #fecaca; }
-  .rumi-prosemirror mark[data-color="orange"] { background: #fed7aa; }
-  .rumi-prosemirror mark[data-color="gray"] { background: #e5e7eb; }
-
   .rumi-prosemirror img {
     display: block;
     max-width: 100%;

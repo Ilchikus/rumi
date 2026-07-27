@@ -103,6 +103,13 @@ describe("workspace browser routes", () => {
     expect(route && findWorkspaceNodeForRoute(tree, route)).toBe(workspaceTrash);
   });
 
+  it("parses direct read-only Trash item routes", () => {
+    expect(parseWorkspaceRoute("/trash/1720000000000-acde-1234")).toEqual({
+      view: "trash-item",
+      id: "1720000000000-acde-1234"
+    });
+  });
+
   it("normalizes incoming case and escaped spaces and rejects invalid paths", () => {
     expect(parseWorkspaceRoute("/")).toEqual({ view: "home" });
     expect(workspaceUrlForNode(tree, tree)).toBe("/");

@@ -213,7 +213,8 @@ describe("Rumi server API", () => {
       const saveResponse = await fetch(`${url}/api/page/save`, {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-rumi-client-id": "web-test-client"
         },
         body: JSON.stringify({
           path: page.path,
@@ -229,6 +230,7 @@ describe("Rumi server API", () => {
       expect(eventText).toContain('"name":"page.changed"');
       expect(eventText).toContain('"path":"Idea.md"');
       expect(eventText).toContain('"changedBy":"api"');
+      expect(eventText).toContain('"sourceClientId":"web-test-client"');
     } finally {
       controller.abort();
       await server.close();
@@ -312,6 +314,9 @@ describe("Rumi server API", () => {
       }
     });
     expect(deleteNode.statusCode).toBe(200);
+    expect(deleteNode.json()).toMatchObject({
+      trashItem: { originalPath: "Archive/Moved idea.md", kind: "page" }
+    });
 
     await expect(fs.stat(path.join(root, "Archive", "Moved idea.md"))).rejects.toThrow();
 
@@ -322,6 +327,16 @@ describe("Rumi server API", () => {
     });
 
     const trashItemId = (trash.json() as { items: Array<{ id: string }> }).items[0]!.id;
+    const trashedPage = await server.inject({
+      method: "GET",
+      url: `/api/trash/${encodeURIComponent(trashItemId)}`
+    });
+    expect(trashedPage.statusCode).toBe(200);
+    expect(trashedPage.json()).toMatchObject({
+      item: { id: trashItemId, originalPath: "Archive/Moved idea.md" },
+      page: { path: "Archive/Moved idea.md", kind: "page", markdownBody: "# Idea" }
+    });
+
     const restore = await server.inject({
       method: "POST",
       url: "/api/trash/restore",

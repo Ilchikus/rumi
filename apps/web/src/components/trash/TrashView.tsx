@@ -13,10 +13,17 @@ interface TrashViewProps {
   items: TrashItem[];
   loadState: "idle" | "loading" | "error";
   restoringId: string | null;
+  onOpen: (item: TrashItem) => void;
   onRestore: (item: TrashItem) => Promise<void>;
 }
 
-export function TrashView({ items, loadState, restoringId, onRestore }: TrashViewProps): ReactElement {
+export function TrashView({
+  items,
+  loadState,
+  restoringId,
+  onOpen,
+  onRestore
+}: TrashViewProps): ReactElement {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <article className="mx-auto w-full max-w-[920px] px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12">
@@ -46,19 +53,26 @@ export function TrashView({ items, loadState, restoringId, onRestore }: TrashVie
           ) : (
             <ul className="divide-y divide-border">
               {items.map((item) => (
-                <li key={item.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted text-neutral-400">
-                    <TrashItemIcon kind={item.kind} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <p className="truncate text-sm font-medium">{item.name}</p>
-                      <span className="shrink-0 text-xs text-muted-foreground">{kindLabel(item.kind)}</span>
+                <li key={item.id} className="flex items-center gap-2 px-2 py-1.5 sm:px-3">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
+                    disabled={!isViewableItem(item.kind)}
+                    onClick={() => onOpen(item)}
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted text-neutral-400">
+                      <TrashItemIcon kind={item.kind} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <p className="truncate text-sm font-medium">{item.name}</p>
+                        <span className="shrink-0 text-xs text-muted-foreground">{kindLabel(item.kind)}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground" title={item.originalPath}>
+                        From {item.originalPath} · {formatDeletedAt(item.deletedAt)}
+                      </p>
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground" title={item.originalPath}>
-                      From {item.originalPath} · {formatDeletedAt(item.deletedAt)}
-                    </p>
-                  </div>
+                  </button>
                   <Button
                     type="button"
                     variant="outline"
@@ -90,6 +104,10 @@ function TrashItemIcon({ kind }: { kind: TrashItemKind }): ReactElement {
 function kindLabel(kind: TrashItemKind): string {
   if (kind === "asset") return "Upload";
   return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+}
+
+function isViewableItem(kind: TrashItemKind): boolean {
+  return kind === "page" || kind === "folder" || kind === "database";
 }
 
 function formatDeletedAt(value: string): string {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +20,7 @@ import type {
   CreateDatabaseRequest,
   CreatePageRequest,
   DeleteNodeRequest,
+  DeleteNodeResult,
   DeleteDatabasePropertyRequest,
   DeleteDatabaseViewRequest,
   FrontmatterRecord,
@@ -45,6 +47,7 @@ import type {
   SearchWorkspaceResult,
   SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
+  TrashPageResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -109,6 +112,12 @@ export interface WorkspaceAsset {
 
 export type RumiEventSubscriber = (envelope: RumiEventEnvelope) => void;
 
+const eventSourceClientStorage = new AsyncLocalStorage<string>();
+
+export function enterRumiEventSourceClient(sourceClientId: string | undefined): void {
+  eventSourceClientStorage.enterWith(sourceClientId ?? "");
+}
+
 export class RuntimeEventBus {
   private nextId = 1;
   private readonly subscribers = new Set<RumiEventSubscriber>();
@@ -121,10 +130,12 @@ export class RuntimeEventBus {
   }
 
   publish(event: RumiEvent): RumiEventEnvelope {
+    const sourceClientId = event.sourceClientId ?? eventSourceClientStorage.getStore();
+    const sourcedEvent = sourceClientId ? { ...event, sourceClientId } : event;
     const envelope: RumiEventEnvelope = {
       id: this.nextId,
       emittedAt: new Date().toISOString(),
-      event
+      event: sourcedEvent
     };
     this.nextId += 1;
 
@@ -311,6 +322,7 @@ export class WorkspaceRuntime {
     await this.workspaceIndex.indexPath(relPath);
 
     const nextHash = hashText(nextContent);
+    this.workspaceWatcher?.recordInternalPageWrite(relPath, nextHash);
 
     if (request.reason === "manual-save") {
       await this.revisions.checkpoint(
@@ -353,13 +365,18 @@ export class WorkspaceRuntime {
       this.resolveAbsolutePath.bind(this)
     );
     const absolutePath = this.resolveAbsolutePath(relPath);
+    const content = serializeMarkdownFile(
+      request.frontmatter ?? {},
+      request.markdownBody ?? ""
+    );
 
     await ensureParentDirectory(absolutePath);
     await fs.writeFile(
       absolutePath,
-      serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
+      content,
       { encoding: "utf8", flag: "wx" }
     );
+    this.workspaceWatcher?.recordInternalPageWrite(relPath, hashText(content));
     await this.revisions.checkpoint(
       relPath,
       await fs.readFile(absolutePath, "utf8"),
@@ -387,7 +404,9 @@ export class WorkspaceRuntime {
     await fs.mkdir(absolutePath, { recursive: false });
 
     const indexPath = folderIndexPathForDirectory(relPath);
-    await fs.writeFile(this.resolveAbsolutePath(indexPath), request.markdownBody ?? "", "utf8");
+    const indexContent = request.markdownBody ?? "";
+    await fs.writeFile(this.resolveAbsolutePath(indexPath), indexContent, "utf8");
+    this.workspaceWatcher?.recordInternalPageWrite(indexPath, hashText(indexContent));
     await this.revisions.checkpoint(
       indexPath,
       await fs.readFile(this.resolveAbsolutePath(indexPath), "utf8"),
@@ -415,18 +434,20 @@ export class WorkspaceRuntime {
     await fs.mkdir(absolutePath, { recursive: false });
 
     const configPath = databaseConfigPathForDirectory(relPath);
+    const configContent = serializeMarkdownFile(
+      {
+        type: "database",
+        properties: {},
+        views: [{ id: "all", name: "All", type: "table", columns: [] }]
+      },
+      request.markdownBody ?? ""
+    );
     await fs.writeFile(
       this.resolveAbsolutePath(configPath),
-      serializeMarkdownFile(
-        {
-          type: "database",
-          properties: {},
-          views: [{ id: "all", name: "All", type: "table", columns: [] }]
-        },
-        request.markdownBody ?? ""
-      ),
+      configContent,
       "utf8"
     );
+    this.workspaceWatcher?.recordInternalPageWrite(configPath, hashText(configContent));
     await this.revisions.checkpoint(
       configPath,
       await fs.readFile(this.resolveAbsolutePath(configPath), "utf8"),
@@ -570,6 +591,7 @@ export class WorkspaceRuntime {
     }
 
     for (const record of changedRecords) {
+      this.workspaceWatcher?.recordInternalPageWrite(record.path, record.contentHash);
       await this.workspaceIndex.indexPath(record.path);
       await this.revisions.checkpoint(
         record.path,
@@ -578,6 +600,7 @@ export class WorkspaceRuntime {
         "runtime"
       );
     }
+    this.workspaceWatcher?.recordInternalPageWrite(targetPath, hashText(targetContent));
     await this.revisions.move(sourcePath, targetPath);
     await this.workspaceIndex.movePath(sourcePath, targetPath);
     await this.revisions.checkpoint(
@@ -658,12 +681,17 @@ export class WorkspaceRuntime {
       this.resolveAbsolutePath.bind(this)
     );
     const absolutePath = this.resolveAbsolutePath(recordPath);
+    const recordContent = serializeMarkdownFile(
+      request.frontmatter ?? {},
+      request.markdownBody ?? ""
+    );
 
     await fs.writeFile(
       absolutePath,
-      serializeMarkdownFile(request.frontmatter ?? {}, request.markdownBody ?? ""),
+      recordContent,
       { encoding: "utf8", flag: "wx" }
     );
+    this.workspaceWatcher?.recordInternalPageWrite(recordPath, hashText(recordContent));
     await this.revisions.checkpoint(
       recordPath,
       await fs.readFile(absolutePath, "utf8"),
@@ -1409,7 +1437,7 @@ export class WorkspaceRuntime {
     return result;
   }
 
-  async deleteNode(request: DeleteNodeRequest): Promise<WorkspaceMutationResult> {
+  async deleteNode(request: DeleteNodeRequest): Promise<DeleteNodeResult> {
     const relPath = normalizeWorkspacePath(request.path);
     if (!relPath || relPath === "." || relPath.split("/")[0]?.toLocaleLowerCase() === ".rumi") {
       throw new Error("The workspace root and .rumi internals cannot be moved to Trash");
@@ -1423,17 +1451,40 @@ export class WorkspaceRuntime {
 
     await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
     const revisionObjects = await this.revisions.objectsAtOrBelow(relPath);
-    await this.trash.move(relPath, revisionObjects);
+    const trashed = await this.trash.move(relPath, revisionObjects);
     await this.revisions.markDeleted(relPath);
     await this.workspaceIndex.removePath(relPath);
 
     const result = mutationResult("page.deleted", relPath, ["tree"]);
+    result.events = result.events.map((event) => ({
+      ...event,
+      changedBy: "trash.move",
+      trashItemId: trashed.item.id
+    }));
     this.publishResultEvents(result);
-    return result;
+    return { ...result, trashItem: trashed.item };
   }
 
   async listTrash(): Promise<TrashListResult> {
     return { items: await this.trash.list() };
+  }
+
+  async openTrashPage(id: string, originalPagePath?: string): Promise<TrashPageResult> {
+    const trashed = await this.trash.readPage(id, originalPagePath);
+    const parsed = parseMarkdownFile(trashed.content);
+    const contentHash = hashText(trashed.content);
+    return {
+      item: trashed.item,
+      page: {
+        path: trashed.path,
+        kind: trashed.kind,
+        frontmatter: parsed.frontmatter,
+        markdownBody: parsed.body,
+        contentHash,
+        frontmatterHash: hashJson(parsed.frontmatter),
+        version: contentHash
+      }
+    };
   }
 
   async restoreTrashItem(request: RestoreTrashItemRequest): Promise<RestoreTrashItemResult> {
@@ -1548,6 +1599,7 @@ export class WorkspaceRuntime {
 
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, selected.markdown, "utf8");
+    this.workspaceWatcher?.recordInternalPageWrite(target.path, hashText(selected.markdown));
     await this.workspaceIndex.indexPath(target.path);
     const restored = await this.revisions.checkpoint(
       target.path,
@@ -1643,6 +1695,7 @@ export class WorkspaceRuntime {
       if (isNodeError(error) && error.code === "EEXIST") return;
       throw error;
     }
+    this.workspaceWatcher?.recordInternalPageWrite(rootIndexPath, hashText(""));
 
     await this.revisions.checkpoint(rootIndexPath, "", "baseline", "runtime");
     await this.workspaceIndex.indexPath(rootIndexPath);
@@ -1843,6 +1896,7 @@ export class WorkspaceRuntime {
         this.revisions.noteActivity(planned.path, rewritten.markdown, "runtime");
 
         const contentHash = hashText(rewritten.markdown);
+        this.workspaceWatcher?.recordInternalPageWrite(planned.path, contentHash);
         this.events.publish({
           name: "page.changed",
           path: planned.path,

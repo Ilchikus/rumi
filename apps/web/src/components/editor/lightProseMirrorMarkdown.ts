@@ -119,10 +119,7 @@ const lightMarkdownParser = new MarkdownParser(lightEditorSchema, markdownIt, {
   th: { block: "table_header" },
   td: { block: "table_cell" },
   s: { mark: "strike" },
-  highlight: {
-    mark: "highlight",
-    getAttrs: (token) => ({ color: token.meta?.color ?? "yellow" })
-  },
+  highlight: { mark: "highlight" },
   underline: { mark: "underline" }
 });
 
@@ -202,7 +199,6 @@ const lightMarkdownSerializer = new MarkdownSerializer(
 export function parseLightMarkdown(markdown: string): ProseMirrorNode {
   const normalized = markdown
     .replace(/<u>(.*?)<\/u>/gis, "++$1++")
-    .replace(/<mark\s+data-color=(?:"[^"]*"|'[^']*')>(.*?)<\/mark>/gis, "==$1==")
     .replace(/<mark>(.*?)<\/mark>/gis, "==$1==");
   return transformSpecialBlocks(addTaskItemAttributes(lightMarkdownParser.parse(normalized || "")));
 }
@@ -319,12 +315,9 @@ function installDelimitedMark(markdown: MarkdownIt, tokenName: string, delimiter
 
     if (!silent) {
       const rawContent = state.src.slice(contentStart, close);
-      const legacyHighlight = tokenName === "highlight"
-        ? /^[A-Za-z]+::([\s\S]+)$/u.exec(rawContent)
-        : null;
       state.push(`${tokenName}_open`, tokenName, 1);
       const text = state.push("text", "", 0);
-      text.content = legacyHighlight?.[1] ?? rawContent;
+      text.content = rawContent;
       state.push(`${tokenName}_close`, tokenName, -1);
     }
 

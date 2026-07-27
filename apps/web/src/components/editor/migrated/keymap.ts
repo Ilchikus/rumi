@@ -87,6 +87,86 @@ export function removeEmptyParagraphBlock(schema: Schema): Command {
   }
 }
 
+function getFlatListItemTypes(schema: Schema) {
+  return [
+    schema.nodes.bullet_item,
+    schema.nodes.numbered_item,
+    schema.nodes.task_item
+  ].filter(Boolean)
+}
+
+export function exitEmptyFlatListItem(schema: Schema): Command {
+  const itemTypes = getFlatListItemTypes(schema)
+
+  return (state, dispatch) => {
+    const { selection } = state
+    if (!(selection instanceof TextSelection) || !selection.empty) return false
+
+    const { $from } = selection
+    if (
+      $from.depth !== 1 ||
+      !itemTypes.some((type) => $from.parent.type === type) ||
+      $from.parent.content.size !== 0
+    ) return false
+
+    if (dispatch) {
+      const blockStart = $from.before(1)
+      const blockEnd = blockStart + $from.parent.nodeSize
+      const transaction = state.tr.replaceWith(
+        blockStart,
+        blockEnd,
+        schema.nodes.paragraph.create()
+      )
+      transaction.setSelection(TextSelection.create(transaction.doc, blockStart + 1))
+
+      dispatch(transaction.scrollIntoView())
+    }
+    return true
+  }
+}
+
+export function splitFlatListItem(schema: Schema): Command {
+  const itemTypes = getFlatListItemTypes(schema)
+
+  return (state, dispatch) => {
+    const { $from } = state.selection
+    const parent = $from.parent
+    const itemType = itemTypes.find((type) => parent.type === type)
+    if (!itemType) return false
+
+    if (!state.selection.empty) {
+      if (dispatch) dispatch(state.tr.deleteSelection())
+      return true
+    }
+
+    const attrs: Record<string, unknown> = { indent: parent.attrs.indent || 0 }
+    if (itemType === schema.nodes.task_item) attrs.checked = false
+
+    if (dispatch) {
+      const blockStart = $from.before()
+      const blockEnd = $from.after()
+      const transaction = state.tr
+
+      if ($from.parentOffset === parent.content.size) {
+        transaction.insert(blockEnd, itemType.create(attrs))
+        transaction.setSelection(TextSelection.create(transaction.doc, blockEnd + 1))
+      } else {
+        const currentItem = itemType.create({ ...parent.attrs }, parent.cut(0, $from.parentOffset).content)
+        const newItem = itemType.create(attrs, parent.cut($from.parentOffset).content)
+
+        transaction.replaceWith(blockStart, blockEnd, [currentItem, newItem])
+        transaction.setSelection(TextSelection.create(
+          transaction.doc,
+          blockStart + currentItem.nodeSize + 1
+        ))
+      }
+
+      dispatch(transaction.scrollIntoView())
+    }
+    return true
+  }
+}
+
 function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
@@ -138,106 +218,17 @@ function buildKeymap(schema: Schema) {
   keys["Mod-d"] = duplicateBlocks
   keys["Mod-D"] = duplicateBlocks
   keys["Mod-a"] = selectAllBlocksInStages
-  keys["Backspace"] = removeEmptyParagraphBlock(schema)
-  keys["Delete"] = removeEmptyParagraphBlock(schema)
+  keys["Backspace"] = chainCommands(
+    exitEmptyFlatListItem(schema),
+    removeEmptyParagraphBlock(schema)
+  )
+  keys["Delete"] = chainCommands(
+    exitEmptyFlatListItem(schema),
+    removeEmptyParagraphBlock(schema)
+  )
 
   // Flat list item types
-  const flatListItemTypes = [
-    schema.nodes.bullet_item,
-    schema.nodes.numbered_item,
-    schema.nodes.task_item
-  ].filter(Boolean)
-
-  // Check if current selection is in a flat list item
-  const isInFlatListItem = (schema: Schema): Command => (state) => {
-    const { $from } = state.selection
-    const parent = $from.parent
-    return flatListItemTypes.some(type => parent.type === type)
-  }
-
-  // Split flat list item: create a new item of the same type after cursor
-  const splitFlatListItem: Command = (state, dispatch) => {
-    const { $from, $to } = state.selection
-    const parent = $from.parent
-
-    // Check if we're in a flat list item
-    const itemType = flatListItemTypes.find(type => parent.type === type)
-    if (!itemType) return false
-
-    // If selection is not collapsed, delete selection first
-    if (!state.selection.empty) {
-      if (dispatch) {
-        const tr = state.tr.deleteSelection()
-        dispatch(tr)
-      }
-      return true
-    }
-
-    const indent = parent.attrs.indent || 0
-    const attrs: Record<string, unknown> = { indent }
-
-    // For task items, new items start unchecked
-    if (itemType === schema.nodes.task_item) {
-      attrs.checked = false
-    }
-
-    if (dispatch) {
-      const tr = state.tr
-
-      // Get text after cursor
-      const textAfter = parent.textBetween($from.parentOffset, parent.content.size, null, "\ufffc")
-
-      // Get position of current block
-      const blockStart = $from.before()
-      const blockEnd = $from.after()
-
-      // If cursor is at the end, create empty new item
-      if ($from.parentOffset === parent.content.size) {
-        // Insert new item after current
-        const newItem = itemType.create(attrs)
-        tr.insert(blockEnd, newItem)
-        tr.setSelection(TextSelection.create(tr.doc, blockEnd + 1))
-      } else {
-        // Split: keep text before cursor in current, put text after in new item
-        const contentBefore = parent.cut(0, $from.parentOffset)
-        const contentAfter = parent.cut($from.parentOffset)
-
-        // Replace current block with truncated version
-        const currentAttrs = { ...parent.attrs }
-        const currentItem = itemType.create(currentAttrs, contentBefore.content)
-        const newItem = itemType.create(attrs, contentAfter.content)
-
-        tr.replaceWith(blockStart, blockEnd, [currentItem, newItem])
-        tr.setSelection(TextSelection.create(tr.doc, blockStart + currentItem.nodeSize + 1))
-      }
-
-      dispatch(tr.scrollIntoView())
-    }
-    return true
-  }
-
-  // Convert empty flat list item to paragraph
-  const liftEmptyFlatListItem: Command = (state, dispatch) => {
-    const { $from } = state.selection
-    const parent = $from.parent
-
-    // Check if we're in a flat list item
-    const itemType = flatListItemTypes.find(type => parent.type === type)
-    if (!itemType) return false
-
-    // Only lift if item is empty
-    if (parent.content.size > 0) return false
-
-    if (dispatch) {
-      const blockStart = $from.before()
-      const blockEnd = $from.after()
-      const paragraph = schema.nodes.paragraph.create()
-      const tr = state.tr.replaceWith(blockStart, blockEnd, paragraph)
-      tr.setSelection(TextSelection.create(tr.doc, blockStart + 1))
-      dispatch(tr.scrollIntoView())
-    }
-    return true
-  }
+  const flatListItemTypes = getFlatListItemTypes(schema)
 
   // Indent flat list item (Tab)
   const indentFlatListItem: Command = (state, dispatch) => {
@@ -289,8 +280,7 @@ function buildKeymap(schema: Schema) {
   keys["Enter"] = chainCommands(
     exitHorizontalRuleEnter(schema),
     newlineInCode,
-    liftEmptyFlatListItem,
-    splitFlatListItem,
+    splitFlatListItem(schema),
     liftEmptyBlock,
     createParagraphNear,
     splitBlock

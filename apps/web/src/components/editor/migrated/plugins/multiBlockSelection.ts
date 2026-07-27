@@ -25,6 +25,64 @@ interface TopLevelBlock {
   pos: number
 }
 
+interface TextRowSeparator {
+  from: number
+  to: number
+}
+
+function textRowSeparators(node: import("prosemirror-model").Node): TextRowSeparator[] {
+  const separators: TextRowSeparator[] = []
+
+  node.forEach((child, offset) => {
+    if (child.type.name === "hard_break") {
+      separators.push({ from: offset, to: offset + child.nodeSize })
+      return
+    }
+
+    if (!child.isText || !child.text) return
+
+    for (let index = child.text.indexOf("\n"); index >= 0; index = child.text.indexOf("\n", index + 1)) {
+      separators.push({ from: offset + index, to: offset + index + 1 })
+    }
+  })
+
+  return separators
+}
+
+export function textRowSelectionAtPosition(
+  state: EditorState,
+  pos: number
+): TextSelection | null {
+  if (pos < 0 || pos > state.doc.content.size) return null
+
+  const $pos = state.doc.resolve(pos)
+  let textblockDepth = $pos.depth
+  while (textblockDepth > 0 && !$pos.node(textblockDepth).isTextblock) {
+    textblockDepth -= 1
+  }
+  if (textblockDepth === 0) return null
+
+  const textblock = $pos.node(textblockDepth)
+  const separators = textRowSeparators(textblock)
+  if (separators.length === 0) return null
+
+  const contentStart = $pos.start(textblockDepth)
+  const clickOffset = Math.max(0, Math.min(textblock.content.size, pos - contentStart))
+  let rowFrom = 0
+  let rowTo = textblock.content.size
+
+  for (const separator of separators) {
+    if (clickOffset > separator.from) {
+      rowFrom = separator.to
+    } else {
+      rowTo = separator.from
+      break
+    }
+  }
+
+  return TextSelection.create(state.doc, contentStart + rowFrom, contentStart + rowTo)
+}
+
 function topLevelBlocks(state: EditorState): TopLevelBlock[] {
   const blocks: TopLevelBlock[] = []
   state.doc.forEach((node, pos) => blocks.push({ node, pos }))
@@ -339,6 +397,23 @@ export function multiBlockSelectionPlugin(_schema: Schema) {
           )
         }
         return DecorationSet.create(state.doc, decorations)
+      },
+
+      handleTripleClick(view: EditorView, pos: number, event: MouseEvent) {
+        if (event.button !== 0) return false
+
+        const selection = textRowSelectionAtPosition(view.state, pos)
+        if (!selection) return false
+
+        if (!view.focused) view.focus()
+        if (!view.state.selection.eq(selection)) {
+          view.dispatch(
+            view.state.tr
+              .setSelection(selection)
+              .setMeta("pointer", true)
+          )
+        }
+        return true
       },
 
       handleKeyDown(view: EditorView, event: KeyboardEvent) {

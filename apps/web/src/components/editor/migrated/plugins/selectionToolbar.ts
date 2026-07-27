@@ -112,12 +112,12 @@ export function selectionToolbarPlugin(schema: Schema) {
         letterA.textContent = "A"
         letterA.style.lineHeight = "1"
 
-        const colorBar = document.createElement("div")
-        colorBar.className = "highlight-color-bar"
-        colorBar.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: #fef08a;`
+        const highlightIndicator = document.createElement("div")
+        highlightIndicator.className = "highlight-indicator"
+        highlightIndicator.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: #fef08a;`
 
         highlightBtn.appendChild(letterA)
-        highlightBtn.appendChild(colorBar)
+        highlightBtn.appendChild(highlightIndicator)
 
         highlightBtn.addEventListener("mousedown", (e) => {
           e.preventDefault()

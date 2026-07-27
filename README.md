@@ -73,7 +73,8 @@ Tasks/
 ```
 
 Folder pages use `<folder>.index.md`. Databases are folders whose companion file is
-`<database>.db.md`. Normal Markdown remains useful without Rumi.
+`<database>.db.md`. Normal Markdown remains useful without Rumi. See
+[Markdown syntax](MARKDOWN.md) for the GFM baseline and Rumi extensions.
 
 ## Remote hosting
 

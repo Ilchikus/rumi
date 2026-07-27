@@ -3,7 +3,7 @@ status: accepted
 area: editor
 owner: web
 created: "2026-07-18"
-updated: "2026-07-23"
+updated: "2026-07-27"
 ---
 # Editor Interactions
 
@@ -12,16 +12,19 @@ commands, plugins, NodeViews, and interaction styling are migrated together so t
 preserved. Browser/platform adapters replace its Electron and direct-filesystem calls; Markdown
 remains the durable representation and workspace operations remain server-owned.
 
+The repository-level [Markdown syntax reference](../../MARKDOWN.md) defines the GFM baseline,
+Rumi-specific source extensions, and read-time compatibility rules used by this contract.
+
 ## Behavior Map
 
 | User problem | Action | Expected result |
 | --- | --- | --- |
 | Navigate with browser history or share an open item | Open a page, folder, database, record, or Trash; use Back/Forward or load its URL directly | The address changes to a URL-safe workspace slug, Back/Forward restores the matching view, deep links survive refresh, and the persistent application layout does not remount. |
 | Rename or split the open-page title without leaving the editor | Click the filename text or the unused part of its row, edit it, then blur or press Enter | Text clicks preserve the exact caret position; row clicks place it at the end. Blur renames, while Enter keeps the title before the caret and moves the remainder into a new first content block. Mod-Z reverses either operation as one action, restores the original title, and reopens it with the caret at the end. The extension stays hidden, pending edits save first, and Escape cancels. |
-| Create structure without leaving the keyboard | Type Markdown prefixes or use `/` | Headings, lists, tasks, quotes, code, Mermaid, dividers, tables, bookmarks, database references, images, and files become semantic blocks. The slash menu follows the active line through native editor scrolling, prefers the space below it, flips above when needed, and scrolls internally when neither side can fit it in full. |
-| Continue naturally around special blocks | Press Enter, Backspace/Delete, Shift-Enter, Tab, Shift-Tab, or Mod-Enter | Lists split/lift, a blank paragraph block is removed by Backspace or Delete when another block remains, separate paragraph blocks have a visible block gap while hard breaks remain compact and inline, code receives literal tabs or exits, tables move between cells, and dividers remain navigable. |
+| Create structure without leaving the keyboard | Type Markdown prefixes or use `/` | Headings, lists, tasks, quotes, code, Mermaid, dividers, tables, bookmarks, database references, images, and files become semantic blocks. Typing `[]`, `[x]`, `- []`, `- [x]`, `-[]`, or `-[x]` at the start of a line and then pressing Space creates an unchecked or checked task item; the spaced GFM form `- [ ]` is accepted too. The bracket sequence remains literal until that trailing Space. The slash menu follows the active line through native editor scrolling, prefers the space below it, flips above when needed, and scrolls internally when neither side can fit it in full. |
+| Continue naturally around special blocks | Press Enter, Backspace/Delete, Shift-Enter, Tab, Shift-Tab, or Mod-Enter | Lists split without discarding an empty current item: Enter preserves that bullet, number, or task row and creates another row of the same kind. Backspace or Delete on an empty list item removes its list formatting while preserving a plain blank paragraph and the caret in the same position; pressing it again can remove that ordinary blank block. Separate paragraph blocks have a visible block gap while hard breaks remain compact and inline, code receives literal tabs or exits, tables move between cells, and dividers remain navigable. |
 | Connect knowledge quickly | Type `@`, paste a URL over selected text, or edit a link | A Markdown link is inserted. Internal destinations are URI-decoded and resolved from the containing document or workspace root, then the matched node receives its current application slug; application slugs are never written over canonical file paths. Web links open externally. Link text and destination can be copied, edited, or removed. |
-| Format selected text | Use the selection toolbar or keyboard shortcuts | Bold, italic, underline, strike, code, the single default yellow highlight, and links are applied as Markdown-backed marks. |
+| Format selected text | Triple-click a row, press Mod-A, use the selection toolbar, or use formatting shortcuts | Triple-click selects only the clicked hard-break-separated row, including inside code blocks. It never expands that row to the whole multi-row block; Mod-A remains the explicit block-selection action. Bold, italic, underline, strike, code, the single default yellow highlight, and links are applied as Markdown-backed marks. |
 | Reorganize document structure | Use each block's handle, Command-D, modifiers, area selection, or drag | Command-D duplicates the explicit block selection, or the cursor's whole active block when there is no block selection; the duplicate becomes the active block selection. One or many blocks can also be deleted, reordered, and, for list items, indented or outdented. A top-level list drop crosses into its first indent after 30% of the editor width; a drop beneath an already-indented item aligns with that item until it crosses 20% of the target item's own width, then nests one level deeper. Every list item is independently addressable. Any click outside the editable block area clears both its block highlight and NodeSelection after the clicked control completes its own behavior. |
 | Change a thought's role | Open the block menu and choose a type | The block converts among text, heading levels, bullet/number/task lists, quote, code, and divider while preserving useful text. |
 | Focus on one section | Toggle a heading caret | Blocks and their external hover controls until the next equal-or-higher heading hide or reappear immediately, without a layout transition or residual rich-block box; Markdown is unchanged. |
@@ -39,6 +42,8 @@ remains the durable representation and workspace operations remain server-owned.
 - List items temporarily retain the proven editor's flat `indent` attribute model. This preserves
   per-item handles and the established drag behavior: vertical position chooses a block gap, while
   moving right chooses an allowed indent. Serialization still produces nested Markdown lists.
+- Task items accept standard spaced GFM markers when read, while the editor writes the compact
+  canonical source forms `- []` and `- [x]`. Empty task source lines have no trailing space.
 - Handles use one fixed editor-gutter X-axis even when list content is indented. The editor and the
   gutter to its left both activate the corresponding block handle.
 - Heading collapse mode and Mermaid view mode are presentation state, not document data.

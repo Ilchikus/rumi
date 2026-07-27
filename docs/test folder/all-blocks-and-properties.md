@@ -10,12 +10,12 @@ This page exercises every property shape and content-block syntax currently expo
 
 ## Inline content
 
-Plain text, **bold**, *italic*, __underlined__, ~~struck through~~, `inline code`, ==default highlight==, and [an external link](https://example.com).
-
 An internal document link points to the [inner](test%20folder/inner/inner.index.md) folder
 
 This line ends with a hard break.  
 This text remains in the same paragraph after the break.
+
+Plain text, **bold**, *italic*, __underlined__, ~~struck through~~, `inline code`, ==default highlight==, and [an external link](https://example.com).
 
 ### Heading level three
 
@@ -23,8 +23,8 @@ The heading above verifies the smallest supported heading level.
 
 ## Bullet list
 
-- Mini PC chassis
 - Memory
+- Mini PC chassis
     - SODIMM
     - DDR5
 - Storage
@@ -64,7 +64,7 @@ The heading above verifies the smallest supported heading level.
 ## Code block
 
 
-```ts
+```javascript
 interface HomeServer {
   model: string
   memoryGb: number
@@ -95,9 +95,6 @@ flowchart LR
 ## Database view
 
 
-source is [Tasks](Tasks/Tasks.db.md)
-
-
 ```db
 source: Tasks
 filter: status = doing
@@ -124,3 +121,8 @@ sort: updated desc
 
 
 Content after the divider verifies that normal editing continues after an atomic block.
+
+
+```db
+source: Tasks
+```

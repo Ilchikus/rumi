@@ -23,7 +23,7 @@ properties through the owning database schema.
 - Let a record create a database property from its page view.
 - Add that property to the database schema and primary view before showing it as an empty record field.
 - Keep ordinary page properties as portable YAML without database schema metadata.
-- Use one default yellow `==highlight==` mark with no color picker or colored source syntax.
+- Use one default yellow `==highlight==` mark.
 - Restore block-handle menu background, add-block control, click selection, padding, and marquee behavior.
 - After inserting a database embed, immediately choose its source from the database folders in the
   current workspace using the styled source menu. Embedded database toolbars show that source as a
@@ -33,7 +33,7 @@ properties through the owning database schema.
 
 - [x] UI tests cover ordinary-page and database-record property creation affordances.
 - [x] Shared schema helper tests cover the property definition and primary-view update.
-- [x] Markdown tests cover canonical yellow highlight serialization and legacy color normalization.
+- [x] Markdown tests cover canonical highlight serialization and semantic `<mark>` rendering.
 - [x] Editor coverage verifies database source options use logical database-folder paths.
 - [ ] Manual browser check covers handle click, add, drag, context menu, and padding marquee selection.
 

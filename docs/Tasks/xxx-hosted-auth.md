@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - cli
 created: 2026-06-22
-updated: 2026-07-18
+updated: 2026-07-27
 ---
 # Configurable Instance Authentication
 
@@ -68,9 +68,9 @@ retains direct owner access to workspace and credential maintenance on the host.
 - `dev-docs.rumi.md` routes through the locally managed `rumi-dev-docs` Cloudflare Tunnel.
 - The tunnel reaches the loopback Vite source server on port `5173`; Vite proxies `/api` to the
   password-protected Rumi server on port `3001`.
-- The Vite source server runs from the `codex/finish-rumi-new` worktree. The API process runs from
-  the detached `rumi-new-live` deployment worktree so server changes must be synchronized there and
-  the process restarted before they are visible on DevDocs.
+- The Vite source server and API process run from the `rumi-new` development worktree. DevDocs
+  intentionally follows development code, while hosted Sandbox, Personal, and ClickOut instances
+  run the pinned published `@rumi-md/server` CLI.
 - A separate built preview on port `4173` remains available for LAN development.
 - Password login refuses non-loopback HTTP. LAN users must use the Cloudflare HTTPS hostname; plain
   HTTP on port `4173` can load the login shell but cannot transmit credentials.

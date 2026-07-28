@@ -8,10 +8,10 @@
     ".": "./src/server.ts"
   },
   "dependencies": {
-    "@fastify/static": "^9.3.0",
+    "@fastify/static": "^10.1.2",
     "@rumi/contracts": "workspace:*",
     "@rumi/runtime": "workspace:*",
-    "fastify": "^5.1.0",
+    "fastify": "^5.10.0",
     "pino-pretty": "^13.1.2"
   }
 }

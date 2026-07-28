@@ -1,7 +1,10 @@
 import type { WorkspaceNode } from "@rumi/contracts";
 
+export type WorkspaceSystemView = "settings" | "trash";
+
 export type WorkspaceRoute =
   | { view: "home" }
+  | { view: "settings" }
   | { view: "trash" }
   | { view: "trash-item"; id: string }
   | { view: "node"; slugPath: string };
@@ -10,6 +13,17 @@ interface WorkspaceRouteEntry {
   node: WorkspaceNode;
   url: string;
 }
+
+export interface ReservedSystemRoute {
+  view: WorkspaceSystemView;
+  label: string;
+  url: string;
+}
+
+const RESERVED_SYSTEM_ROUTES: Readonly<Record<WorkspaceSystemView, ReservedSystemRoute>> = {
+  settings: { view: "settings", label: "Settings", url: "/settings" },
+  trash: { view: "trash", label: "Trash", url: "/trash" }
+};
 
 export function workspaceUrlForNode(
   node: Pick<WorkspaceNode, "path" | "kind">,
@@ -24,12 +38,17 @@ export function workspaceUrlForNode(
     : null;
   if (routedNode) return routedNode.url;
 
-  return `/${logicalPathSegmentsForNode(node).map(encodeSlugBase).join("/")}`;
+  const routeSegments = logicalPathSegmentsForNode(node).map(encodeSlugBase);
+  if (reservedSystemRouteForSlug(routeSegments[0] ?? "")) {
+    routeSegments[0] = `${routeSegments[0]}-2`;
+  }
+  return `/${routeSegments.join("/")}`;
 }
 
 export function parseWorkspaceRoute(pathname: string): WorkspaceRoute | null {
   const normalizedPathname = pathname !== "/" ? pathname.replace(/\/+$/u, "") : pathname;
   if (normalizedPathname === "/") return { view: "home" };
+  if (normalizedPathname.toLowerCase() === "/settings") return { view: "settings" };
   if (normalizedPathname.toLowerCase() === "/trash") return { view: "trash" };
   const trashItemMatch = /^\/trash\/([A-Za-z0-9-]+)$/u.exec(normalizedPathname);
   if (trashItemMatch) return { view: "trash-item", id: trashItemMatch[1]! };
@@ -58,6 +77,27 @@ export function findWorkspaceNodeForRoute(
   )?.node ?? null;
 }
 
+export function reservedSystemRouteForNode(
+  node: Pick<WorkspaceNode, "path" | "kind">
+): ReservedSystemRoute | null {
+  if (!isRoutableKind(node.kind)) return null;
+  const segments = logicalPathSegmentsForNode(node);
+  if (segments.length !== 1) return null;
+  return reservedSystemRouteForSlug(encodeSlugBase(segments[0]!));
+}
+
+export function reservedSystemRouteForName(
+  parentPath: string,
+  name: string,
+  kind: Pick<WorkspaceNode, "kind">["kind"]
+): ReservedSystemRoute | null {
+  if (parentPath || !isRoutableKind(kind)) return null;
+  const logicalName = kind === "page" && name.toLowerCase().endsWith(".md")
+    ? name.slice(0, -3)
+    : name;
+  return reservedSystemRouteForSlug(encodeSlugBase(logicalName));
+}
+
 function buildWorkspaceRouteEntries(tree: WorkspaceNode): WorkspaceRouteEntry[] {
   const entries: WorkspaceRouteEntry[] = [];
 
@@ -65,7 +105,7 @@ function buildWorkspaceRouteEntries(tree: WorkspaceNode): WorkspaceRouteEntry[] 
     const routableChildren = children.filter((node) => isRoutableKind(node.kind));
     const segmentByNode = allocateSiblingSlugSegments(
       routableChildren,
-      isRoot ? new Set(["trash"]) : new Set()
+      isRoot ? new Set(Object.keys(RESERVED_SYSTEM_ROUTES)) : new Set()
     );
 
     for (const node of routableChildren) {
@@ -165,6 +205,11 @@ function compareNodesForSlug(left: WorkspaceNode, right: WorkspaceNode): number 
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function reservedSystemRouteForSlug(slug: string): ReservedSystemRoute | null {
+  if (slug === "settings" || slug === "trash") return RESERVED_SYSTEM_ROUTES[slug];
+  return null;
 }
 
 function isRoutableKind(kind: string | undefined): kind is "page" | "folder" | "database" {

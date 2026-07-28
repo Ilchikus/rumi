@@ -8,7 +8,7 @@ areas:
   - security
 impact: high
 created: "2026-07-20"
-updated: "2026-07-20"
+updated: "2026-07-28"
 ---
 # Portable Workspace Trash
 
@@ -55,6 +55,7 @@ future deployment adapters, and it travels with the workspace when `.rumi/` is p
 - `GET /api/trash`, `GET /api/trash/:id`, `POST /api/trash/restore`, and
   `DELETE /api/trash/:id` adapt those commands.
 - The sidebar keeps Trash at the bottom. Trash uses a borderless whitespace list with Restore and
-  Delete forever actions. Viewable items open in the normal page canvas with editing disabled,
-  muted content, and a persistent Restore/Delete forever banner.
-- Moving to Trash is immediate because it is reversible. Delete forever requires confirmation.
+  Delete actions. Viewable items open in the normal page canvas with editing disabled, muted
+  content, and a persistent Restore/Delete banner.
+- Moving to Trash is immediate because it is reversible. Delete requires confirmation that the
+  operation is permanent and irreversible.

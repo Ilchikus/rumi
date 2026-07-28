@@ -32,7 +32,7 @@ describe("workspace address bar", () => {
       "notes",
       tree,
       { nodePath: page.path, openPath: page.path, kind: "page" },
-      false
+      null
     );
 
     expect(breadcrumbs.map(({ label, node, current }) => ({ label, path: node?.path ?? null, current }))).toEqual([
@@ -48,8 +48,7 @@ describe("workspace address bar", () => {
         workspaceName: "notes",
         tree,
         selection: { nodePath: page.path, openPath: page.path, kind: "page" },
-        trashOpen: false,
-        wide: false,
+        systemView: null,
         hasOpenPage: true,
         onNavigate: () => undefined,
         onToggleSearch: () => undefined,
@@ -70,10 +69,12 @@ describe("workspace address bar", () => {
     expect(markup).toContain("absolute left-full");
     expect(markup).toContain('aria-label="File actions"');
     expect(markup).not.toContain(">History<");
+    expect(markup).toContain("max-w-[820px]");
+    expect(markup).not.toContain("max-w-[1120px]");
   });
 
   it("shows Trash as the current address without treating it as a workspace file", () => {
-    expect(workspaceBreadcrumbs("notes", tree, null, true).map(({ label, node, current }) => ({
+    expect(workspaceBreadcrumbs("notes", tree, null, "trash").map(({ label, node, current }) => ({
       label,
       path: node?.path ?? null,
       current
@@ -81,5 +82,11 @@ describe("workspace address bar", () => {
       { label: "notes", path: "", current: false },
       { label: "Trash", path: null, current: true }
     ]);
+  });
+
+  it("shows Settings as a system-page address without widening the address bar", () => {
+    expect(workspaceBreadcrumbs("notes", tree, null, "settings").map((breadcrumb) => (
+      breadcrumb.label
+    ))).toEqual(["notes", "Settings"]);
   });
 });

@@ -4,8 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assetContentMatchesFileType,
+  DEFAULT_ASSET_FILE_SIZE_MB,
   loadWorkspaceAssetPolicy,
-  MAX_ASSET_FILE_SIZE_MB,
+  loadWorkspaceSettings,
+  saveWorkspaceSettings,
   SUPPORTED_ASSET_CONTENT_TYPES,
   WORKSPACE_CONFIG_PATH
 } from "./workspace-config";
@@ -24,8 +26,8 @@ describe("workspace upload configuration", () => {
     const defaultPolicy = await loadWorkspaceAssetPolicy(defaultRoot);
 
     expect(defaultPolicy).toEqual({
-      maxFileSizeBytes: MAX_ASSET_FILE_SIZE_MB * 1024 * 1024,
-      maxFileSizeMb: MAX_ASSET_FILE_SIZE_MB,
+      maxFileSizeBytes: DEFAULT_ASSET_FILE_SIZE_MB * 1024 * 1024,
+      maxFileSizeMb: DEFAULT_ASSET_FILE_SIZE_MB,
       allowedFileTypes: Object.keys(SUPPORTED_ASSET_CONTENT_TYPES)
     });
 
@@ -43,11 +45,70 @@ describe("workspace upload configuration", () => {
       maxFileSizeMb: 2,
       allowedFileTypes: [".png", ".jpg"]
     });
+    await expect(loadWorkspaceSettings(configuredRoot)).resolves.toEqual({
+      uploads: {
+        maxFileSizeMb: 2,
+        allowedFileTypes: [".png", ".jpg"]
+      },
+      editor: {
+        highlightMisspellings: false
+      }
+    });
 
     const disabledRoot = await tempWorkspace();
     await writeConfig(disabledRoot, { uploads: { allowedFileTypes: [] } });
     await expect(loadWorkspaceAssetPolicy(disabledRoot)).resolves.toMatchObject({
       allowedFileTypes: []
+    });
+
+    const unlimitedRoot = await tempWorkspace();
+    await writeConfig(unlimitedRoot, { uploads: { maxFileSizeMb: null } });
+    await expect(loadWorkspaceAssetPolicy(unlimitedRoot)).resolves.toMatchObject({
+      maxFileSizeBytes: null,
+      maxFileSizeMb: null
+    });
+
+    const zeroRoot = await tempWorkspace();
+    await writeConfig(zeroRoot, { uploads: { maxFileSizeMb: 0 } });
+    await expect(loadWorkspaceAssetPolicy(zeroRoot)).resolves.toMatchObject({
+      maxFileSizeBytes: 0,
+      maxFileSizeMb: 0
+    });
+  });
+
+  it("atomically saves normalized settings while preserving other configuration domains", async () => {
+    const root = await tempWorkspace();
+    await writeConfig(root, {
+      revisions: { retentionDays: 30 },
+      uploads: { maxFileSizeMb: 3 }
+    });
+
+    const settings = await saveWorkspaceSettings(root, {
+      uploads: {
+        maxFileSizeMb: null,
+        allowedFileTypes: ["PNG", ".pdf", ".PNG"]
+      },
+      editor: {
+        highlightMisspellings: true
+      }
+    });
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(root, WORKSPACE_CONFIG_PATH), "utf8")
+    ) as Record<string, unknown>;
+
+    expect(settings).toEqual({
+      uploads: {
+        maxFileSizeMb: null,
+        allowedFileTypes: [".png", ".pdf"]
+      },
+      editor: {
+        highlightMisspellings: true
+      }
+    });
+    expect(persisted).toEqual({
+      revisions: { retentionDays: 30 },
+      uploads: settings.uploads,
+      editor: settings.editor
     });
   });
 
@@ -59,8 +120,12 @@ describe("workspace upload configuration", () => {
     const invalidPolicies: Array<{ source: string; message: RegExp }> = [
       { source: "{", message: /Invalid \.rumi\/config\.json/u },
       {
-        source: JSON.stringify({ uploads: { maxFileSizeMb: 0 } }),
-        message: /must be an integer from 1 to 50/u
+        source: JSON.stringify({ uploads: { maxFileSizeMb: -1 } }),
+        message: /must be a non-negative whole number or null/u
+      },
+      {
+        source: JSON.stringify({ uploads: { maxFileSizeMb: 1.5 } }),
+        message: /must be a non-negative whole number or null/u
       },
       {
         source: JSON.stringify({ uploads: { allowedTypes: [".png"] } }),
@@ -69,6 +134,14 @@ describe("workspace upload configuration", () => {
       {
         source: JSON.stringify({ uploads: { allowedFileTypes: [".svg"] } }),
         message: /unsupported upload type/u
+      },
+      {
+        source: JSON.stringify({ editor: { highlightMisspellings: "yes" } }),
+        message: /editor\.highlightMisspellings must be a boolean/u
+      },
+      {
+        source: JSON.stringify({ editor: { spellcheck: false } }),
+        message: /unknown setting "spellcheck"/u
       }
     ];
 
@@ -92,9 +165,20 @@ describe("workspace upload configuration", () => {
       ".ico": Buffer.from([0, 0, 1, 0]),
       ".jpeg": Buffer.from([0xff, 0xd8, 0xff]),
       ".jpg": Buffer.from([0xff, 0xd8, 0xff]),
+      ".mp4": Buffer.from([
+        0, 0, 0, 20,
+        102, 116, 121, 112,
+        105, 115, 111, 109,
+        0, 0, 0, 0,
+        109, 112, 52, 50
+      ]),
       ".pdf": Buffer.from("%PDF-"),
       ".png": Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      ".webp": Buffer.from("RIFF0000WEBP")
+      ".webp": Buffer.from("RIFF0000WEBP"),
+      ".webm": Buffer.concat([
+        Buffer.from([0x1a, 0x45, 0xdf, 0xa3]),
+        Buffer.from("doctype-webm")
+      ])
     };
 
     expect(Object.keys(signatures)).toEqual(Object.keys(SUPPORTED_ASSET_CONTENT_TYPES));

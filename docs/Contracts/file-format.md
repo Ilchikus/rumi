@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-23"
+updated: "2026-07-27"
 ---
 # File Format
 
@@ -44,19 +44,30 @@ example:
 ```json
 {
   "uploads": {
-    "maxFileSizeMb": 10,
-    "allowedFileTypes": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"]
+    "maxFileSizeMb": 50,
+    "allowedFileTypes": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".mp4", ".webm"]
+  },
+  "editor": {
+    "highlightMisspellings": false
   }
 }
 ```
 
-The upload limit may be from 1 through 50 MB. Supported extensions are `.avif`, `.bmp`, `.gif`,
-`.ico`, `.jpeg`, `.jpg`, `.pdf`, `.png`, and `.webp`; a workspace can enable any subset, including
-an empty list to disable uploads. Rumi verifies uploaded bytes against the declared file type in
-addition to checking the filename extension. Existing workspace assets remain readable when a type
-is removed from the upload allowlist. Other top-level configuration domains can coexist in the same
-file, while unknown settings inside `uploads` are rejected to catch mistakes. Restart the workspace
-server after changing this configuration.
+The upload limit defaults to 50 MB when omitted. A positive whole number sets a per-file limit,
+zero disables uploads, and `null` represents the blank setting and removes Rumi's per-file limit.
+Supported extensions are `.avif`, `.bmp`, `.gif`, `.ico`, `.jpeg`, `.jpg`, `.mp4`, `.pdf`, `.png`,
+`.webp`, and `.webm`; a workspace can enable any subset, including an empty list to disable uploads.
+MP4 and WebM currently receive generic asset upload/read support rather than dedicated editor
+playback. Rumi verifies uploaded bytes against the declared file type in addition to checking the
+filename extension. Existing workspace assets remain readable when a type is removed from the
+upload allowlist. Other top-level configuration domains can coexist in the same file, while unknown
+settings inside `uploads` are rejected to catch mistakes. Restart the workspace server after
+changing this configuration by hand. The runtime settings command atomically preserves other
+top-level domains and applies upload-policy changes immediately.
+
+`editor.highlightMisspellings` controls the browser's native spellcheck underlines in the official
+editor. It defaults to `false`; setting it to `true` enables the browser's spelling suggestions for
+every page in the workspace. Unknown editor settings and non-boolean values are rejected.
 
 SQLite index data is rebuildable.
 

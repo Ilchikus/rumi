@@ -63,6 +63,7 @@ export interface RumiBlockEditorProps {
   onOpenDocument?: (path: string) => void
   onUploadAsset?: (file: File) => Promise<string>
   onMessage?: (message: string) => void
+  highlightMisspellings?: boolean
   readOnly?: boolean
   onDirty: () => void
 }
@@ -79,6 +80,7 @@ function ProseMirrorEditor(
     onOpenDocument,
     onUploadAsset,
     onMessage,
+    highlightMisspellings = false,
     readOnly = false,
     onDirty
   },
@@ -166,6 +168,9 @@ function ProseMirrorEditor(
     const view = new EditorView(editorRef.current, {
       state,
       editable: () => !readOnly,
+      attributes: {
+        spellcheck: highlightMisspellings ? "true" : "false"
+      },
       nodeViews: {
         heading: (node, view, getPos) => headingNodeView(node, view, getPos),
         code_block: (node, view, getPos) => codeBlockNodeView(node, view, getPos),
@@ -214,6 +219,13 @@ function ProseMirrorEditor(
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !readOnly })
   }, [readOnly])
+
+  useEffect(() => {
+    viewRef.current?.dom.setAttribute(
+      "spellcheck",
+      highlightMisspellings ? "true" : "false"
+    )
+  }, [highlightMisspellings])
 
   useImperativeHandle(ref, () => ({
     focus() {

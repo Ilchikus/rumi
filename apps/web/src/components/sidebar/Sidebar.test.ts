@@ -29,3 +29,69 @@ describe("sidebar create-menu shortcuts", () => {
     expect(editableTitleSource).toContain("range.selectNodeContents(root)");
   });
 });
+
+describe("sidebar settings entry", () => {
+  it("places a Phosphor Gear settings action above Trash", () => {
+    expect(sidebarSource).toContain(
+      'import { Gear } from "@phosphor-icons/react/dist/csr/Gear"'
+    );
+    expect(sidebarSource).toContain("onOpenSettings");
+    expect(sidebarSource.indexOf(">Settings</span>")).toBeLessThan(
+      sidebarSource.indexOf(">Trash</span>")
+    );
+  });
+
+  it("keeps the sidebar free of top and bottom horizontal rules", () => {
+    expect(sidebarSource).toContain(
+      '<header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">'
+    );
+    expect(sidebarSource).toContain('<footer className="space-y-0.5 p-2">');
+    expect(sidebarSource).not.toContain('<header className="border-b');
+    expect(sidebarSource).not.toContain('<footer className="border-t');
+  });
+});
+
+describe("sidebar active ancestor trail", () => {
+  it("uses a CSS sticky scope ending at the active item", () => {
+    expect(sidebarSource).toContain("const stickyAncestorIndexes = useMemo(");
+    expect(sidebarSource).toContain("const paths = selection ? ancestorPaths(selection.nodePath) : []");
+    expect(sidebarSource).toContain("paths.some((path) => !expandedPaths.has(path))");
+    expect(sidebarSource).toContain("flattenVisibleTreeRows(");
+    expect(sidebarSource).toContain(
+      "visibleTreeRows.slice(stickyScopeStartIndex, activeRowIndex)"
+    );
+    expect(sidebarSource).toContain('className="grid"');
+    expect(sidebarSource).toContain("gridTemplateRows:");
+    expect(sidebarSource).toContain("const stickyFootprintRows = isActiveAncestor");
+    expect(sidebarSource).toContain('className="pointer-events-none sticky self-stretch"');
+    expect(sidebarSource).toContain(
+      "gridRow: `${gridRow} / span ${stickyFootprintRows}`"
+    );
+    expect(sidebarSource).toContain('data-sidebar-sticky-ancestor={isActiveAncestor ? "true" : undefined}');
+    expect(sidebarSource).toContain("selection?.nodePath === node.path ? \"true\" : undefined");
+    expect(sidebarSource).toContain("zIndex: Math.max(1, 20 - stickyAncestorIndex)");
+    expect(sidebarSource).toContain("paddingLeft: TREE_ROW_PADDING_PX + depth * TREE_INDENT_PX");
+    expect(sidebarSource).toContain("<TreeDepthGuides");
+    expect(sidebarSource).toContain('className="min-h-0 overflow-y-auto overscroll-contain"');
+    expect(sidebarSource).not.toContain("stickyReleaseFrameRef");
+    expect(sidebarSource).not.toContain("activeRow.getBoundingClientRect()");
+    expect(sidebarSource).not.toContain("--rumi-sidebar-sticky-release");
+    expect(sidebarSource).not.toContain("onScroll=");
+    expect(sidebarSource).not.toContain("TREE_SCROLL_PADDING_PX");
+  });
+
+  it("keeps the complete active branch guide highlighted", () => {
+    expect(sidebarSource).toContain("const rowAncestorPaths = ancestorPaths(nodePath)");
+    expect(sidebarSource).toContain(
+      'stickyAncestorIndexes.has(rowAncestorPaths[index] ?? "")'
+    );
+    expect(sidebarSource).not.toContain('active ? "bg-primary/70" : "bg-border"');
+  });
+
+  it("uses solid neutral surfaces for the sidebar and active item", () => {
+    expect(sidebarSource).toContain("border-border bg-neutral-50 text-foreground");
+    expect(sidebarSource).toContain('isSelected && "bg-neutral-100 text-accent-foreground"');
+    expect(sidebarSource).not.toContain("bg-muted/35");
+    expect(sidebarSource).not.toContain("bg-muted/95");
+  });
+});

@@ -21,6 +21,8 @@ import type {
   SearchWorkspaceResultItem,
   TrashItem,
   TrashPageResult,
+  WorkspaceSettings,
+  WorkspaceSettingsResult,
   WorkspaceNode
 } from "@rumi/contracts";
 import type {
@@ -40,12 +42,16 @@ import type { EditableTitleSplitContext } from "./components/editor/EditablePage
 import { randomDatabaseOptionColor } from "./components/editor/DatabaseOptionPill";
 import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
 import { emptyPageTitle, pageTitleFromPath } from "./components/editor/pagePresentation";
+import {
+  EDITOR_PAGE_CONTAINER_CLASS
+} from "./components/layout/EditorPageLayout";
 import { WorkspaceHeader } from "./components/layout/WorkspaceHeader";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { SearchDialog } from "./components/search/SearchDialog";
+import { WorkspaceSettingsView } from "./components/settings/WorkspaceSettingsView";
 import { DeleteTrashItemDialog, TrashView } from "./components/trash/TrashView";
 import {
   clearLastOpenedPage,
@@ -56,6 +62,7 @@ import {
 import {
   findWorkspaceNodeForRoute,
   parseWorkspaceRoute,
+  reservedSystemRouteForName,
   workspaceUrlForNode
 } from "./lib/workspaceRoute";
 import { appShortcutAction, appShortcutPlatform, shortcutLabels } from "./lib/appShortcuts";
@@ -101,6 +108,24 @@ const MOBILE_SIDEBAR_TRANSITION_MS = 200;
 const AUTOSAVE_DELAY_MS = 800;
 const MAX_SAVE_REBASE_ATTEMPTS = 3;
 
+function showReservedSystemRouteToast(
+  parentPath: string,
+  name: string,
+  kind: Pick<WorkspaceNode, "kind">["kind"]
+): void {
+  const route = reservedSystemRouteForName(parentPath, name, kind);
+  if (!route) return;
+
+  toast.info(
+    <span>
+      “{route.label}” is reserved for the system page{" "}
+      <a className="text-sky-600 underline underline-offset-2" href={route.url}>
+        {route.label}
+      </a>.
+    </span>
+  );
+}
+
 function waitForEditorFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
@@ -132,6 +157,11 @@ export function App(): ReactElement {
   const [databaseRefreshRevisions, setDatabaseRefreshRevisions] = useState<DatabaseRefreshRevisions>({});
   const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [workspaceSettingsResult, setWorkspaceSettingsResult] =
+    useState<WorkspaceSettingsResult | null>(null);
+  const [settingsLoadState, setSettingsLoadState] = useState<LoadState>("idle");
+  const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
@@ -156,6 +186,7 @@ export function App(): ReactElement {
   const pageTitleUndoInFlightRef = useRef(false);
   const pageTitleEditRequestIdRef = useRef(0);
   const deferredReferenceRepairRef = useRef<RumiEvent | null>(null);
+  const settingsSaveInFlightRef = useRef(false);
   const pendingHistoryActionRef = useRef<"push" | "replace">("replace");
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
@@ -180,10 +211,12 @@ export function App(): ReactElement {
   useEffect(() => {
     document.title = activeTrashPage
       ? pageTitleFromPath(activeTrashPage.page.path, activeTrashPage.page.kind)
+      : settingsOpen
+        ? "Settings"
       : trashOpen
         ? "Trash"
         : pageTitle ?? "Rumi";
-  }, [activeTrashPage, pageTitle, trashOpen]);
+  }, [activeTrashPage, pageTitle, settingsOpen, trashOpen]);
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -213,6 +246,19 @@ export function App(): ReactElement {
     }
   }, [api]);
 
+  const loadWorkspaceSettings = useCallback(async () => {
+    setSettingsLoadState("loading");
+    try {
+      const result = await api.getWorkspaceSettings();
+      setWorkspaceSettingsResult(result);
+      setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+      setSettingsLoadState("idle");
+    } catch (error) {
+      setSettingsLoadState("error");
+      setMessage(errorMessage(error));
+    }
+  }, [api, setMessage]);
+
   useEffect(() => {
     void loadTree();
   }, [loadTree]);
@@ -220,6 +266,10 @@ export function App(): ReactElement {
   useEffect(() => {
     void loadTrash();
   }, [loadTrash]);
+
+  useEffect(() => {
+    void loadWorkspaceSettings();
+  }, [loadWorkspaceSettings]);
 
   useEffect(() => {
     pageRef.current = page;
@@ -737,6 +787,7 @@ export function App(): ReactElement {
       saveStateRef.current = "idle";
       setSaveState("idle");
       setMessage("");
+      setSettingsOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
 
@@ -803,6 +854,7 @@ export function App(): ReactElement {
     setPage(null);
     setDraftBody("");
     setSelection(null);
+    setSettingsOpen(false);
     setTrashOpen(false);
     setActiveTrashPage(null);
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
@@ -837,6 +889,7 @@ export function App(): ReactElement {
       setDraftBody("");
       setSelection(null);
       setSaveState("idle");
+      setSettingsOpen(false);
       setTrashOpen(true);
       setActiveTrashPage(result);
       setLoadState("idle");
@@ -855,8 +908,19 @@ export function App(): ReactElement {
     restoredWorkspaceRef.current = workspaceRootPath;
     const route = parseWorkspaceRoute(window.location.pathname);
 
+    if (route?.view === "settings") {
+      pendingHistoryActionRef.current = "replace";
+      setSettingsOpen(true);
+      setTrashOpen(false);
+      setActiveTrashPage(null);
+      setRouteSyncReady(true);
+      void loadWorkspaceSettings();
+      return;
+    }
+
     if (route?.view === "trash") {
       pendingHistoryActionRef.current = "replace";
+      setSettingsOpen(false);
       setTrashOpen(true);
       setActiveTrashPage(null);
       setRouteSyncReady(true);
@@ -915,7 +979,14 @@ export function App(): ReactElement {
 
     setRouteSyncReady(true);
     void openNode(node, "replace");
-  }, [loadTrash, openNode, openTrashPage, tree, workspaceRootPath]);
+  }, [
+    loadTrash,
+    loadWorkspaceSettings,
+    openNode,
+    openTrashPage,
+    tree,
+    workspaceRootPath
+  ]);
 
   useEffect(() => {
     if (!routeSyncReady || !tree) return;
@@ -924,7 +995,17 @@ export function App(): ReactElement {
       const route = parseWorkspaceRoute(window.location.pathname);
       pendingHistoryActionRef.current = "replace";
 
+      if (route?.view === "settings") {
+        setSettingsOpen(true);
+        setTrashOpen(false);
+        setActiveTrashPage(null);
+        setMessage("");
+        void loadWorkspaceSettings();
+        return;
+      }
+
       if (route?.view === "trash") {
+        setSettingsOpen(false);
         setTrashOpen(true);
         setActiveTrashPage(null);
         setMessage("");
@@ -952,6 +1033,7 @@ export function App(): ReactElement {
       }
 
       openRequestIdRef.current += 1;
+      setSettingsOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       setPage(null);
@@ -963,11 +1045,20 @@ export function App(): ReactElement {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [loadTrash, openNode, openTrashPage, routeSyncReady, tree]);
+  }, [
+    loadTrash,
+    loadWorkspaceSettings,
+    openNode,
+    openTrashPage,
+    routeSyncReady,
+    tree
+  ]);
 
   useEffect(() => {
     if (!routeSyncReady) return;
-    const nextUrl = activeTrashPage
+    const nextUrl = settingsOpen
+      ? "/settings"
+      : activeTrashPage
       ? `/trash/${activeTrashPage.item.id}?${new URLSearchParams({
           path: activeTrashPage.page.path
         }).toString()}`
@@ -985,7 +1076,7 @@ export function App(): ReactElement {
     const action = pendingHistoryActionRef.current;
     window.history[action === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
     pendingHistoryActionRef.current = "replace";
-  }, [activeTrashPage, routeSyncReady, selection, trashOpen, tree]);
+  }, [activeTrashPage, routeSyncReady, selection, settingsOpen, trashOpen, tree]);
 
   useEffect(() => {
     if (!workspaceRootPath || !page || !selection || selection.openPath !== page.path) {
@@ -1041,6 +1132,7 @@ export function App(): ReactElement {
         name,
         markdownBody: ""
       });
+      showReservedSystemRouteToast(parentPath, name, "page");
       clearPageLoadCache();
       const nextPage = await refreshAfterMutation(result.path);
       if (selectTitleAfterCreate && nextPage) {
@@ -1061,6 +1153,7 @@ export function App(): ReactElement {
   ) => {
     try {
       const result = await api.createFolder({ parentPath, name, markdownBody: "" });
+      showReservedSystemRouteToast(parentPath, name, "folder");
       clearPageLoadCache();
       const nextPage = await refreshAfterMutation(result.path);
       if (selectTitleAfterCreate && nextPage) {
@@ -1081,6 +1174,7 @@ export function App(): ReactElement {
   ) => {
     try {
       const result = await api.createDatabase({ parentPath, name });
+      showReservedSystemRouteToast(parentPath, name, "database");
       clearPageLoadCache();
       await loadTree();
       const nextPage = await loadPage(result.path);
@@ -1116,6 +1210,7 @@ export function App(): ReactElement {
 
   const openRecordPath = useCallback(async (recordPath: string) => {
     try {
+      setSettingsOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       const nextPage = await loadPage(recordPath);
@@ -1134,6 +1229,7 @@ export function App(): ReactElement {
 
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
     try {
+      setSettingsOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       const nextPage = await loadPage(item.path);
@@ -1163,6 +1259,11 @@ export function App(): ReactElement {
       try {
         const currentSelection = selectionRef.current;
         const result = await api.renameNode({ path: node.path, newName: nextName.trim() });
+        showReservedSystemRouteToast(
+          parentPathForPage(node.path),
+          nextName,
+          node.kind
+        );
         clearPageLoadCache();
         await loadTree();
 
@@ -1245,12 +1346,41 @@ export function App(): ReactElement {
 
   const openTrash = useCallback(() => {
     pendingHistoryActionRef.current = "push";
+    setSettingsOpen(false);
     setTrashOpen(true);
     setActiveTrashPage(null);
     setMessage("");
     void loadTrash();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
   }, [isNarrow, loadTrash]);
+
+  const openSettings = useCallback(() => {
+    pendingHistoryActionRef.current = "push";
+    setSettingsOpen(true);
+    setTrashOpen(false);
+    setActiveTrashPage(null);
+    setMessage("");
+    void loadWorkspaceSettings();
+    if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
+  }, [isNarrow, loadWorkspaceSettings]);
+
+  const saveWorkspaceSettings = useCallback(async (
+    settings: WorkspaceSettings
+  ): Promise<boolean> => {
+    if (settingsSaveInFlightRef.current) return false;
+    settingsSaveInFlightRef.current = true;
+    try {
+      const result = await api.updateWorkspaceSettings(settings);
+      setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+      setSettingsLoadState("idle");
+      return true;
+    } catch (error) {
+      setMessage(errorMessage(error));
+      return false;
+    } finally {
+      settingsSaveInFlightRef.current = false;
+    }
+  }, [api, setMessage]);
 
   const restoreTrashItem = useCallback(async (
     item: TrashItem,
@@ -1286,6 +1416,7 @@ export function App(): ReactElement {
           openPath: nextPage.path,
           kind: pageKindToNodeKind(nextPage.kind)
         });
+        setSettingsOpen(false);
         setTrashOpen(false);
         setActiveTrashPage(null);
         saveStateRef.current = "idle";
@@ -1310,6 +1441,7 @@ export function App(): ReactElement {
       await loadTrash();
       pendingHistoryActionRef.current = "replace";
       setActiveTrashPage((current) => current?.item.id === item.id ? null : current);
+      setSettingsOpen(false);
       setTrashOpen(true);
       setDeleteForeverTarget(null);
       setMessage("");
@@ -1616,6 +1748,7 @@ export function App(): ReactElement {
       }
 
       const result = await api.renameNode({ path: intent.previousNodePath, newName: finalNodeName });
+      showReservedSystemRouteToast(parentPath, finalNodeName, currentPage.kind);
       intent.expectedNodePath = result.path;
       intent.expectedPagePath = pagePathForRenamedNode(result.path, currentPage.kind);
       const latestPage = pageRef.current;
@@ -2165,10 +2298,11 @@ export function App(): ReactElement {
             workspaceName={workspaceName}
             workspaceKey={workspaceRootPath}
             tree={tree}
-            selection={trashOpen ? null : selection}
+            selection={trashOpen || settingsOpen ? null : selection}
             loadState={loadState}
             trashCount={trashItems.length}
             trashOpen={trashOpen}
+            settingsOpen={settingsOpen}
             collapsed={sidebarCollapsed}
             rootCreateMenuOpen={rootCreateMenuOpen}
             onToggleCollapsed={() => {
@@ -2187,6 +2321,7 @@ export function App(): ReactElement {
             onMoveNode={moveNode}
             onConvertNode={convertNode}
             onDeleteNode={deleteNode}
+            onOpenSettings={openSettings}
             onOpenTrash={openTrash}
           />
           {!isNarrow && (
@@ -2237,9 +2372,8 @@ export function App(): ReactElement {
           workspaceName={workspaceName}
           tree={tree}
           selection={selection}
-          trashOpen={trashOpen}
-          wide={trashOpen || page?.kind === "database"}
-          hasOpenPage={Boolean(page && !trashOpen)}
+          systemView={settingsOpen ? "settings" : trashOpen ? "trash" : null}
+          hasOpenPage={Boolean(page && !trashOpen && !settingsOpen)}
           onNavigate={(node) => void openNode(node)}
           onToggleSearch={() => setSearchOpen((open) => !open)}
           onMoveNode={moveNode}
@@ -2247,7 +2381,14 @@ export function App(): ReactElement {
           onSeeRevisions={() => setRevisionHistoryOpen(true)}
         />
 
-        {trashOpen && !activeTrashPage ? (
+        {settingsOpen ? (
+          <WorkspaceSettingsView
+            result={workspaceSettingsResult}
+            loadState={settingsLoadState}
+            onReload={() => void loadWorkspaceSettings()}
+            onSave={saveWorkspaceSettings}
+          />
+        ) : trashOpen && !activeTrashPage ? (
           <TrashView
             items={trashItems}
             loadState={trashLoadState}
@@ -2267,6 +2408,7 @@ export function App(): ReactElement {
                 <Button
                   type="button"
                   size="sm"
+                  variant="ghost"
                   disabled={restoringTrashId !== null || deletingTrashId !== null}
                   onClick={() => void restoreTrashItem(activeTrashPage.item, true)}
                 >
@@ -2276,17 +2418,18 @@ export function App(): ReactElement {
                 <Button
                   type="button"
                   size="sm"
-                  variant="destructive"
+                  variant="ghost"
+                  className="text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
                   disabled={restoringTrashId !== null || deletingTrashId !== null}
                   onClick={() => setDeleteForeverTarget(activeTrashPage.item)}
                 >
                   <Trash size={15} />
-                  {deletingTrashId === activeTrashPage.item.id ? "Deleting" : "Delete forever"}
+                  {deletingTrashId === activeTrashPage.item.id ? "Deleting" : "Delete"}
                 </Button>
               </div>
             </div>
             <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
-              <article className="mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 text-muted-foreground opacity-65 sm:px-10 sm:pt-16 lg:px-12">
+              <article className={`${EDITOR_PAGE_CONTAINER_CLASS} text-muted-foreground opacity-65`}>
                 <div className="contents" data-rumi-area-selection-exclude="">
                   <EditablePageTitle
                     title={pageTitleFromPath(activeTrashPage.page.path, activeTrashPage.page.kind)}
@@ -2311,6 +2454,7 @@ export function App(): ReactElement {
                         markdown={activeTrashPage.page.markdownBody}
                         documents={editorDocuments}
                         onMessage={setMessage}
+                        highlightMisspellings={highlightMisspellings}
                         readOnly
                         onDirty={() => undefined}
                       />
@@ -2322,9 +2466,7 @@ export function App(): ReactElement {
           </div>
         ) : page ? (
           <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
-            <article className={cn(
-              "mx-auto w-full max-w-[820px] px-6 pb-24 pt-12 sm:px-10 sm:pt-16 lg:px-12"
-            )}>
+            <article className={EDITOR_PAGE_CONTAINER_CLASS}>
               <div className="contents" data-rumi-area-selection-exclude="">
                 <EditablePageTitle
                   title={pageTitle ?? ""}
@@ -2398,6 +2540,7 @@ export function App(): ReactElement {
                     onOpenDocument={openDocumentLink}
                     onUploadAsset={uploadEditorAsset}
                     onMessage={setMessage}
+                    highlightMisspellings={highlightMisspellings}
                     onDirty={() => markPageDirty("editor-autosave")}
                   />
                 </Suspense>
@@ -2420,7 +2563,7 @@ export function App(): ReactElement {
         onConfirm={deleteTrashItemForever}
       />
 
-      {page && !trashOpen && (
+      {page && !trashOpen && !settingsOpen && (
         <RevisionHistoryDialog
           api={api}
           path={page.path}

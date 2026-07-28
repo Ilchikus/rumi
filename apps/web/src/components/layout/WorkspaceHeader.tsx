@@ -7,9 +7,11 @@ import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass"
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { findWorkspaceNode } from "../../lib/lastOpenedPage";
+import type { WorkspaceSystemView } from "../../lib/workspaceRoute";
 import { cn } from "../../lib/utils";
 import type { SidebarSelection } from "../sidebar/Sidebar";
 import { MoveNodeDialog } from "../sidebar/Sidebar";
+import { EDITOR_ADDRESS_BAR_CONTAINER_CLASS } from "./EditorPageLayout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,8 +24,7 @@ interface WorkspaceHeaderProps {
   workspaceName: string;
   tree: WorkspaceNode | null;
   selection: SidebarSelection | null;
-  trashOpen: boolean;
-  wide: boolean;
+  systemView: WorkspaceSystemView | null;
   hasOpenPage: boolean;
   onNavigate: (node: WorkspaceNode) => void;
   onToggleSearch: () => void;
@@ -43,8 +44,7 @@ export function WorkspaceHeader({
   workspaceName,
   tree,
   selection,
-  trashOpen,
-  wide,
+  systemView,
   hasOpenPage,
   onNavigate,
   onToggleSearch,
@@ -53,11 +53,11 @@ export function WorkspaceHeader({
   onSeeRevisions
 }: WorkspaceHeaderProps): ReactElement {
   const breadcrumbs = useMemo(
-    () => workspaceBreadcrumbs(workspaceName, tree, selection, trashOpen),
-    [selection, trashOpen, tree, workspaceName]
+    () => workspaceBreadcrumbs(workspaceName, tree, selection, systemView),
+    [selection, systemView, tree, workspaceName]
   );
   const activeNode = selection && tree ? findWorkspaceNode(tree, selection.nodePath) : null;
-  const canManageActiveNode = Boolean(activeNode && activeNode.kind !== "workspace" && !trashOpen);
+  const canManageActiveNode = Boolean(activeNode && activeNode.kind !== "workspace" && !systemView);
   const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
   const [moveBusy, setMoveBusy] = useState(false);
 
@@ -73,12 +73,7 @@ export function WorkspaceHeader({
 
   return (
     <header className="min-h-14 shrink-0 py-2.5">
-      <div
-        className={cn(
-          "mx-auto w-full px-6 sm:px-10 lg:px-12",
-          wide ? "max-w-[1120px]" : "max-w-[820px]"
-        )}
-      >
+      <div className={EDITOR_ADDRESS_BAR_CONTAINER_CLASS}>
         <div className="relative">
           <div
             data-rumi-address-bar=""
@@ -208,17 +203,18 @@ export function workspaceBreadcrumbs(
   workspaceName: string,
   tree: WorkspaceNode | null,
   selection: SidebarSelection | null,
-  trashOpen: boolean
+  systemView: WorkspaceSystemView | null
 ): WorkspaceBreadcrumb[] {
   const breadcrumbs: WorkspaceBreadcrumb[] = [{
     key: "workspace-root",
     label: workspaceName,
     node: tree,
-    current: (!selection || selection.nodePath === "") && !trashOpen
+    current: (!selection || selection.nodePath === "") && !systemView
   }];
 
-  if (trashOpen) {
-    breadcrumbs.push({ key: "trash", label: "Trash", node: null, current: true });
+  if (systemView) {
+    const label = systemView === "settings" ? "Settings" : "Trash";
+    breadcrumbs.push({ key: systemView, label, node: null, current: true });
     return breadcrumbs;
   }
 

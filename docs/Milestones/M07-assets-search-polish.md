@@ -10,7 +10,7 @@ depends_on:
   - M05
   - M06
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-07-27"
 ---
 # M07 Assets Search Polish
 
@@ -44,5 +44,7 @@ loading, and the first official block-editor preset are implemented. Asset uploa
 workspace-local Trash and restore are implemented. Rich bookmark/file/database embeds and
 open-page inline rename with revision-safe background reference repair, and URL-synchronized
 workspace navigation are implemented. The application shell now uses the root-folder identity and
-a centered breadcrumb/search address bar with current-item actions. Automated browser smoke
-coverage remains open.
+a centered breadcrumb/search address bar with current-item actions. Workspace-owned editor and
+upload settings are exposed through an editor-like `/settings` system page and typed runtime/API
+commands. `/settings` and `/trash` reserve their application views while equally named workspace
+content receives deterministic route suffixes. Automated browser smoke coverage remains open.

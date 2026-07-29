@@ -8,7 +8,7 @@ coverage:
   - api
   - docs
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-27
 ---
 # M07-006 URL-Synchronized Workspace Navigation
 
@@ -19,11 +19,13 @@ application shell mounted and visually stable.
 
 ## Delivered
 
-- Extensionless routes that mirror the real workspace folder hierarchy, plus `/trash`; database
-  records naturally use `/<database name>/<record name>`.
+- Extensionless routes that mirror the real workspace folder hierarchy, plus `/trash` and
+  `/settings`; database records naturally use `/<database name>/<record name>`.
 - Conventional lowercase slugs: whitespace becomes one hyphen, ordinary hyphens and underscores
   remain valid, and deterministic numeric suffixes disambiguate sibling spacing, punctuation,
-  case, page/directory, and reserved Trash collisions.
+  case, page/directory, and reserved system-page collisions.
+- Top-level workspace items named Trash or Settings remain valid at deterministic suffixed routes,
+  with successful create/rename feedback linking to the corresponding system page.
 - History API push navigation for sidebar, search, internal links, records, newly created items, and
   Trash.
 - Back/Forward restoration without full document reload or layout remount.

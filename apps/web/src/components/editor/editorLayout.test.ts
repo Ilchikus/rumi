@@ -26,6 +26,10 @@ const codeLanguagePicker = readFileSync(
   new URL("./migrated/plugins/CodeLanguagePicker.tsx", import.meta.url),
   "utf8"
 );
+const migratedEditor = readFileSync(
+  new URL("./migrated/ProseMirrorEditor.tsx", import.meta.url),
+  "utf8"
+);
 
 describe("editor layout contracts", () => {
   it("keeps oversized tables inside a two-axis scrolling content-width wrapper", () => {
@@ -141,6 +145,15 @@ describe("editor layout contracts", () => {
     expect(codeLanguagePicker).toContain("DropdownMenuContent");
     expect(codeLanguagePicker).toContain('aria-label="Search code languages"');
     expect(codeLanguagePicker).not.toContain("<select");
+  });
+
+  it("defaults browser misspelling highlighting off and updates it without remounting", () => {
+    expect(migratedEditor).toContain("highlightMisspellings = false");
+    expect(migratedEditor).toContain(
+      'spellcheck: highlightMisspellings ? "true" : "false"'
+    );
+    expect(migratedEditor).toContain('viewRef.current?.dom.setAttribute(');
+    expect(migratedEditor).toContain('[highlightMisspellings]');
   });
 });
 

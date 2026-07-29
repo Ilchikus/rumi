@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { WorkspaceSettings } from "@rumi/contracts";
 
 export const WORKSPACE_CONFIG_PATH = ".rumi/config.json";
-export const MAX_ASSET_FILE_SIZE_MB = 50;
+export const DEFAULT_ASSET_FILE_SIZE_MB = 50;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 
 export const SUPPORTED_ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
@@ -12,31 +14,86 @@ export const SUPPORTED_ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = O
   ".ico": "image/x-icon",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
+  ".mp4": "video/mp4",
   ".pdf": "application/pdf",
   ".png": "image/png",
-  ".webp": "image/webp"
+  ".webp": "image/webp",
+  ".webm": "video/webm"
 });
 
 export interface WorkspaceAssetPolicy {
-  maxFileSizeBytes: number;
-  maxFileSizeMb: number;
+  maxFileSizeBytes: number | null;
+  maxFileSizeMb: number | null;
   allowedFileTypes: readonly string[];
 }
 
-const DEFAULT_ASSET_POLICY: WorkspaceAssetPolicy = Object.freeze({
-  maxFileSizeBytes: MAX_ASSET_FILE_SIZE_MB * BYTES_PER_MEGABYTE,
-  maxFileSizeMb: MAX_ASSET_FILE_SIZE_MB,
-  allowedFileTypes: Object.freeze(Object.keys(SUPPORTED_ASSET_CONTENT_TYPES))
-});
+const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
+  uploads: {
+    maxFileSizeMb: DEFAULT_ASSET_FILE_SIZE_MB,
+    allowedFileTypes: Object.keys(SUPPORTED_ASSET_CONTENT_TYPES)
+  },
+  editor: {
+    highlightMisspellings: false
+  }
+};
 
 export async function loadWorkspaceAssetPolicy(rootPath: string): Promise<WorkspaceAssetPolicy> {
+  return workspaceAssetPolicyFromSettings(await loadWorkspaceSettings(rootPath));
+}
+
+export async function loadWorkspaceSettings(rootPath: string): Promise<WorkspaceSettings> {
+  const config = await readWorkspaceConfig(rootPath);
+  return workspaceSettingsFromConfig(config);
+}
+
+export async function saveWorkspaceSettings(
+  rootPath: string,
+  settings: WorkspaceSettings
+): Promise<WorkspaceSettings> {
+  const normalizedSettings = requireCompleteWorkspaceSettings(settings);
+  const currentConfig = await readWorkspaceConfig(rootPath);
+  const configPath = path.join(rootPath, WORKSPACE_CONFIG_PATH);
+  const temporaryPath = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
+  const nextConfig = {
+    ...currentConfig,
+    uploads: normalizedSettings.uploads,
+    editor: normalizedSettings.editor
+  };
+
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  try {
+    await fs.writeFile(
+      temporaryPath,
+      `${JSON.stringify(nextConfig, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 }
+    );
+    await fs.rename(temporaryPath, configPath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+
+  return normalizedSettings;
+}
+
+export function workspaceAssetPolicyFromSettings(
+  settings: WorkspaceSettings
+): WorkspaceAssetPolicy {
+  const maxFileSizeMb = settings.uploads.maxFileSizeMb;
+  return Object.freeze({
+    maxFileSizeBytes: maxFileSizeMb === null ? null : maxFileSizeMb * BYTES_PER_MEGABYTE,
+    maxFileSizeMb,
+    allowedFileTypes: Object.freeze([...settings.uploads.allowedFileTypes])
+  });
+}
+
+async function readWorkspaceConfig(rootPath: string): Promise<Record<string, unknown>> {
   const configPath = path.join(rootPath, WORKSPACE_CONFIG_PATH);
   const source = await fs.readFile(configPath, "utf8").catch((error: unknown) => {
     if (isNodeError(error) && error.code === "ENOENT") return null;
     throw error;
   });
 
-  if (source === null) return DEFAULT_ASSET_POLICY;
+  if (source === null) return {};
 
   let parsed: unknown;
   try {
@@ -45,24 +102,50 @@ export async function loadWorkspaceAssetPolicy(rootPath: string): Promise<Worksp
     throw new Error(`Invalid ${WORKSPACE_CONFIG_PATH}: ${errorMessage(error)}`);
   }
 
-  const config = requireObject(parsed, WORKSPACE_CONFIG_PATH);
-  if (!("uploads" in config)) return DEFAULT_ASSET_POLICY;
+  return requireObject(parsed, WORKSPACE_CONFIG_PATH);
+}
 
-  const uploads = requireObject(config.uploads, `${WORKSPACE_CONFIG_PATH} uploads`);
+function workspaceSettingsFromConfig(config: Record<string, unknown>): WorkspaceSettings {
+  const uploads = "uploads" in config
+    ? requireObject(config.uploads, `${WORKSPACE_CONFIG_PATH} uploads`)
+    : {};
+  const editor = "editor" in config
+    ? requireObject(config.editor, `${WORKSPACE_CONFIG_PATH} editor`)
+    : {};
+
   requireOnlyKeys(uploads, ["maxFileSizeMb", "allowedFileTypes"], `${WORKSPACE_CONFIG_PATH} uploads`);
+  requireOnlyKeys(editor, ["highlightMisspellings"], `${WORKSPACE_CONFIG_PATH} editor`);
 
   const maxFileSizeMb = "maxFileSizeMb" in uploads
     ? requireMaxFileSizeMb(uploads.maxFileSizeMb)
-    : DEFAULT_ASSET_POLICY.maxFileSizeMb;
+    : DEFAULT_WORKSPACE_SETTINGS.uploads.maxFileSizeMb;
   const allowedFileTypes = "allowedFileTypes" in uploads
     ? requireAllowedFileTypes(uploads.allowedFileTypes)
-    : DEFAULT_ASSET_POLICY.allowedFileTypes;
+    : DEFAULT_WORKSPACE_SETTINGS.uploads.allowedFileTypes;
+  const highlightMisspellings = "highlightMisspellings" in editor
+    ? requireBoolean(editor.highlightMisspellings, "editor.highlightMisspellings")
+    : DEFAULT_WORKSPACE_SETTINGS.editor.highlightMisspellings;
 
-  return Object.freeze({
-    maxFileSizeBytes: maxFileSizeMb * BYTES_PER_MEGABYTE,
-    maxFileSizeMb,
-    allowedFileTypes: Object.freeze([...allowedFileTypes])
-  });
+  return {
+    uploads: {
+      maxFileSizeMb,
+      allowedFileTypes: [...allowedFileTypes]
+    },
+    editor: {
+      highlightMisspellings
+    }
+  };
+}
+
+function requireCompleteWorkspaceSettings(value: unknown): WorkspaceSettings {
+  const settings = requireObject(value, "workspace settings");
+  requireOnlyKeys(settings, ["uploads", "editor"], "workspace settings");
+
+  if (!("uploads" in settings) || !("editor" in settings)) {
+    throw new Error("Invalid workspace settings: uploads and editor settings are required");
+  }
+
+  return workspaceSettingsFromConfig(settings);
 }
 
 export function assetContentMatchesFileType(extension: string, data: Uint8Array): boolean {
@@ -78,21 +161,26 @@ export function assetContentMatchesFileType(extension: string, data: Uint8Array)
     case ".jpeg":
     case ".jpg":
       return hasBytes(data, [0xff, 0xd8, 0xff]);
+    case ".mp4":
+      return isMp4(data);
     case ".pdf":
       return hasAscii(data, 0, "%PDF-");
     case ".png":
       return hasBytes(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     case ".webp":
       return hasAscii(data, 0, "RIFF") && hasAscii(data, 8, "WEBP");
+    case ".webm":
+      return isWebm(data);
     default:
       return false;
   }
 }
 
-function requireMaxFileSizeMb(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_ASSET_FILE_SIZE_MB) {
+function requireMaxFileSizeMb(value: unknown): number | null {
+  if (value === null) return null;
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw new Error(
-      `Invalid ${WORKSPACE_CONFIG_PATH}: uploads.maxFileSizeMb must be an integer from 1 to ${MAX_ASSET_FILE_SIZE_MB}`
+      `Invalid ${WORKSPACE_CONFIG_PATH}: uploads.maxFileSizeMb must be a non-negative whole number or null`
     );
   }
   return value as number;
@@ -122,6 +210,13 @@ function requireAllowedFileTypes(value: unknown): readonly string[] {
   return [...new Set(normalized)];
 }
 
+function requireBoolean(value: unknown, setting: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid ${WORKSPACE_CONFIG_PATH}: ${setting} must be a boolean`);
+  }
+  return value;
+}
+
 function requireObject(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`Invalid ${label}: expected an object`);
@@ -147,6 +242,27 @@ function isAvif(data: Uint8Array): boolean {
 
   for (let offset = 8; offset + 4 <= boxLength; offset += 4) {
     if (hasAscii(data, offset, "avif") || hasAscii(data, offset, "avis")) return true;
+  }
+  return false;
+}
+
+function isMp4(data: Uint8Array): boolean {
+  if (!hasAscii(data, 4, "ftyp") || data.byteLength < 12) return false;
+  const boxLength = Math.min(readUint32(data, 0), data.byteLength);
+  if (boxLength < 12) return false;
+
+  const mp4Brands = ["avc1", "iso2", "iso4", "iso5", "iso6", "isom", "M4V ", "mp41", "mp42"];
+  for (let offset = 8; offset + 4 <= boxLength; offset += 4) {
+    if (mp4Brands.some((brand) => hasAscii(data, offset, brand))) return true;
+  }
+  return false;
+}
+
+function isWebm(data: Uint8Array): boolean {
+  if (!hasBytes(data, [0x1a, 0x45, 0xdf, 0xa3])) return false;
+  const searchEnd = Math.min(data.byteLength, 4096);
+  for (let offset = 4; offset + 4 <= searchEnd; offset += 1) {
+    if (hasAscii(data, offset, "webm")) return true;
   }
   return false;
 }

@@ -3,6 +3,8 @@ import type { WorkspaceNode } from "@rumi/contracts";
 import {
   findWorkspaceNodeForRoute,
   parseWorkspaceRoute,
+  reservedSystemRouteForName,
+  reservedSystemRouteForNode,
   workspaceUrlForNode
 } from "./workspaceRoute";
 
@@ -53,6 +55,12 @@ const tree: WorkspaceNode = {
       children: [
         { path: "Project-Files/Résumé.md", name: "Résumé.md", kind: "page" }
       ]
+    },
+    {
+      path: "settings",
+      name: "settings",
+      kind: "folder",
+      companionPath: "settings/settings.index.md"
     }
   ]
 };
@@ -98,9 +106,27 @@ describe("workspace browser routes", () => {
     const workspaceTrash = tree.children![7]!;
     expect(parseWorkspaceRoute("/trash")).toEqual({ view: "trash" });
     expect(workspaceUrlForNode(workspaceTrash, tree)).toBe("/trash-2");
+    expect(workspaceUrlForNode(workspaceTrash)).toBe("/trash-2");
     const route = parseWorkspaceRoute("/trash-2");
     expect(route).toEqual({ view: "node", slugPath: "trash-2" });
     expect(route && findWorkspaceNodeForRoute(tree, route)).toBe(workspaceTrash);
+  });
+
+  it("keeps application Settings distinct from a workspace item named settings", () => {
+    const workspaceSettings = tree.children![9]!;
+    expect(parseWorkspaceRoute("/settings")).toEqual({ view: "settings" });
+    expect(workspaceUrlForNode(workspaceSettings, tree)).toBe("/settings-2");
+    expect(workspaceUrlForNode(workspaceSettings)).toBe("/settings-2");
+    expect(reservedSystemRouteForNode(workspaceSettings)).toEqual({
+      view: "settings",
+      label: "Settings",
+      url: "/settings"
+    });
+    const route = parseWorkspaceRoute("/settings-2");
+    expect(route).toEqual({ view: "node", slugPath: "settings-2" });
+    expect(route && findWorkspaceNodeForRoute(tree, route)).toBe(workspaceSettings);
+    expect(reservedSystemRouteForName("", "Settings.md", "page")?.url).toBe("/settings");
+    expect(reservedSystemRouteForName("Projects", "Settings", "folder")).toBeNull();
   });
 
   it("parses direct read-only Trash item routes", () => {
@@ -118,6 +144,7 @@ describe("workspace browser routes", () => {
       slugPath: "my-page"
     });
     expect(parseWorkspaceRoute("/TRASH")).toEqual({ view: "trash" });
+    expect(parseWorkspaceRoute("/SETTINGS")).toEqual({ view: "settings" });
     expect(parseWorkspaceRoute("/%2E%2E")).toBeNull();
   });
 

@@ -2,8 +2,8 @@ import { EditorState, NodeSelection, TextSelection } from "prosemirror-state"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
-  exitEmptyFlatListItem,
   removeEmptyParagraphBlock,
+  resetEmptyFormattedBlock,
   splitFlatListItem
 } from "./keymap"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
@@ -15,6 +15,11 @@ import {
   multiBlockSelectionPlugin,
   selectAllBlocksInStages
 } from "./plugins/multiBlockSelection"
+import {
+  inactiveBlockSelectionKey,
+  inactiveBlockSelectionPlugin,
+  transactionLeavesEditorInactive
+} from "./inactiveBlockSelection"
 import { schema } from "./schema"
 
 function blockPositions(state: EditorState): number[] {
@@ -164,6 +169,84 @@ describe("live editor blank block deletion", () => {
     expect(state.selection.$from.parentOffset).toBe("Keep me".length)
   })
 
+  it("removes a middle empty paragraph and returns to the previous block's end", () => {
+    const previous = schema.nodes.paragraph!.create(null, schema.text("Previous"))
+    const empty = schema.nodes.paragraph!.create()
+    const next = schema.nodes.paragraph!.create(null, schema.text("Next"))
+    const doc = schema.nodes.doc!.create(null, [previous, empty, next])
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, previous.nodeSize + 1)
+    })
+
+    expect(removeEmptyParagraphBlock(schema)(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(state.doc.childCount).toBe(2)
+    expect(state.selection.$from.parent).toBe(state.doc.firstChild)
+    expect(state.selection.$from.parentOffset).toBe("Previous".length)
+  })
+
+  it("resets an empty heading to a paragraph without touching the previous row", () => {
+    const content = schema.nodes.paragraph!.create(null, schema.text("Keep me"))
+    const heading = schema.nodes.heading!.create({ level: 2 })
+    const doc = schema.nodes.doc!.create(null, [content, heading])
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, content.nodeSize + 1)
+    })
+
+    expect(resetEmptyFormattedBlock(schema)(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(state.doc.childCount).toBe(2)
+    expect(state.doc.firstChild).toBe(content)
+    expect(state.doc.lastChild?.type).toBe(schema.nodes.paragraph)
+    expect(state.selection.$from.parent).toBe(state.doc.lastChild)
+    expect(state.selection.$from.parentOffset).toBe(0)
+  })
+
+  it.each([
+    ["database_embed", { source: "Projects" }],
+    ["file_embed", { src: "spec.pdf" }],
+    ["horizontal_rule", null]
+  ])(
+    "removes a blank paragraph after %s without leaving it visibly active",
+    (typeName, attrs) => {
+      const boundary = schema.nodes[typeName]!.create(attrs)
+      const empty = schema.nodes.paragraph!.create()
+      const doc = schema.nodes.doc!.create(null, [boundary, empty])
+      let state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, boundary.nodeSize + 1),
+        plugins: [inactiveBlockSelectionPlugin()]
+      })
+      let deactivatesSelection = false
+
+      expect(removeEmptyParagraphBlock(schema)(state, (transaction) => {
+        deactivatesSelection = transactionLeavesEditorInactive(transaction)
+        state = state.apply(transaction)
+      })).toBe(true)
+      expect(deactivatesSelection).toBe(true)
+      expect(state.doc.childCount).toBe(1)
+      expect(state.doc.firstChild).toBe(boundary)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+      expect(state.selection).toBeInstanceOf(NodeSelection)
+      expect(state.selection.from).toBe(0)
+
+      const paragraphPos = state.doc.content.size
+      let activateTransaction = state.tr.insert(
+        paragraphPos,
+        schema.nodes.paragraph!.create()
+      )
+      activateTransaction = activateTransaction.setSelection(
+        TextSelection.create(activateTransaction.doc, paragraphPos + 1)
+      )
+      state = state.apply(activateTransaction)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+    }
+  )
+
   it.each(["bullet_item", "numbered_item", "task_item"])(
     "exits an empty %s into a blank paragraph in the same position",
     (typeName) => {
@@ -176,7 +259,7 @@ describe("live editor blank block deletion", () => {
         selection: TextSelection.create(doc, content.nodeSize + 1)
       })
 
-      expect(exitEmptyFlatListItem(schema)(state, (transaction) => {
+      expect(resetEmptyFormattedBlock(schema)(state, (transaction) => {
         state = state.apply(transaction)
       })).toBe(true)
       expect(state.doc.childCount).toBe(2)
@@ -196,7 +279,7 @@ describe("live editor blank block deletion", () => {
       selection: TextSelection.create(doc, 1)
     })
 
-    expect(exitEmptyFlatListItem(schema)(state, (transaction) => {
+    expect(resetEmptyFormattedBlock(schema)(state, (transaction) => {
       state = state.apply(transaction)
     })).toBe(true)
     expect(state.doc.childCount).toBe(1)

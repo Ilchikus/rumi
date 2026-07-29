@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -54,6 +54,8 @@ import type {
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
   UpdateDatabaseViewRequest,
+  WorkspaceSettings,
+  WorkspaceSettingsResult,
   WorkspaceNode,
   WorkspaceNodeKind,
   WorkspaceMutationResult
@@ -89,13 +91,17 @@ import { WorkspaceTrash } from "./trash";
 import { WorkspaceIndex } from "./workspace-index";
 import {
   assetContentMatchesFileType,
+  DEFAULT_ASSET_FILE_SIZE_MB,
   loadWorkspaceAssetPolicy,
+  loadWorkspaceSettings,
+  saveWorkspaceSettings,
   SUPPORTED_ASSET_CONTENT_TYPES,
+  workspaceAssetPolicyFromSettings,
   type WorkspaceAssetPolicy
 } from "./workspace-config";
 
 export {
-  MAX_ASSET_FILE_SIZE_MB,
+  DEFAULT_ASSET_FILE_SIZE_MB,
   SUPPORTED_ASSET_CONTENT_TYPES,
   WORKSPACE_CONFIG_PATH,
   type WorkspaceAssetPolicy
@@ -156,7 +162,7 @@ export class RuntimeEventBus {
 export class WorkspaceRuntime {
   readonly rootPath: string;
   readonly name: string;
-  readonly assetPolicy: WorkspaceAssetPolicy;
+  assetPolicy: WorkspaceAssetPolicy;
   readonly events = new RuntimeEventBus();
   private readonly revisions: RevisionStore;
   private readonly trash: WorkspaceTrash;
@@ -206,6 +212,20 @@ export class WorkspaceRuntime {
     };
   }
 
+  async getWorkspaceSettings(): Promise<WorkspaceSettingsResult> {
+    const settings = await loadWorkspaceSettings(this.rootPath);
+    this.assetPolicy = workspaceAssetPolicyFromSettings(settings);
+    return workspaceSettingsResult(settings);
+  }
+
+  async updateWorkspaceSettings(
+    settings: WorkspaceSettings
+  ): Promise<WorkspaceSettingsResult> {
+    const normalizedSettings = await saveWorkspaceSettings(this.rootPath, settings);
+    this.assetPolicy = workspaceAssetPolicyFromSettings(normalizedSettings);
+    return workspaceSettingsResult(normalizedSettings);
+  }
+
   async getTree(): Promise<WorkspaceNode> {
     return this.readDirectoryTree("");
   }
@@ -235,44 +255,101 @@ export class WorkspaceRuntime {
   }
 
   async saveAsset(fileName: string, data: Uint8Array): Promise<SaveAssetResult> {
+    return this.saveAssetStream(fileName, toAsyncByteSource(data));
+  }
+
+  async saveAssetStream(
+    fileName: string,
+    source: AsyncIterable<Uint8Array>
+  ): Promise<SaveAssetResult> {
     const cleanedName = sanitizeAssetFileName(fileName);
     const extension = path.posix.extname(cleanedName).toLocaleLowerCase();
     const contentType = SUPPORTED_ASSET_CONTENT_TYPES[extension];
     if (!contentType) throw new Error(`Unsupported asset type: ${extension || "unknown"}`);
+    if (this.assetPolicy.maxFileSizeMb === 0) {
+      throw new Error("Asset uploads are disabled by this workspace's size setting");
+    }
     if (!this.assetPolicy.allowedFileTypes.includes(extension)) {
       throw new Error(`Asset type is not allowed by this workspace: ${extension}`);
     }
-    if (data.byteLength === 0) throw new Error("Asset content is required");
-    if (data.byteLength > this.assetPolicy.maxFileSizeBytes) {
-      throw new Error(`Asset exceeds this workspace's ${this.assetPolicy.maxFileSizeMb} MB upload limit`);
-    }
-    if (!assetContentMatchesFileType(extension, data)) {
-      throw new Error(`Asset content does not match its ${extension} file type`);
-    }
 
+    const uploadDirectory = this.resolveAbsolutePath(".rumi/uploads");
+    const temporaryPath = path.join(uploadDirectory, `${process.pid}-${randomUUID()}.tmp`);
+    const signatureChunks: Buffer[] = [];
+    let signatureLength = 0;
+    let totalLength = 0;
+
+    await fs.mkdir(uploadDirectory, { recursive: true });
     await fs.mkdir(this.resolveAbsolutePath(".assets"), { recursive: true });
-    const desiredPath = path.posix.join(".assets", cleanedName);
-    const relPath = await availableWorkspacePath(
-      desiredPath,
-      false,
-      this.resolveAbsolutePath.bind(this)
-    );
 
-    await fs.writeFile(this.resolveAbsolutePath(relPath), data, { flag: "wx" });
-    const event: RumiEvent = {
-      name: "asset.changed",
-      path: relPath,
-      changedBy: "editor",
-      affects: ["asset", "workspace-tree"]
-    };
-    this.events.publish(event);
-    return {
-      status: "saved",
-      path: relPath,
-      fileName: path.posix.basename(relPath),
-      contentType,
-      events: [event]
-    };
+    try {
+      const temporaryFile = await fs.open(temporaryPath, "wx");
+      try {
+        for await (const chunk of source) {
+          if (chunk.byteLength === 0) continue;
+          totalLength += chunk.byteLength;
+          if (
+            this.assetPolicy.maxFileSizeBytes !== null &&
+            totalLength > this.assetPolicy.maxFileSizeBytes
+          ) {
+            throw new Error(
+              `Asset exceeds this workspace's ${this.assetPolicy.maxFileSizeMb} MB upload limit`
+            );
+          }
+
+          if (signatureLength < 4096) {
+            const signatureChunk = Buffer.from(
+              chunk.subarray(0, Math.min(chunk.byteLength, 4096 - signatureLength))
+            );
+            signatureChunks.push(signatureChunk);
+            signatureLength += signatureChunk.byteLength;
+          }
+          await writeAll(temporaryFile, chunk);
+        }
+      } finally {
+        await temporaryFile.close();
+      }
+
+      if (totalLength === 0) throw new Error("Asset content is required");
+      const signature = Buffer.concat(signatureChunks, signatureLength);
+      if (!assetContentMatchesFileType(extension, signature)) {
+        throw new Error(`Asset content does not match its ${extension} file type`);
+      }
+
+      const desiredPath = path.posix.join(".assets", cleanedName);
+      let relPath: string;
+      while (true) {
+        relPath = await availableWorkspacePath(
+          desiredPath,
+          false,
+          this.resolveAbsolutePath.bind(this)
+        );
+        try {
+          await fs.link(temporaryPath, this.resolveAbsolutePath(relPath));
+          break;
+        } catch (error) {
+          if (isNodeError(error) && error.code === "EEXIST") continue;
+          throw error;
+        }
+      }
+
+      const event: RumiEvent = {
+        name: "asset.changed",
+        path: relPath,
+        changedBy: "editor",
+        affects: ["asset", "workspace-tree"]
+      };
+      this.events.publish(event);
+      return {
+        status: "saved",
+        path: relPath,
+        fileName: path.posix.basename(relPath),
+        contentType,
+        events: [event]
+      };
+    } finally {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
   }
 
   async openPage(inputPath: string): Promise<PageDocument> {
@@ -1973,6 +2050,18 @@ export async function createTempWorkspace(prefix = "rumi-runtime-"): Promise<str
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
+function workspaceSettingsResult(settings: WorkspaceSettings): WorkspaceSettingsResult {
+  return {
+    settings,
+    constraints: {
+      uploads: {
+        defaultMaxFileSizeMb: DEFAULT_ASSET_FILE_SIZE_MB,
+        supportedFileTypes: Object.keys(SUPPORTED_ASSET_CONTENT_TYPES)
+      }
+    }
+  };
+}
+
 function nodeKindForFile(relPath: string): WorkspaceNodeKind {
   const fileKind = classifyFilePath(relPath);
 
@@ -2052,6 +2141,22 @@ async function pathExists(filePath: string): Promise<boolean> {
       if (isNodeError(error) && error.code === "ENOENT") return false;
       throw error;
     });
+}
+
+async function* toAsyncByteSource(data: Uint8Array): AsyncGenerator<Uint8Array> {
+  yield data;
+}
+
+async function writeAll(
+  file: Awaited<ReturnType<typeof fs.open>>,
+  data: Uint8Array
+): Promise<void> {
+  let offset = 0;
+  while (offset < data.byteLength) {
+    const { bytesWritten } = await file.write(data, offset, data.byteLength - offset);
+    if (bytesWritten === 0) throw new Error("Asset upload could not be written");
+    offset += bytesWritten;
+  }
 }
 
 function rootIndexPaths(workspaceName: string): string[] {

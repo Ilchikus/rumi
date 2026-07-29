@@ -1,8 +1,13 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, {
+  LogController,
+  type FastifyInstance,
+  type FastifyRequest
+} from "fastify";
 import fastifyStatic from "@fastify/static";
 import fs from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
+import type { Readable } from "node:stream";
 import type {
   AuthLoginRequest,
   AuthSessionResult,
@@ -33,9 +38,14 @@ import type {
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
-  UpdateDatabaseViewRequest
+  UpdateDatabaseViewRequest,
+  WorkspaceSettings,
+  WorkspaceSettingsResult
 } from "@rumi/contracts";
-import { enterRumiEventSourceClient, WorkspaceRuntime } from "@rumi/runtime";
+import {
+  enterRumiEventSourceClient,
+  WorkspaceRuntime
+} from "@rumi/runtime";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
 
 const SESSION_COOKIE_NAME = "rumi_session";
@@ -122,11 +132,10 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
                 }
               : {})
           },
-    disableRequestLogging: true
+    logController: new LogController({ disableRequestLogging: true })
   });
   server.addContentTypeParser(
     "application/octet-stream",
-    { parseAs: "buffer", bodyLimit: runtime.assetPolicy.maxFileSizeBytes },
     (_request, body, done) => done(null, body)
   );
   const webRoot = await resolveWebRoot(options.webRoot);
@@ -344,6 +353,29 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     return runtime.info();
   });
 
+  server.get("/api/workspace/settings", async (request): Promise<WorkspaceSettingsResult> => {
+    request.log.info({ workspace: runtime.rootPath }, "workspace.settings.read");
+    return runtime.getWorkspaceSettings();
+  });
+
+  server.put<{ Body: WorkspaceSettings }>(
+    "/api/workspace/settings",
+    async (request, reply): Promise<WorkspaceSettingsResult | unknown> => {
+      try {
+        const result = await runtime.updateWorkspaceSettings(request.body);
+        request.log.info({ workspace: runtime.rootPath }, "workspace.settings.update");
+        return result;
+      } catch (error) {
+        return reply.status(400).send({
+          error: {
+            code: "invalid_workspace_settings",
+            message: error instanceof Error ? error.message : "Workspace settings could not be saved"
+          }
+        });
+      }
+    }
+  );
+
   server.get("/api/tree", async (request) => {
     request.log.info({ workspace: runtime.rootPath }, "tree.read");
     return runtime.getTree();
@@ -370,16 +402,20 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
 
   server.post<{
     Querystring: { fileName?: string };
-    Body: Buffer;
+    Body: Readable;
   }>("/api/assets", async (request, reply): Promise<SaveAssetResult | unknown> => {
-    if (!request.query.fileName || !Buffer.isBuffer(request.body) || request.body.length === 0) {
+    if (
+      !request.query.fileName ||
+      !request.body ||
+      typeof request.body[Symbol.asyncIterator] !== "function"
+    ) {
       return reply.status(400).send({
         error: { code: "invalid_asset_upload", message: "Asset name and content are required" }
       });
     }
 
     try {
-      return await runtime.saveAsset(request.query.fileName, request.body);
+      return await runtime.saveAssetStream(request.query.fileName, request.body);
     } catch (error) {
       return reply.status(400).send({
         error: {

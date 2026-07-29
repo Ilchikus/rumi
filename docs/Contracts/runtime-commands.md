@@ -3,7 +3,7 @@ status: draft
 area: runtime
 owner: runtime
 created: 2026-06-22
-updated: 2026-07-23
+updated: 2026-07-27
 ---
 # Runtime Commands
 
@@ -13,9 +13,12 @@ Initial commands:
 
 ```text
 openWorkspace
+getWorkspaceSettings
+updateWorkspaceSettings
 getTree
 readAsset
 saveAsset
+saveAssetStream
 openPage
 savePage
 createPage
@@ -60,6 +63,10 @@ schema. They preserve unsupported future schema/view definitions and publish
 Commands own side effects:
 
 - File writes.
+- Atomic workspace-setting writes that preserve unrelated `.rumi/config.json` domains and update
+  the live upload policy.
+- Streamed asset writes that enforce the live size policy while bytes arrive, validate the file
+  signature, and atomically publish only complete uploads.
 - Index updates.
 - Reference repair.
 - Event emission.

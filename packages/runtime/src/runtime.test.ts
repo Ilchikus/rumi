@@ -138,6 +138,139 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("reads and updates workspace settings for subsequent editor and upload behavior", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await expect(runtime.getWorkspaceSettings()).resolves.toMatchObject({
+      settings: {
+        uploads: {
+          maxFileSizeMb: 50,
+          allowedFileTypes: expect.arrayContaining([".png", ".pdf"])
+        },
+        editor: {
+          highlightMisspellings: false
+        }
+      },
+      constraints: {
+        uploads: {
+          defaultMaxFileSizeMb: 50,
+          supportedFileTypes: expect.arrayContaining([".png", ".pdf", ".mp4", ".webm"])
+        }
+      }
+    });
+
+    const updated = await runtime.updateWorkspaceSettings({
+      uploads: {
+        maxFileSizeMb: 2,
+        allowedFileTypes: [".png"]
+      },
+      editor: {
+        highlightMisspellings: true
+      }
+    });
+
+    expect(updated.settings.editor.highlightMisspellings).toBe(true);
+    expect(runtime.assetPolicy).toEqual({
+      maxFileSizeBytes: 2 * 1024 * 1024,
+      maxFileSizeMb: 2,
+      allowedFileTypes: [".png"]
+    });
+    await expect(
+      runtime.saveAsset("document.pdf", Buffer.from("%PDF-1.7"))
+    ).rejects.toThrow(/not allowed by this workspace/u);
+    await expect(
+      fs.readFile(path.join(root, ".rumi", "config.json"), "utf8")
+    ).resolves.toContain('"highlightMisspellings": true');
+  });
+
+  it("supports disabled and unlimited upload policies", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await runtime.updateWorkspaceSettings({
+      uploads: {
+        maxFileSizeMb: 0,
+        allowedFileTypes: [".png"]
+      },
+      editor: {
+        highlightMisspellings: false
+      }
+    });
+    await expect(runtime.saveAsset("disabled.png", png)).rejects.toThrow(
+      /uploads are disabled by this workspace's size setting/u
+    );
+
+    await runtime.updateWorkspaceSettings({
+      uploads: {
+        maxFileSizeMb: null,
+        allowedFileTypes: [".png"]
+      },
+      editor: {
+        highlightMisspellings: false
+      }
+    });
+    expect(runtime.assetPolicy).toMatchObject({
+      maxFileSizeBytes: null,
+      maxFileSizeMb: null
+    });
+    await expect(runtime.saveAsset("unlimited.png", png)).resolves.toMatchObject({
+      status: "saved"
+    });
+
+    await runtime.updateWorkspaceSettings({
+      uploads: {
+        maxFileSizeMb: null,
+        allowedFileTypes: []
+      },
+      editor: {
+        highlightMisspellings: false
+      }
+    });
+    await expect(runtime.saveAsset("disabled-by-format.png", png)).rejects.toThrow(
+      /not allowed by this workspace/u
+    );
+  });
+
+  it("streams uploads without publishing partial or invalid assets", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await runtime.updateWorkspaceSettings({
+      uploads: {
+        maxFileSizeMb: 1,
+        allowedFileTypes: [".png"]
+      },
+      editor: {
+        highlightMisspellings: false
+      }
+    });
+
+    const result = await runtime.saveAssetStream(
+      "streamed.png",
+      byteSource(pngHeader.subarray(0, 4), pngHeader.subarray(4))
+    );
+    expect(result).toMatchObject({
+      status: "saved",
+      path: ".assets/streamed.png"
+    });
+    await expect(fs.readFile(path.join(root, result.path))).resolves.toEqual(pngHeader);
+
+    await expect(
+      runtime.saveAssetStream(
+        "oversized.png",
+        byteSource(pngHeader, Buffer.alloc(1024 * 1024))
+      )
+    ).rejects.toThrow(/1 MB upload limit/u);
+    await expect(
+      runtime.saveAssetStream("invalid.png", byteSource(Buffer.from("not a png")))
+    ).rejects.toThrow(/does not match/u);
+    await expect(fs.readdir(path.join(root, ".assets"))).resolves.toEqual(["streamed.png"]);
+    await expect(fs.readdir(path.join(root, ".rumi", "uploads"))).resolves.toEqual([]);
+  });
+
   it("opens a page with frontmatter, body, and hashes", async () => {
     const root = await tempWorkspace();
     await fs.writeFile(path.join(root, "Idea.md"), "---\nstatus: ready\n---\n# Idea", "utf8");
@@ -1598,6 +1731,10 @@ describe("WorkspaceRuntime", () => {
     ]);
   });
 });
+
+async function* byteSource(...chunks: Uint8Array[]): AsyncGenerator<Uint8Array> {
+  for (const chunk of chunks) yield chunk;
+}
 
 async function tempWorkspace(): Promise<string> {
   const root = await createTempWorkspace();

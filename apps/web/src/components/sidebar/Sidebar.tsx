@@ -8,6 +8,7 @@ import { FileText } from "@phosphor-icons/react/dist/csr/FileText";
 import { Folder } from "@phosphor-icons/react/dist/csr/Folder";
 import { FolderOpen } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { FolderPlus } from "@phosphor-icons/react/dist/csr/FolderPlus";
+import { Gear } from "@phosphor-icons/react/dist/csr/Gear";
 import { NotePencil } from "@phosphor-icons/react/dist/csr/NotePencil";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
@@ -70,6 +71,7 @@ interface SidebarProps {
   loadState: "idle" | "loading" | "error";
   trashCount: number;
   trashOpen: boolean;
+  settingsOpen: boolean;
   collapsed: boolean;
   rootCreateMenuOpen: boolean;
   onToggleCollapsed: () => void;
@@ -84,6 +86,7 @@ interface SidebarProps {
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
+  onOpenSettings: () => void;
   onOpenTrash: () => void;
 }
 
@@ -91,14 +94,32 @@ export type SidebarCreateKind = "page" | "folder" | "database";
 type CreateKind = SidebarCreateKind;
 
 const TREE_INDENT_PX = 20;
-const TREE_ROW_PADDING_PX = 6;
-const CREATE_ROW_PADDING_PX = 31;
+const TREE_ROW_HEIGHT_PX = 32;
+const TREE_ROW_PADDING_PX = 14;
+const CREATE_ROW_PADDING_PX = 39;
 const ENTITY_ICON_CLASS = "text-neutral-400";
 
 interface CreateTarget {
   parentPath: string;
   kind: CreateKind;
 }
+
+interface VisibleTreeNodeRow {
+  type: "node";
+  key: string;
+  node: WorkspaceNode;
+  depth: number;
+}
+
+interface VisibleTreeCreateRow {
+  type: "create";
+  key: string;
+  parentPath: string;
+  kind: CreateKind;
+  depth: number;
+}
+
+type VisibleTreeRow = VisibleTreeNodeRow | VisibleTreeCreateRow;
 
 interface FloatingMenu {
   node: WorkspaceNode | null;
@@ -122,6 +143,7 @@ export function Sidebar({
   loadState,
   trashCount,
   trashOpen,
+  settingsOpen,
   collapsed,
   rootCreateMenuOpen,
   onToggleCollapsed,
@@ -136,6 +158,7 @@ export function Sidebar({
   onMoveNode,
   onConvertNode,
   onDeleteNode,
+  onOpenSettings,
   onOpenTrash
 }: SidebarProps): ReactElement {
   const shortcutPlatform = appShortcutPlatform();
@@ -151,6 +174,40 @@ export function Sidebar({
   const [moveBusy, setMoveBusy] = useState(false);
   const [convertTarget, setConvertTarget] = useState<WorkspaceNode | null>(null);
   const [convertBusy, setConvertBusy] = useState(false);
+  const stickyAncestorIndexes = useMemo(() => {
+    const paths = selection ? ancestorPaths(selection.nodePath) : [];
+    if (paths.some((path) => !expandedPaths.has(path))) {
+      return new Map<string, number>();
+    }
+
+    return new Map(paths.map((path, index) => [path, index] as const));
+  }, [expandedPaths, selection?.nodePath]);
+  const visibleTreeRows = useMemo(
+    () => flattenVisibleTreeRows(tree?.children ?? [], expandedPaths, createTarget),
+    [createTarget, expandedPaths, tree]
+  );
+  const activeRowIndex = selection
+    ? visibleTreeRows.findIndex(
+        (row) => row.type === "node" && row.node.path === selection.nodePath
+      )
+    : -1;
+  const firstStickyPath = stickyAncestorIndexes.keys().next().value as string | undefined;
+  const stickyScopeStartIndex = firstStickyPath
+    ? visibleTreeRows.findIndex(
+        (row) => row.type === "node" && row.node.path === firstStickyPath
+      )
+    : -1;
+  const hasStickyScope =
+    stickyScopeStartIndex >= 0 && activeRowIndex > stickyScopeStartIndex;
+  const rowsBeforeStickyScope = hasStickyScope
+    ? visibleTreeRows.slice(0, stickyScopeStartIndex)
+    : visibleTreeRows;
+  const stickyScopeRows = hasStickyScope
+    ? visibleTreeRows.slice(stickyScopeStartIndex, activeRowIndex)
+    : [];
+  const rowsAfterStickyScope = hasStickyScope
+    ? visibleTreeRows.slice(activeRowIndex)
+    : [];
 
   const updateExpandedPaths = useCallback((
     update: (current: Set<string>) => Set<string>
@@ -301,9 +358,60 @@ export function Sidebar({
     setFloatingMenu({ node, point: { x: event.clientX, y: event.clientY } });
   }, []);
 
+  const renderVisibleTreeRow = (
+    row: VisibleTreeRow,
+    gridRow?: number
+  ): ReactElement => {
+    if (row.type === "create") {
+      return (
+        <div
+          key={row.key}
+          style={gridRow === undefined ? undefined : {
+            gridColumn: 1,
+            gridRowStart: gridRow
+          }}
+        >
+          <CreateInput
+            depth={row.depth}
+            kind={row.kind}
+            parentPath={row.parentPath}
+            onCancel={() => setCreateTarget(null)}
+            onCreatePage={onCreatePage}
+            onCreateFolder={onCreateFolder}
+            onCreateDatabase={onCreateDatabase}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <TreeNode
+        key={row.key}
+        node={row.node}
+        depth={row.depth}
+        {...(gridRow === undefined ? {} : { gridRow })}
+        selection={selection}
+        stickyAncestorIndexes={stickyAncestorIndexes}
+        expandedPaths={expandedPaths}
+        renamingPath={renamingPath}
+        onPrefetchNode={onPrefetchNode}
+        onOpenNode={onOpenNode}
+        onToggleExpanded={toggleExpanded}
+        onStartCreate={startCreate}
+        onStartRename={startRename}
+        onRenameNode={onRenameNode}
+        onMoveNode={requestMove}
+        onConvertNode={requestConvert}
+        onDeleteNode={requestDelete}
+        onCancelRename={() => setRenamingPath(null)}
+        onOpenContextMenu={openNodeMenu}
+      />
+    );
+  };
+
   return (
-    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-muted/35 text-foreground">
-      <header className="border-b border-border p-3">
+    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-neutral-50 text-foreground">
+      <header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0">
             <button
@@ -341,9 +449,12 @@ export function Sidebar({
         </div>
       </header>
 
-      <div className="min-h-0 overflow-y-auto overscroll-contain p-2" onContextMenu={openRootMenu}>
+      <div
+        className="min-h-0 overflow-y-auto overscroll-contain"
+        onContextMenu={openRootMenu}
+      >
         {tree ? (
-          <div className="space-y-0.5 pb-8">
+          <div className="pb-8">
             <CreateSlot
               target={createTarget}
               parentPath=""
@@ -353,32 +464,22 @@ export function Sidebar({
               onCreateFolder={onCreateFolder}
               onCreateDatabase={onCreateDatabase}
             />
-            {(tree.children ?? []).map((child) => (
-              <TreeNode
-                key={child.path}
-                node={child}
-                depth={0}
-                selection={selection}
-                expandedPaths={expandedPaths}
-                renamingPath={renamingPath}
-                createTarget={createTarget}
-                onPrefetchNode={onPrefetchNode}
-                onOpenNode={onOpenNode}
-                onToggleExpanded={toggleExpanded}
-                onStartCreate={startCreate}
-                onStartRename={startRename}
-                onRenameNode={onRenameNode}
-                onMoveNode={requestMove}
-                onConvertNode={requestConvert}
-                onDeleteNode={requestDelete}
-                onCancelRename={() => setRenamingPath(null)}
-                onCancelCreate={() => setCreateTarget(null)}
-                onCreatePage={onCreatePage}
-                onCreateFolder={onCreateFolder}
-                onCreateDatabase={onCreateDatabase}
-                onOpenContextMenu={openNodeMenu}
-              />
-            ))}
+            {rowsBeforeStickyScope.map((row) => renderVisibleTreeRow(row))}
+            {hasStickyScope && (
+              <div
+                className="grid"
+                style={{
+                  gridTemplateRows: `repeat(${
+                    stickyScopeRows.length
+                  }, ${TREE_ROW_HEIGHT_PX}px)`
+                }}
+              >
+                {stickyScopeRows.map((row, index) =>
+                  renderVisibleTreeRow(row, index + 1)
+                )}
+              </div>
+            )}
+            {rowsAfterStickyScope.map((row) => renderVisibleTreeRow(row))}
           </div>
         ) : (
           <p className="px-2 py-3 text-sm text-muted-foreground">
@@ -387,12 +488,25 @@ export function Sidebar({
         )}
       </div>
 
-      <footer className="border-t border-border p-2">
+      <footer className="space-y-0.5 p-2">
         <button
           type="button"
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
-            trashOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            settingsOpen
+              ? "bg-neutral-100 text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          )}
+          onClick={onOpenSettings}
+        >
+          <span className="grid h-5 w-5 shrink-0 place-items-center"><Gear size={17} /></span>
+          <span className="min-w-0 flex-1 truncate">Settings</span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
+            trashOpen ? "bg-neutral-100 text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           aria-current={trashOpen ? "page" : undefined}
           onClick={onOpenTrash}
@@ -450,10 +564,11 @@ export function Sidebar({
 interface TreeNodeProps {
   node: WorkspaceNode;
   depth: number;
+  gridRow?: number;
   selection: SidebarSelection | null;
+  stickyAncestorIndexes: ReadonlyMap<string, number>;
   expandedPaths: Set<string>;
   renamingPath: string | null;
-  createTarget: CreateTarget | null;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onToggleExpanded: (path: string) => void;
@@ -464,20 +579,17 @@ interface TreeNodeProps {
   onConvertNode: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => void;
   onCancelRename: () => void;
-  onCancelCreate: () => void;
-  onCreatePage: (parentPath: string, name: string) => Promise<void>;
-  onCreateFolder: (parentPath: string, name: string) => Promise<void>;
-  onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onOpenContextMenu: (node: WorkspaceNode, event: MouseEvent<HTMLElement>) => void;
 }
 
 function TreeNode({
   node,
   depth,
+  gridRow,
   selection,
+  stickyAncestorIndexes,
   expandedPaths,
   renamingPath,
-  createTarget,
   onPrefetchNode,
   onOpenNode,
   onToggleExpanded,
@@ -488,56 +600,100 @@ function TreeNode({
   onConvertNode,
   onDeleteNode,
   onCancelRename,
-  onCancelCreate,
-  onCreatePage,
-  onCreateFolder,
-  onCreateDatabase,
   onOpenContextMenu
 }: TreeNodeProps): ReactElement {
   const isContainer = isContainerNode(node);
   const isExpanded = expandedPaths.has(node.path);
   const isSelected = selection?.nodePath === node.path || selection?.openPath === node.path;
-  const hasActiveDescendant = Boolean(
-    selection && isContainer && (isPathInside(selection.nodePath, node.path) || isPathInside(selection.openPath, node.path))
-  );
+  const stickyAncestorIndex = isContainer
+    ? stickyAncestorIndexes.get(node.path)
+    : undefined;
+  const isActiveAncestor = stickyAncestorIndex !== undefined;
+  // Every footprint ends at the same stacked edge. The grid scope ends directly
+  // before the active row, so native sticky containment releases them together.
+  const stickyFootprintRows = isActiveAncestor
+    ? stickyAncestorIndexes.size - stickyAncestorIndex
+    : 0;
   const isRenaming = renamingPath === node.path;
 
-  return (
-    <div data-sidebar-node="true">
-      <div
-        className={cn(
-          "rumi-sidebar-node group flex h-8 items-center gap-1 rounded-md pr-1 text-sm hover:bg-accent",
-          isSelected && "bg-accent text-accent-foreground"
-        )}
-        style={{ paddingLeft: TREE_ROW_PADDING_PX }}
-        onContextMenu={(event) => onOpenContextMenu(node, event)}
-        aria-level={depth + 1}
-      >
-        <button
-          type="button"
-          className={cn(
-            "grid h-6 w-5 shrink-0 place-items-center rounded text-muted-foreground",
-            isContainer && "hover:bg-background/70 hover:text-foreground"
-          )}
-          disabled={!isContainer}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (isContainer) {
-              onToggleExpanded(node.path);
+  const treeRow = (
+    <div
+      className={cn(
+        "rumi-sidebar-node group relative flex h-8 items-center gap-1 rounded-md pr-3 text-sm",
+        isActiveAncestor && "pointer-events-auto bg-neutral-50 hover:bg-accent",
+        !isActiveAncestor && !isSelected && "hover:bg-accent",
+        isSelected && "bg-neutral-100 text-accent-foreground"
+      )}
+      style={{
+        paddingLeft: TREE_ROW_PADDING_PX + depth * TREE_INDENT_PX,
+        ...(gridRow !== undefined && !isActiveAncestor
+          ? {
+              gridColumn: 1,
+              gridRowStart: gridRow
             }
-          }}
-          aria-label={isExpanded ? "Collapse" : "Expand"}
-        >
-          {isContainer ? (
-            isExpanded ? <CaretDown size={13} weight="bold" /> : <CaretRight size={13} weight="bold" />
-          ) : (
-            <span />
-          )}
-        </button>
+          : {})
+      }}
+      data-sidebar-node="true"
+      data-sidebar-sticky-ancestor={isActiveAncestor ? "true" : undefined}
+      data-sidebar-active-item={
+        selection?.nodePath === node.path ? "true" : undefined
+      }
+      onContextMenu={(event) => onOpenContextMenu(node, event)}
+      aria-level={depth + 1}
+    >
+      <TreeDepthGuides
+        depth={depth}
+        nodePath={node.path}
+        stickyAncestorIndexes={stickyAncestorIndexes}
+      />
+      <button
+        type="button"
+        className={cn(
+          "grid h-6 w-5 shrink-0 place-items-center rounded text-muted-foreground",
+          isContainer && "hover:bg-background/70 hover:text-foreground"
+        )}
+        disabled={!isContainer}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (isContainer) {
+            onToggleExpanded(node.path);
+          }
+        }}
+        aria-label={isExpanded ? "Collapse" : "Expand"}
+      >
+        {isContainer ? (
+          isExpanded ? <CaretDown size={13} weight="bold" /> : <CaretRight size={13} weight="bold" />
+        ) : (
+          <span />
+        )}
+      </button>
 
+      <button
+        type="button"
+        className="grid h-6 w-5 shrink-0 place-items-center text-muted-foreground"
+        onPointerEnter={() => onPrefetchNode(node)}
+        onPointerDown={() => onPrefetchNode(node)}
+        onFocus={() => onPrefetchNode(node)}
+        onClick={() => onOpenNode(node)}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          onStartRename(node);
+        }}
+        aria-label={`Open ${displayName(node.name)}`}
+      >
+        <NodeIcon kind={node.kind} expanded={isExpanded} />
+      </button>
+
+      {isRenaming ? (
+        <RenameInput
+          node={node}
+          onCancel={onCancelRename}
+          onRename={onRenameNode}
+        />
+      ) : (
         <button
           type="button"
-          className="grid h-6 w-5 shrink-0 place-items-center text-muted-foreground"
+          className="min-w-0 flex-1 truncate text-left"
           onPointerEnter={() => onPrefetchNode(node)}
           onPointerDown={() => onPrefetchNode(node)}
           onFocus={() => onPrefetchNode(node)}
@@ -546,89 +702,38 @@ function TreeNode({
             event.preventDefault();
             onStartRename(node);
           }}
-          aria-label={`Open ${displayName(node.name)}`}
         >
-          <NodeIcon kind={node.kind} expanded={isExpanded} />
+          <span className={cn("truncate", isSelected && "font-semibold")}>{displayName(node.name)}</span>
         </button>
-
-        {isRenaming ? (
-          <RenameInput
-            node={node}
-            onCancel={onCancelRename}
-            onRename={onRenameNode}
-          />
-        ) : (
-          <button
-            type="button"
-            className="min-w-0 flex-1 truncate text-left"
-            onPointerEnter={() => onPrefetchNode(node)}
-            onPointerDown={() => onPrefetchNode(node)}
-            onFocus={() => onPrefetchNode(node)}
-            onClick={() => onOpenNode(node)}
-            onDoubleClick={(event) => {
-              event.preventDefault();
-              onStartRename(node);
-            }}
-          >
-            <span className={cn("truncate", isSelected && "font-semibold")}>{displayName(node.name)}</span>
-          </button>
-        )}
-
-        <NodeMenu
-          node={node}
-          onCreate={onStartCreate}
-          onRename={onStartRename}
-          onMove={onMoveNode}
-          onConvert={onConvertNode}
-          onDelete={onDeleteNode}
-        />
-      </div>
-
-      {isContainer && isExpanded && (
-        <div
-          className={cn(
-            "border-l",
-            hasActiveDescendant ? "border-primary/70" : "border-border"
-          )}
-          style={{ marginLeft: TREE_INDENT_PX }}
-        >
-          <CreateSlot
-            target={createTarget}
-            parentPath={node.path}
-            depth={depth + 1}
-            onCancel={onCancelCreate}
-            onCreatePage={onCreatePage}
-            onCreateFolder={onCreateFolder}
-            onCreateDatabase={onCreateDatabase}
-          />
-          {(node.children ?? []).map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selection={selection}
-              expandedPaths={expandedPaths}
-              renamingPath={renamingPath}
-              createTarget={createTarget}
-              onPrefetchNode={onPrefetchNode}
-              onOpenNode={onOpenNode}
-              onToggleExpanded={onToggleExpanded}
-              onStartCreate={onStartCreate}
-              onStartRename={onStartRename}
-              onRenameNode={onRenameNode}
-              onMoveNode={onMoveNode}
-              onConvertNode={onConvertNode}
-              onDeleteNode={onDeleteNode}
-              onCancelRename={onCancelRename}
-              onCancelCreate={onCancelCreate}
-              onCreatePage={onCreatePage}
-              onCreateFolder={onCreateFolder}
-              onCreateDatabase={onCreateDatabase}
-              onOpenContextMenu={onOpenContextMenu}
-            />
-          ))}
-        </div>
       )}
+
+      <NodeMenu
+        node={node}
+        onCreate={onStartCreate}
+        onRename={onStartRename}
+        onMove={onMoveNode}
+        onConvert={onConvertNode}
+        onDelete={onDeleteNode}
+      />
+    </div>
+  );
+
+  if (!isActiveAncestor || gridRow === undefined) {
+    return treeRow;
+  }
+
+  return (
+    <div
+      className="pointer-events-none sticky self-stretch"
+      style={{
+        gridColumn: 1,
+        gridRow: `${gridRow} / span ${stickyFootprintRows}`,
+        top: stickyAncestorIndex * TREE_ROW_HEIGHT_PX,
+        zIndex: Math.max(1, 20 - stickyAncestorIndex)
+      }}
+      data-sidebar-sticky-footprint="true"
+    >
+      {treeRow}
     </div>
   );
 }
@@ -673,6 +778,36 @@ function NodeMenu({
         />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function TreeDepthGuides({
+  depth,
+  nodePath,
+  stickyAncestorIndexes
+}: {
+  depth: number;
+  nodePath: string;
+  stickyAncestorIndexes: ReadonlyMap<string, number>;
+}): ReactElement {
+  const rowAncestorPaths = ancestorPaths(nodePath);
+
+  return (
+    <>
+      {Array.from({ length: depth }, (_, index) => (
+        <span
+          key={index}
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 w-px",
+            stickyAncestorIndexes.has(rowAncestorPaths[index] ?? "")
+              ? "bg-primary/70"
+              : "bg-border"
+          )}
+          style={{ left: (index + 1) * TREE_INDENT_PX }}
+        />
+      ))}
+    </>
   );
 }
 
@@ -1168,8 +1303,8 @@ function CreateInput({
 
   return (
     <div
-      className="flex h-8 items-center gap-1 pr-1"
-      style={{ paddingLeft: CREATE_ROW_PADDING_PX }}
+      className="flex h-8 items-center gap-1 pr-3"
+      style={{ paddingLeft: CREATE_ROW_PADDING_PX + depth * TREE_INDENT_PX }}
       aria-level={depth + 1}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center">
@@ -1349,6 +1484,47 @@ function EntityIcon({
   }
 
   return <FileText size={16} className={ENTITY_ICON_CLASS} />;
+}
+
+function flattenVisibleTreeRows(
+  nodes: WorkspaceNode[],
+  expandedPaths: ReadonlySet<string>,
+  createTarget: CreateTarget | null,
+  depth = 0,
+  rows: VisibleTreeRow[] = []
+): VisibleTreeRow[] {
+  for (const node of nodes) {
+    rows.push({
+      type: "node",
+      key: `node:${node.path}`,
+      node,
+      depth
+    });
+
+    if (!isContainerNode(node) || !expandedPaths.has(node.path)) {
+      continue;
+    }
+
+    if (createTarget?.parentPath === node.path) {
+      rows.push({
+        type: "create",
+        key: `create:${node.path}:${createTarget.kind}`,
+        parentPath: node.path,
+        kind: createTarget.kind,
+        depth: depth + 1
+      });
+    }
+
+    flattenVisibleTreeRows(
+      node.children ?? [],
+      expandedPaths,
+      createTarget,
+      depth + 1,
+      rows
+    );
+  }
+
+  return rows;
 }
 
 function isContainerNode(node: WorkspaceNode): boolean {

@@ -132,16 +132,23 @@ describe("Rumi server API", () => {
     await server.close();
   });
 
-  it("uses the workspace upload policy as the HTTP request limit", async () => {
+  it("reads and updates workspace settings while enforcing the current upload policy", async () => {
     const root = await tempWorkspace();
     await fs.mkdir(path.join(root, ".rumi"), { recursive: true });
     await fs.writeFile(
       path.join(root, ".rumi", "config.json"),
-      JSON.stringify({ uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] } }),
+      JSON.stringify({
+        uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] },
+        editor: { highlightMisspellings: false }
+      }),
       "utf8"
     );
     const { server } = await createRumiServer({ workspacePath: root });
 
+    const initial = await server.inject({
+      method: "GET",
+      url: "/api/workspace/settings"
+    });
     const pdf = await server.inject({
       method: "POST",
       url: "/api/assets?fileName=document.pdf",
@@ -154,12 +161,62 @@ describe("Rumi server API", () => {
       headers: { "content-type": "application/octet-stream" },
       payload: Buffer.alloc(1024 * 1024 + 1)
     });
+    const update = await server.inject({
+      method: "PUT",
+      url: "/api/workspace/settings",
+      payload: {
+        uploads: { maxFileSizeMb: null, allowedFileTypes: [".pdf"] },
+        editor: { highlightMisspellings: true }
+      }
+    });
+    const allowedPdf = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=document.pdf",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.from("%PDF-1.7")
+    });
+    const invalid = await server.inject({
+      method: "PUT",
+      url: "/api/workspace/settings",
+      payload: {
+        uploads: { maxFileSizeMb: 2, allowedFileTypes: [".pdf"] },
+        editor: { highlightMisspellings: "yes" }
+      }
+    });
 
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toMatchObject({
+      settings: {
+        uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] },
+        editor: { highlightMisspellings: false }
+      },
+      constraints: {
+        uploads: { defaultMaxFileSizeMb: 50 }
+      }
+    });
     expect(pdf.statusCode).toBe(400);
     expect(pdf.json()).toMatchObject({
       error: { message: expect.stringMatching(/not allowed by this workspace/) }
     });
-    expect(oversized.statusCode).toBe(413);
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json()).toMatchObject({
+      error: { message: expect.stringMatching(/1 MB upload limit/) }
+    });
+    expect(update.statusCode).toBe(200);
+    expect(update.json()).toMatchObject({
+      settings: {
+        uploads: { maxFileSizeMb: null, allowedFileTypes: [".pdf"] },
+        editor: { highlightMisspellings: true }
+      }
+    });
+    expect(allowedPdf.statusCode).toBe(200);
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({
+      error: {
+        code: "invalid_workspace_settings",
+        message: expect.stringMatching(/must be a boolean/)
+      }
+    });
 
     await server.close();
   });

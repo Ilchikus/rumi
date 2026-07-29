@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-07-23"
+updated: "2026-07-27"
 ---
 # API Shape
 
@@ -31,7 +31,13 @@ API tests should protect shape, not duplicate every runtime behavior test.
 
 Current command groups include workspace/tree/page mutation, database schema/record/query, indexed
 search, Rumi revision checkpoint/list/content/restore, workspace asset upload/read, authentication,
-portable Trash list/restore, and normalized events.
+portable Trash list/restore, workspace settings, and normalized events.
+
+`GET /api/workspace/settings` returns normalized editor/upload settings plus the server-supported
+upload constraints. `PUT /api/workspace/settings` accepts the complete normalized settings object,
+validates and atomically persists it through the runtime, preserves unrelated top-level
+configuration domains, and returns the applied result. The official client never writes
+`.rumi/config.json` directly.
 
 Opening a Markdown record directly inside a database includes its database path, schema, and schema
 version in the page response. This lets any client render typed record properties without querying
@@ -43,9 +49,14 @@ creation are also versioned domain commands. Database queries accept an optional
 the runtime applies that view's nested saved filters and sorts. Full-page and embedded clients use
 the same command shapes described in the [database views contract](database-views.md).
 
-`POST /api/assets?fileName=...` accepts bounded raw asset bytes and returns the runtime-selected
-relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted image/PDF formats from
-safe workspace paths. The client never receives a raw workspace filesystem path.
+`POST /api/assets?fileName=...` accepts raw asset bytes and returns the runtime-selected
+relative `.assets/` path. `GET /api/asset?path=...` serves only allowlisted asset formats from
+safe workspace paths. The HTTP adapter does not add a fixed 50 MB product ceiling; the runtime
+enforces the current workspace-specific size and format policy so settings updates apply without a
+restart. A `null` maximum means no Rumi file-size limit, zero disables uploads, and an empty format
+allowlist also disables uploads. Incoming bytes stream through hidden temporary storage, size limits
+are enforced as data arrives, and a verified upload appears atomically in `.assets/`; incomplete or
+invalid uploads are removed. The client never receives a raw workspace filesystem path.
 
 `POST /api/nodes/delete` moves the requested user-content payload to workspace-local Trash.
 `GET /api/trash` lists recoverable items and their original relative paths.
@@ -71,15 +82,18 @@ The official client uses same-origin History API routes without reloading its sh
 ```text
 /<workspace folder>/<extensionless page>
 /trash
+/settings
 ```
 
 Pages, folders, databases, and database records follow their real workspace hierarchy without type
 prefixes. Route segments are lowercase, replace whitespace with a single `-`, preserve ordinary
 `-` and `_` characters, and hide `.md`. If sibling names would produce the same slug because of
 spacing, punctuation, case, or page/directory overlap, the router adds the first available numeric
-suffix (`-2`, `-3`, and so on). `/trash` remains reserved for application Trash, so a top-level
-workspace item named Trash is disambiguated the same way. The server's SPA fallback makes these
-URLs refreshable and directly shareable.
+suffix (`-2`, `-3`, and so on). `/trash` and `/settings` are reserved for application pages.
+Top-level workspace content named Trash or Settings remains valid and resolves to `/trash-2` or
+`/settings-2`; Rumi does not reject portable filesystem names. A successful create or rename that
+uses one of these reserved root slugs shows an informational toast linking to the corresponding
+system page. The server's SPA fallback makes these URLs refreshable and directly shareable.
 
 ## Authentication
 

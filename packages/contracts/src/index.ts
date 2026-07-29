@@ -340,6 +340,32 @@ export interface OpenWorkspaceResult {
   name: string;
 }
 
+export interface WorkspaceUploadSettings {
+  maxFileSizeMb: number | null;
+  allowedFileTypes: string[];
+}
+
+export interface WorkspaceEditorSettings {
+  highlightMisspellings: boolean;
+}
+
+export interface WorkspaceSettings {
+  uploads: WorkspaceUploadSettings;
+  editor: WorkspaceEditorSettings;
+}
+
+export interface WorkspaceSettingsConstraints {
+  uploads: {
+    defaultMaxFileSizeMb: number;
+    supportedFileTypes: string[];
+  };
+}
+
+export interface WorkspaceSettingsResult {
+  settings: WorkspaceSettings;
+  constraints: WorkspaceSettingsConstraints;
+}
+
 export type PageDocumentKind = "page" | "folder" | "database";
 
 export interface PageDatabaseContext {

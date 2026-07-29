@@ -6,7 +6,7 @@ areas:
   - editor
 impact: high
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-07-27"
 ---
 # Frontend Stack
 
@@ -41,5 +41,7 @@ The neutral-first color rule keeps the UI quiet and inspectable while the produc
   are lowercase, hide `.md`, and map whitespace to a single hyphen. Existing hyphens and underscores
   remain valid filename characters. When sibling items collapse to the same slug because of spacing,
   punctuation, case, or page/directory overlap, deterministic `-2`, `-3`, and later suffixes keep
-  every route distinct. The server owns the SPA deep-link fallback and continues returning structured
-  errors for unknown API routes.
+  every route distinct. `/trash` and `/settings` are application-owned system pages; equally named
+  top-level workspace content remains valid and receives the same deterministic suffix treatment,
+  beginning with `/trash-2` or `/settings-2`. The server owns the SPA deep-link fallback and
+  continues returning structured errors for unknown API routes.

@@ -10,6 +10,10 @@ import {
 } from "prosemirror-state"
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view"
 import { Fragment, Schema } from "prosemirror-model"
+import {
+  createCaretlessBlankBlockDeletionTransaction,
+  transactionLeavesEditorInactive
+} from "../inactiveBlockSelection"
 
 export interface MultiBlockSelectionState {
   selectedBlocks: number[]
@@ -277,31 +281,66 @@ export function clearMultiBlockSelection(view: EditorView) {
   view.dispatch(tr)
 }
 
-export function deleteSelectedBlocks(view: EditorView) {
-  const pluginState = multiBlockSelectionKey.getState(view.state)
-  if (!pluginState || !pluginState.selectedBlocks || pluginState.selectedBlocks.length === 0) return
+export function createDeleteSelectedBlocksTransaction(
+  state: EditorState
+): Transaction | null {
+  const pluginState = multiBlockSelectionKey.getState(state)
+  const selectedBlocks = pluginState?.selectedBlocks ?? []
+  const validPositions = [...new Set(selectedBlocks)]
+    .filter((pos) => state.doc.nodeAt(pos) !== null)
+    .sort((left, right) => left - right)
+  if (validPositions.length === 0) return null
 
-  let tr = view.state.tr
-  const { schema } = view.state
+  if (validPositions.length === 1) {
+    const caretlessTransaction =
+      createCaretlessBlankBlockDeletionTransaction(state, validPositions[0])
+    if (caretlessTransaction) {
+      caretlessTransaction.setMeta(multiBlockSelectionKey, {
+        selectedBlocks: [],
+        anchorBlock: null
+      })
+      return caretlessTransaction
+    }
+  }
 
-  // Sort positions in reverse order to delete from end to start
-  const sorted = [...pluginState.selectedBlocks].sort((a, b) => b - a)
+  const blankBlockPos = validPositions[0]
+  let transaction = state.tr
 
-  for (const pos of sorted) {
-    const mappedPos = tr.mapping.map(pos)
-    const node = tr.doc.nodeAt(mappedPos)
+  // Remove from the end to keep source positions stable. Replace the first
+  // selected block with one editable paragraph so deletion leaves a cursor at
+  // the selection's location rather than mapping onto a neighboring block.
+  for (const pos of [...validPositions].reverse()) {
+    const mappedPos = transaction.mapping.map(pos)
+    const node = transaction.doc.nodeAt(mappedPos)
     if (!node) continue
-    tr = tr.delete(mappedPos, mappedPos + node.nodeSize)
+
+    transaction = pos === blankBlockPos
+      ? transaction.replaceWith(
+          mappedPos,
+          mappedPos + node.nodeSize,
+          state.schema.nodes.paragraph.create()
+        )
+      : transaction.delete(mappedPos, mappedPos + node.nodeSize)
   }
 
-  // If doc is now empty, add an empty paragraph
-  if (tr.doc.content.size === 0 || tr.doc.childCount === 0) {
-    tr = tr.insert(0, schema.nodes.paragraph.create())
-  }
+  const mappedBlankBlockPos = transaction.mapping.map(blankBlockPos)
+  transaction.setSelection(
+    TextSelection.create(transaction.doc, mappedBlankBlockPos + 1)
+  )
+  transaction.setMeta(multiBlockSelectionKey, {
+    selectedBlocks: [],
+    anchorBlock: null
+  })
+  return transaction.scrollIntoView()
+}
 
-  tr.setMeta(multiBlockSelectionKey, { selectedBlocks: [], anchorBlock: null })
-  view.dispatch(tr)
-  view.focus()
+export function deleteSelectedBlocks(view: EditorView) {
+  const transaction = createDeleteSelectedBlocksTransaction(view.state)
+  if (!transaction) return
+
+  const deactivateSelection = transactionLeavesEditorInactive(transaction)
+  view.dispatch(transaction)
+  if (!deactivateSelection) view.focus()
 }
 
 export function duplicateSelectedBlocks(view: EditorView) {

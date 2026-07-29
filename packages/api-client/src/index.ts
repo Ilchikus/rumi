@@ -42,7 +42,9 @@ import type {
   UpdateDatabaseSchemaRequest,
   UpdateDatabaseViewRequest,
   WorkspaceMutationResult,
-  WorkspaceNode
+  WorkspaceNode,
+  WorkspaceSettings,
+  WorkspaceSettingsResult
 } from "@rumi/contracts";
 import { RUMI_EVENT_NAMES } from "@rumi/contracts";
 
@@ -88,6 +90,22 @@ export class RumiApiClient {
 
   async getWorkspace(): Promise<OpenWorkspaceResult> {
     return this.request<OpenWorkspaceResult>("/api/workspace");
+  }
+
+  async getWorkspaceSettings(): Promise<WorkspaceSettingsResult> {
+    return this.request<WorkspaceSettingsResult>("/api/workspace/settings");
+  }
+
+  async updateWorkspaceSettings(
+    settings: WorkspaceSettings
+  ): Promise<WorkspaceSettingsResult> {
+    return this.request<WorkspaceSettingsResult>("/api/workspace/settings", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(settings)
+    });
   }
 
   async getTree(): Promise<WorkspaceNode> {

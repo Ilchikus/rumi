@@ -57,19 +57,46 @@ If two approaches both work, choose the one with fewer moving parts and clearer 
 
 ## Work Pipeline
 
-Every feature should move through this shape:
+Every feature should move through the full product-to-release lifecycle:
 
 ```text
-decision
-  -> milestone
-  -> contract
-  -> task
+product definition / interview
+  -> investigation
+  -> decision / milestone / contract / task as needed
   -> tests
   -> implementation
-  -> verification
+  -> QA / verification
+  -> code review
+  -> push
+  -> pull request
+  -> merge
+  -> versioned npm release when the distributable package changed
+  -> post-release verification
+  -> documentation follow-up when required
 ```
 
-Do not start by porting UI. Start by proving runtime behavior with tests.
+Start by understanding the user problem and investigating the existing behavior. Do not begin by
+porting UI. Define risky behavior with tests, then implement the smallest reliable change.
+
+Required decisions, contracts, tasks, and user-facing documentation belong in the same pull request
+as the implementation. The final documentation step is a last check for release notes, durable
+context discovered during QA or review, and any follow-up that could not exist before release.
+
+## Pull Request And Release Rule
+
+Meaningful product changes ship through a reviewed pull request. Keep the branch current with
+`main`, run the relevant checks, complete QA and code review, and merge only when GitHub reports the
+pull request clean and mergeable.
+
+When a change affects the public `@rumi-md/server` distribution:
+
+- Choose and include the next package version in the pull request.
+- Run the package release check before merge.
+- Publish npm only from the merged commit on `main`, never from an unmerged feature branch.
+- Verify the exact version and `latest` tag on the public registry after publishing.
+
+Documentation-only or internal planning changes do not require an npm release unless they alter the
+published package.
 
 ## Statuses
 
@@ -108,7 +135,11 @@ For menus, dialogs, popovers, inputs, buttons, and similar UI, first look for an
 
 ## Frontend Color Rule
 
-Default the official web client to Tailwind's neutral palette, plus white and black. Do not introduce colored palettes for general layout, controls, borders, messages, decoration, or entity icons unless a product decision explicitly calls for color.
+Default the official web client to Tailwind's neutral palette, plus white and black. Sky 600 is the
+product accent for checked checkboxes and other explicitly accented interactive states. Do not
+introduce other colored palettes for general layout, controls, borders, messages, decoration, or
+entity icons unless a product decision explicitly calls for color. Rose 600 is reserved for
+explicit destructive hover emphasis.
 
 Sidebar entity icons use neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
 

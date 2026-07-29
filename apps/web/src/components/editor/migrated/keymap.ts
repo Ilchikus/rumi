@@ -16,6 +16,7 @@ import {
 import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
 import { duplicateBlocks, moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
+import { createCaretlessBlankBlockDeletionTransaction } from "./inactiveBlockSelection"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
 
@@ -76,11 +77,70 @@ export function removeEmptyParagraphBlock(schema: Schema): Command {
       state.doc.childCount <= 1
     ) return false
 
+    const blockStart = $from.before(1)
+    const previousNode = state.doc.resolve(blockStart).nodeBefore
+
+    const caretlessTransaction =
+      createCaretlessBlankBlockDeletionTransaction(state, blockStart)
+    if (caretlessTransaction) {
+      if (dispatch) {
+        dispatch(caretlessTransaction)
+      }
+      return true
+    }
+
+    if (dispatch) {
+      const transaction = state.tr.delete(blockStart, blockStart + $from.parent.nodeSize)
+      const boundary = Math.min(blockStart, transaction.doc.content.size)
+      transaction.setSelection(TextSelection.near(
+        transaction.doc.resolve(boundary),
+        previousNode ? -1 : 1
+      ))
+      dispatch(transaction.scrollIntoView())
+    }
+    return true
+  }
+}
+
+export function resetEmptyFormattedBlock(schema: Schema): Command {
+  const resettableTypes = new Set([
+    schema.nodes.heading,
+    schema.nodes.code_block,
+    schema.nodes.bullet_item,
+    schema.nodes.numbered_item,
+    schema.nodes.task_item,
+    schema.nodes.blockquote
+  ].filter(Boolean))
+
+  return (state, dispatch) => {
+    const { selection } = state
+    if (!(selection instanceof TextSelection) || !selection.empty) return false
+
+    const { $from } = selection
+    if ($from.depth < 1) return false
+
+    const block = $from.node(1)
+    if (!resettableTypes.has(block.type)) return false
+
+    const isEmptyTextBlock = block.isTextblock && block.content.size === 0
+    const isEmptyBlockquote =
+      block.type === schema.nodes.blockquote &&
+      block.childCount === 1 &&
+      block.firstChild?.type === schema.nodes.paragraph &&
+      block.firstChild.content.size === 0
+    if (!isEmptyTextBlock && !isEmptyBlockquote) return false
+
     if (dispatch) {
       const blockStart = $from.before(1)
-      const transaction = state.tr.delete(blockStart, blockStart + $from.parent.nodeSize)
-      const nextPosition = Math.min(blockStart, transaction.doc.content.size)
-      transaction.setSelection(TextSelection.near(transaction.doc.resolve(nextPosition), 1))
+      const transaction = state.tr.replaceWith(
+        blockStart,
+        blockStart + block.nodeSize,
+        schema.nodes.paragraph.create()
+      )
+      transaction.setSelection(TextSelection.create(
+        transaction.doc,
+        blockStart + 1
+      ))
       dispatch(transaction.scrollIntoView())
     }
     return true
@@ -93,36 +153,6 @@ function getFlatListItemTypes(schema: Schema) {
     schema.nodes.numbered_item,
     schema.nodes.task_item
   ].filter(Boolean)
-}
-
-export function exitEmptyFlatListItem(schema: Schema): Command {
-  const itemTypes = getFlatListItemTypes(schema)
-
-  return (state, dispatch) => {
-    const { selection } = state
-    if (!(selection instanceof TextSelection) || !selection.empty) return false
-
-    const { $from } = selection
-    if (
-      $from.depth !== 1 ||
-      !itemTypes.some((type) => $from.parent.type === type) ||
-      $from.parent.content.size !== 0
-    ) return false
-
-    if (dispatch) {
-      const blockStart = $from.before(1)
-      const blockEnd = blockStart + $from.parent.nodeSize
-      const transaction = state.tr.replaceWith(
-        blockStart,
-        blockEnd,
-        schema.nodes.paragraph.create()
-      )
-      transaction.setSelection(TextSelection.create(transaction.doc, blockStart + 1))
-
-      dispatch(transaction.scrollIntoView())
-    }
-    return true
-  }
 }
 
 export function splitFlatListItem(schema: Schema): Command {
@@ -218,14 +248,14 @@ function buildKeymap(schema: Schema) {
   keys["Mod-d"] = duplicateBlocks
   keys["Mod-D"] = duplicateBlocks
   keys["Mod-a"] = selectAllBlocksInStages
-  keys["Backspace"] = chainCommands(
-    exitEmptyFlatListItem(schema),
+  const deleteEmptyBlock = chainCommands(
+    resetEmptyFormattedBlock(schema),
     removeEmptyParagraphBlock(schema)
   )
-  keys["Delete"] = chainCommands(
-    exitEmptyFlatListItem(schema),
-    removeEmptyParagraphBlock(schema)
-  )
+  keys["Backspace"] = deleteEmptyBlock
+  keys["Delete"] = deleteEmptyBlock
+  keys["Mod-Backspace"] = deleteEmptyBlock
+  keys["Mod-Delete"] = deleteEmptyBlock
 
   // Flat list item types
   const flatListItemTypes = getFlatListItemTypes(schema)

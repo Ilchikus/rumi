@@ -1,12 +1,29 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Plugin, PluginKey, NodeSelection, TextSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
-import { Schema, Node as PmNode, Fragment } from "prosemirror-model"
-import { setBlockType, wrapIn } from "prosemirror-commands"
-import { multiBlockSelectionKey, selectBlock, deleteSelectedBlocks, duplicateSelectedBlocks } from "./multiBlockSelection"
+import { Schema, Node as PmNode } from "prosemirror-model"
+import {
+  multiBlockSelectionKey,
+  selectAllBlocksInStages,
+  selectBlock,
+  deleteSelectedBlocks,
+  duplicateSelectedBlocks
+} from "./multiBlockSelection"
 import { collapsibleHeadingsKey, findSectionEnd } from "./collapsibleHeadings"
-import { BLOCK_TYPE_OPTIONS, type BlockTypeOption } from "./blockTypePresentation"
+import type { BlockTypeOption } from "./blockTypePresentation"
 import { listDropIndent } from "../listDropIndent"
+import {
+  blockContextMenuPosition,
+  matchingBlockTypeOptions,
+  shouldAdvanceBlockSelectionFromMenu,
+  shouldDeleteBlockFromMenu,
+  shouldFocusBlockMenuSearchSynchronously,
+  shouldOpenBlockContextMenuForSelection,
+  shouldShowBlockMenuActionsForQuery,
+  type BlockContextMenuAnchor
+} from "./blockContextMenuModel"
+import { createBlockTypeChangeTransaction } from "./blockTypeConversion"
+import { createCaretlessBlankBlockDeletionTransaction } from "../inactiveBlockSelection"
 
 export const blockDragHandleKey = new PluginKey("blockDragHandle")
 
@@ -28,6 +45,31 @@ interface HandledBlock {
   isNested: boolean
 }
 
+type BlockMenuActionId = "addBefore" | "addAfter" | "duplicate" | "delete"
+
+const BLOCK_MENU_ACTIONS: Array<{
+  id: BlockMenuActionId
+  label: string
+  icon: string
+  shortcut: string
+  destructive: boolean
+}> = [
+  { id: "addBefore", label: "Add before", icon: PLUS_SVG, shortcut: "", destructive: false },
+  { id: "addAfter", label: "Add after", icon: PLUS_SVG, shortcut: "", destructive: false },
+  { id: "duplicate", label: "Duplicate", icon: COPY_SVG, shortcut: "⌘D", destructive: false },
+  { id: "delete", label: "Delete", icon: TRASH_SVG, shortcut: "Del", destructive: true }
+]
+
+type FilteredBlockMenuItem =
+  | { kind: "action"; action: BlockMenuActionId }
+  | { kind: "type"; option: BlockTypeOption }
+
+interface BlockContextMenuSession {
+  block: HandledBlock
+  openedFromSelection: boolean
+  selectionShortcutReady: boolean
+}
+
 class BlockDragHandleView {
   private handle: HTMLElement
   private addButton: HTMLElement
@@ -35,8 +77,9 @@ class BlockDragHandleView {
   private headingHighlight: HTMLElement
   private dragGhost: HTMLElement | null = null
   private contextMenu: HTMLElement | null = null
-  private listContainer: HTMLElement | null = null
-  private filteredItems: { kind: "action" | "type"; index: number }[] = []
+  private contextMenuSession: BlockContextMenuSession | null = null
+  private selectionShortcutTimer: ReturnType<typeof setTimeout> | null = null
+  private filteredItems: FilteredBlockMenuItem[] = []
   private activeItemIndex: number = 0
   private styleEl: HTMLStyleElement
   private view: EditorView
@@ -45,7 +88,6 @@ class BlockDragHandleView {
   private draggedBlock: HandledBlock | null = null
   private draggedBlockX: number = 0
   private scrollParent: HTMLElement | null = null
-  private menuBlock: HandledBlock | null = null
 
   // RAF throttle for mousemove — process only the latest event per animation frame
   private mouseMoveRafId: number | null = null
@@ -57,6 +99,8 @@ class BlockDragHandleView {
   private areaSelectStart: { x: number; y: number } | null = null
   private areaHighlightedBlocks: Set<number> = new Set()
   private suppressWrapperClick: boolean = false
+  private preserveSelectionThroughHandleClick: boolean = false
+  private selectingFromHandle: boolean = false
 
   // Indent-on-drag state (for list items)
   private targetIndent: number = 0
@@ -91,7 +135,10 @@ class BlockDragHandleView {
         border: 1px solid hsl(var(--border));
         border-radius: 8px;
         padding: 4px;
-        min-width: 220px;
+        min-width: min(220px, calc(100vw - 16px));
+        max-width: calc(100vw - 16px);
+        max-height: calc(100vh - 16px);
+        overflow-y: auto;
         box-shadow: 0 4px 16px rgba(0,0,0,0.12);
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 13px;
@@ -534,6 +581,10 @@ class BlockDragHandleView {
     // Don't clear multi-block selection when clicking inside the context menu
     // (e.g. clicking a type-change option must see the full selectedBlocks list)
     if (this.contextMenu && this.contextMenu.contains(e.target as Node)) return
+    if (this.preserveSelectionThroughHandleClick) {
+      this.preserveSelectionThroughHandleClick = false
+      return
+    }
 
     // Clear after the clicked control finishes its own click/change behavior.
     // This keeps interactive NodeView controls (including database checkboxes)
@@ -554,6 +605,47 @@ class BlockDragHandleView {
         this.view.focus()
       }
     }
+  }
+
+  private openContextMenuForSelectedBlocks() {
+    const pluginState = multiBlockSelectionKey.getState(this.view.state)
+    const selectedBlocks = pluginState?.selectedBlocks ?? []
+    if (selectedBlocks.length === 0) return
+
+    const selectionPos = this.view.state.selection.from
+    const blockPos = selectedBlocks.includes(selectionPos)
+      ? selectionPos
+      : pluginState?.anchorBlock !== null &&
+          pluginState?.anchorBlock !== undefined &&
+          selectedBlocks.includes(pluginState.anchorBlock)
+        ? pluginState.anchorBlock
+        : selectedBlocks[0]
+    const node = this.view.state.doc.nodeAt(blockPos)
+    if (!node) return
+
+    const depth = this.view.state.doc.resolve(blockPos).depth + 1
+    const block: HandledBlock = {
+      pos: blockPos,
+      node,
+      depth,
+      isNested: depth > 1
+    }
+
+    const editorRect = this.view.dom.getBoundingClientRect()
+    const blockDom = this.view.nodeDOM(blockPos)
+    const blockRect = blockDom instanceof HTMLElement
+      ? blockDom.getBoundingClientRect()
+      : editorRect
+
+    const contentStart = editorRect.left
+    this.showContextMenu(
+      {
+        kind: "selection",
+        contentStart,
+        top: blockRect.top
+      },
+      block
+    )
   }
 
   private onScroll = () => {
@@ -805,6 +897,10 @@ class BlockDragHandleView {
       // View might be in invalid state, ignore
     }
 
+    if (hadBlocks) {
+      this.openContextMenuForSelectedBlocks()
+    }
+
     // A click normally follows mouseup and is intercepted by onWrapperClick. If
     // mouseup happened outside the wrapper, clear the guard on the next task so
     // it cannot swallow a later, unrelated click.
@@ -875,48 +971,65 @@ class BlockDragHandleView {
     if (this.hoveredBlock === null) return
 
     if (e.button === 0) {
+      this.preserveSelectionThroughHandleClick = true
+      document.removeEventListener("mouseup", this.onHandleSelectionMouseUp)
+      document.addEventListener("mouseup", this.onHandleSelectionMouseUp, { once: true })
+
       const block = this.hoveredBlock
 
-      // All blocks support multi-block selection
-      const pluginState = multiBlockSelectionKey.getState(this.view.state)
-      const isInCurrentSelection = pluginState &&
-        pluginState.selectedBlocks &&
-        pluginState.selectedBlocks.length > 1 &&
-        pluginState.selectedBlocks.includes(block.pos)
+      this.selectingFromHandle = true
+      try {
+        // All blocks support multi-block selection
+        const pluginState = multiBlockSelectionKey.getState(this.view.state)
+        const isInCurrentSelection = pluginState &&
+          pluginState.selectedBlocks &&
+          pluginState.selectedBlocks.length > 1 &&
+          pluginState.selectedBlocks.includes(block.pos)
 
-      if (isInCurrentSelection) {
-        // Block is part of current multi-selection - preserve selection
-        // Just focus without changing selection (allows dragging multi-selection)
-      } else if (e.shiftKey) {
-        selectBlock(this.view, block.pos, "shift")
-      } else if (e.metaKey || e.ctrlKey) {
-        selectBlock(this.view, block.pos, "toggle")
-      } else {
-        // Select and decorate the block in the same transaction. A second
-        // selection-only transaction would immediately clear the decoration.
-        const node = this.view.state.doc.nodeAt(block.pos)
-        if (node) {
-          const tr = this.view.state.tr
-            .setSelection(NodeSelection.create(this.view.state.doc, block.pos))
-            .setMeta(multiBlockSelectionKey, {
-              selectedBlocks: [block.pos],
-              anchorBlock: block.pos
-            })
-            .setMeta("multiBlockKeep", true)
-          this.view.dispatch(tr)
+        if (isInCurrentSelection) {
+          // Block is part of current multi-selection - preserve selection
+          // Just focus without changing selection (allows dragging multi-selection)
+        } else if (e.shiftKey) {
+          selectBlock(this.view, block.pos, "shift")
+        } else if (e.metaKey || e.ctrlKey) {
+          selectBlock(this.view, block.pos, "toggle")
+        } else {
+          // Select and decorate the block in the same transaction. A second
+          // selection-only transaction would immediately clear the decoration.
+          const node = this.view.state.doc.nodeAt(block.pos)
+          if (node) {
+            const tr = this.view.state.tr
+              .setSelection(NodeSelection.create(this.view.state.doc, block.pos))
+              .setMeta(multiBlockSelectionKey, {
+                selectedBlocks: [block.pos],
+                anchorBlock: block.pos
+              })
+              .setMeta("multiBlockKeep", true)
+            this.view.dispatch(tr)
+          }
         }
+      } finally {
+        this.selectingFromHandle = false
       }
       // Return focus to editor after the browser's default action (focusing the button)
       setTimeout(() => this.view.focus(), 0)
     }
   }
 
+  private onHandleSelectionMouseUp = () => {
+    setTimeout(() => {
+      this.preserveSelectionThroughHandleClick = false
+    }, 0)
+  }
+
   private onHandleContextMenu = (e: MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (this.hoveredBlock === null) return
-    this.menuBlock = this.hoveredBlock
-    this.showContextMenu(e.clientX, e.clientY, this.hoveredBlock)
+    this.showContextMenu(
+      { kind: "pointer", x: e.clientX, y: e.clientY },
+      this.hoveredBlock
+    )
   }
 
   private onAddButtonClick = (event: MouseEvent) => {
@@ -929,9 +1042,18 @@ class BlockDragHandleView {
 
   // ── Context Menu ──
 
-  private showContextMenu(x: number, y: number, block: HandledBlock) {
+  private showContextMenu(
+    anchor: BlockContextMenuAnchor,
+    block: HandledBlock
+  ) {
     this.closeContextMenu()
-    this.menuBlock = block
+    const openedFromSelection = anchor.kind === "selection"
+    const session: BlockContextMenuSession = {
+      block,
+      openedFromSelection,
+      selectionShortcutReady: false
+    }
+    this.contextMenuSession = session
 
     const menu = document.createElement("div")
     menu.className = "block-context-menu"
@@ -960,89 +1082,112 @@ class BlockDragHandleView {
     menu.appendChild(input)
     menu.appendChild(typesContainer)
 
-    // Store the list container as the menu itself for keyboard nav
-    this.listContainer = menu
-
     document.body.appendChild(menu)
     this.contextMenu = menu
+    if (openedFromSelection) {
+      this.selectionShortcutTimer = setTimeout(() => {
+        this.selectionShortcutTimer = null
+        if (this.contextMenu && this.contextMenuSession === session) {
+          session.selectionShortcutReady = true
+        }
+      }, 0)
+    }
 
     // Build and render items
     this.activeItemIndex = 0
-    this.renderMenuItems(actionsContainer, typesContainer, sep, block, "")
+    this.renderMenuItems(actionsContainer, typesContainer, sep, "")
 
     input.addEventListener("input", () => {
       this.activeItemIndex = 0
-      this.renderMenuItems(actionsContainer, typesContainer, sep, block, input.value.toLowerCase())
+      this.renderMenuItems(
+        actionsContainer,
+        typesContainer,
+        sep,
+        input.value
+      )
     })
 
     // Position
     const menuRect = menu.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    let left = x
-    let top = y
-    if (left + menuRect.width > vw) left = vw - menuRect.width - 8
-    if (top + menuRect.height > vh) top = vh - menuRect.height - 8
-    menu.style.left = `${left}px`
-    menu.style.top = `${top}px`
+    const position = blockContextMenuPosition(
+      anchor,
+      { width: menuRect.width, height: menuRect.height },
+      { width: window.innerWidth, height: window.innerHeight }
+    )
+    menu.style.left = `${position.left}px`
+    menu.style.top = `${position.top}px`
 
     document.addEventListener("keydown", this.onMenuKeyDown)
 
     // Focus the search input
-    requestAnimationFrame(() => input.focus())
+    if (shouldFocusBlockMenuSearchSynchronously(
+      openedFromSelection,
+      this.selectingFromHandle
+    )) {
+      input.focus({ preventScroll: true })
+    } else {
+      requestAnimationFrame(() => input.focus())
+    }
   }
 
-  private renderMenuItems(actionsContainer: HTMLElement, typesContainer: HTMLElement, sep: HTMLElement, block: HandledBlock, query: string) {
+  private renderMenuItems(
+    actionsContainer: HTMLElement,
+    typesContainer: HTMLElement,
+    sep: HTMLElement,
+    query: string
+  ) {
+    const session = this.contextMenuSession
+    if (!session) return
+
     actionsContainer.innerHTML = ""
     typesContainer.innerHTML = ""
     this.filteredItems = []
 
-    const actions = [
-      { label: "Add before", icon: PLUS_SVG, shortcut: "", destructive: false, action: "addBefore" },
-      { label: "Add after", icon: PLUS_SVG, shortcut: "", destructive: false, action: "addAfter" },
-      { label: "Duplicate", icon: COPY_SVG, shortcut: "⌘D", destructive: false, action: "duplicate" },
-      { label: "Delete", icon: TRASH_SVG, shortcut: "Del", destructive: true, action: "delete" },
-    ]
-
-    const matchingActions = actions.filter(a => !query || a.label.toLowerCase().includes(query))
+    const matchingTypes = matchingBlockTypeOptions(query)
+    const matchingActions = shouldShowBlockMenuActionsForQuery(
+      session.openedFromSelection,
+      query,
+      matchingTypes.length
+    )
+      ? BLOCK_MENU_ACTIONS.filter(
+          action => !query || action.label.toLowerCase().includes(query)
+        )
+      : []
     sep.style.display = matchingActions.length > 0 ? "" : "none"
     if (matchingActions.length > 0) {
-      matchingActions.forEach((action, _) => {
-        const idx = actions.indexOf(action)
-        this.filteredItems.push({ kind: "action", index: idx })
+      matchingActions.forEach((action) => {
+        this.filteredItems.push({ kind: "action", action: action.id })
         const el = this.createMenuItemEl(action.icon, action.label, action.shortcut)
         if (action.destructive) el.classList.add("destructive")
         const itemIdx = this.filteredItems.length - 1
         if (itemIdx === this.activeItemIndex) el.classList.add("active")
         el.addEventListener("click", (e) => {
           e.stopPropagation()
-          this.executeAction(action.action, block)
+          this.executeAction(action.id, session.block)
           this.closeContextMenu()
         })
-        el.addEventListener("mouseenter", () => {
+        el.addEventListener("mousemove", () => {
           this.activeItemIndex = itemIdx
-          this.updateActiveItems(this.listContainer!)
+          if (this.contextMenu) this.updateActiveItems(this.contextMenu)
         })
         actionsContainer.appendChild(el)
       })
     }
 
     // Block type options
-    const matchingTypes = BLOCK_TYPE_OPTIONS.filter(o => !query || o.label.toLowerCase().includes(query))
     matchingTypes.forEach((opt) => {
-      const typeIdx = BLOCK_TYPE_OPTIONS.indexOf(opt)
-      this.filteredItems.push({ kind: "type", index: typeIdx })
+      this.filteredItems.push({ kind: "type", option: opt })
       const el = this.createMenuItemEl(opt.icon, opt.label, "")
       const itemIdx = this.filteredItems.length - 1
       if (itemIdx === this.activeItemIndex) el.classList.add("active")
       el.addEventListener("click", (e) => {
         e.stopPropagation()
-        this.changeBlockType(block.pos, opt)
+        this.changeBlockType(session.block.pos, opt)
         this.closeContextMenu()
       })
-      el.addEventListener("mouseenter", () => {
+      el.addEventListener("mousemove", () => {
         this.activeItemIndex = itemIdx
-        this.updateActiveItems(this.listContainer!)
+        if (this.contextMenu) this.updateActiveItems(this.contextMenu)
       })
       typesContainer.appendChild(el)
     })
@@ -1065,7 +1210,25 @@ class BlockDragHandleView {
   }
 
   private onMenuKeyDown = (e: KeyboardEvent) => {
-    if (!this.contextMenu || this.menuBlock === null || !this.listContainer) return
+    const session = this.contextMenuSession
+    if (!this.contextMenu || !session) return
+
+    if (shouldAdvanceBlockSelectionFromMenu(
+      session.openedFromSelection,
+      session.selectionShortcutReady,
+      e
+    )) {
+      e.preventDefault()
+      this.closeContextMenu()
+      const handled = selectAllBlocksInStages(
+        this.view.state,
+        (transaction) => this.view.dispatch(transaction)
+      )
+      if (handled && !this.contextMenu) {
+        this.openContextMenuForSelectedBlocks()
+      }
+      return
+    }
 
     if (e.key === "Escape") {
       e.preventDefault()
@@ -1076,51 +1239,71 @@ class BlockDragHandleView {
     if (e.key === "ArrowDown") {
       e.preventDefault()
       this.activeItemIndex = Math.min(this.activeItemIndex + 1, this.filteredItems.length - 1)
-      this.updateActiveItems(this.listContainer)
+      this.updateActiveItems(this.contextMenu)
       return
     }
     if (e.key === "ArrowUp") {
       e.preventDefault()
       this.activeItemIndex = Math.max(this.activeItemIndex - 1, 0)
-      this.updateActiveItems(this.listContainer)
+      this.updateActiveItems(this.contextMenu)
       return
     }
     if (e.key === "Enter") {
       e.preventDefault()
+      e.stopImmediatePropagation()
       const item = this.filteredItems[this.activeItemIndex]
       if (!item) return
       if (item.kind === "action") {
-        const actions = ["addBefore", "addAfter", "duplicate", "delete"]
-        this.executeAction(actions[item.index], this.menuBlock)
+        this.executeAction(item.action, session.block)
+        this.closeContextMenu()
       } else {
-        this.changeBlockType(this.menuBlock.pos, BLOCK_TYPE_OPTIONS[item.index])
+        // Keep the editor unfocused until this keydown has completely finished.
+        // Refocusing it here lets the same Enter reach the flat-list keymap and
+        // split the just-converted item into an extra blank list block.
+        const blockPos = session.block.pos
+        const option = item.option
+        this.closeContextMenu()
+        this.changeBlockType(blockPos, option, false)
+        setTimeout(() => this.view.focus(), 0)
       }
-      this.closeContextMenu()
       return
     }
 
     // Hotkeys
-    if (e.key === "Delete" || (e.key === "Backspace" && !this.contextMenu.querySelector("input:focus"))) {
+    const searchInput = this.contextMenu.querySelector<HTMLInputElement>("input")
+    if (shouldDeleteBlockFromMenu(
+      session.openedFromSelection,
+      searchInput === document.activeElement,
+      searchInput?.value ?? "",
+      e.key
+    )) {
       e.preventDefault()
-      this.executeAction("delete", this.menuBlock)
+      this.executeAction("delete", session.block)
       this.closeContextMenu()
       return
     }
-    if (e.key === "d" && e.metaKey) {
+    if (
+      e.key === "d" &&
+      e.metaKey &&
+      (!session.openedFromSelection || session.selectionShortcutReady)
+    ) {
       e.preventDefault()
-      this.executeAction("duplicate", this.menuBlock)
+      this.executeAction("duplicate", session.block)
       this.closeContextMenu()
       return
     }
   }
 
   private closeContextMenu() {
+    if (this.selectionShortcutTimer !== null) {
+      clearTimeout(this.selectionShortcutTimer)
+      this.selectionShortcutTimer = null
+    }
     if (this.contextMenu) {
       this.contextMenu.remove()
       this.contextMenu = null
     }
-    this.listContainer = null
-    this.menuBlock = null
+    this.contextMenuSession = null
     document.removeEventListener("keydown", this.onMenuKeyDown)
   }
 
@@ -1131,13 +1314,28 @@ class BlockDragHandleView {
     const node = state.doc.nodeAt(blockPos)
     if (!node) return
 
-    if (state.doc.childCount === 1) {
-      const tr = state.tr.replaceWith(blockPos, blockPos + node.nodeSize, state.schema.nodes.paragraph.create())
-      dispatch(tr)
-    } else {
-      const tr = state.tr.delete(blockPos, blockPos + node.nodeSize)
-      dispatch(tr)
+    const caretlessTransaction =
+      createCaretlessBlankBlockDeletionTransaction(state, blockPos)
+    if (caretlessTransaction) {
+      caretlessTransaction.setMeta(multiBlockSelectionKey, {
+        selectedBlocks: [],
+        anchorBlock: null
+      })
+      dispatch(caretlessTransaction)
+      return
     }
+
+    const transaction = state.tr.replaceWith(
+      blockPos,
+      blockPos + node.nodeSize,
+      state.schema.nodes.paragraph.create()
+    )
+    transaction.setSelection(TextSelection.create(transaction.doc, blockPos + 1))
+    transaction.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [],
+      anchorBlock: null
+    })
+    dispatch(transaction.scrollIntoView())
     this.view.focus()
   }
 
@@ -1181,14 +1379,17 @@ class BlockDragHandleView {
 
   // ── Action dispatch ──
 
-  private executeAction(action: string, block: HandledBlock) {
-    // For multi-block selection
+  private executeAction(action: BlockMenuActionId, block: HandledBlock) {
+    // Delete the explicit selection, including a single selected block, so the
+    // automatic menu cannot leave a NodeSelection mapped onto a neighboring block.
     const pluginState = multiBlockSelectionKey.getState(this.view.state)
+    if (pluginState && pluginState.selectedBlocks.length > 0 && action === "delete") {
+      deleteSelectedBlocks(this.view)
+      return
+    }
+
+    // Other bulk actions retain their established multi-block behavior.
     if (pluginState && pluginState.selectedBlocks.length > 1) {
-      if (action === "delete") {
-        deleteSelectedBlocks(this.view)
-        return
-      }
       if (action === "duplicate") {
         duplicateSelectedBlocks(this.view)
         return
@@ -1203,133 +1404,21 @@ class BlockDragHandleView {
     }
   }
 
-  private changeBlockType(blockPos: number, opt: BlockTypeOption) {
-    // Check for multi-block selection
+  private changeBlockType(
+    blockPos: number,
+    opt: BlockTypeOption,
+    focusEditor = true
+  ) {
     const pluginState = multiBlockSelectionKey.getState(this.view.state)
-    if (pluginState && pluginState.selectedBlocks.length > 1) {
-      this.changeSelectedBlocksType(pluginState.selectedBlocks, opt)
-      return
-    }
-
     const { state, dispatch } = this.view
-    const node = state.doc.nodeAt(blockPos)
-    if (!node) return
+    const positions = pluginState && pluginState.selectedBlocks.length > 1
+      ? pluginState.selectedBlocks
+      : [blockPos]
+    const transaction = createBlockTypeChangeTransaction(state, positions, opt)
+    if (!transaction) return
 
-    const schema = state.schema
-    // Use node.content (preserves inline marks) for text-based blocks;
-    // fall back to plain text for structured/leaf nodes
-    const inlineContent = node.content.size > 0 ? node.content : null
-    const textContent = node.textContent
-
-    let tr = state.tr
-
-    if (opt.type === "paragraph") {
-      const newNode = schema.nodes.paragraph.create(null, inlineContent)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "heading") {
-      const newNode = schema.nodes.heading.create(opt.attrs, inlineContent)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "code_block") {
-      // Code blocks don't support marks — use plain text
-      const newNode = schema.nodes.code_block.create(null, textContent ? schema.text(textContent) : null)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "blockquote") {
-      const para = schema.nodes.paragraph.create(null, inlineContent)
-      const newNode = schema.nodes.blockquote.create(null, para)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "bullet_item") {
-      const newNode = schema.nodes.bullet_item.create({ indent: 0 }, inlineContent)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "numbered_item") {
-      const newNode = schema.nodes.numbered_item.create({ indent: 0 }, inlineContent)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "task_item") {
-      const newNode = schema.nodes.task_item.create({ indent: 0, checked: false }, inlineContent)
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "table") {
-      const cell = schema.nodes.table_cell.create(null, textContent ? schema.text(textContent) : schema.text(" "))
-      const emptyCell = schema.nodes.table_cell.create(null, schema.text(" "))
-      const headerCell = schema.nodes.table_header.create(null, textContent ? schema.text(textContent) : schema.text(" "))
-      const emptyHeader = schema.nodes.table_header.create(null, schema.text(" "))
-      const headerRow = schema.nodes.table_row.create(null, [headerCell, emptyHeader, emptyHeader.copy(emptyHeader.content)])
-      const dataRow = schema.nodes.table_row.create(null, [emptyCell, emptyCell.copy(emptyCell.content), emptyCell.copy(emptyCell.content)])
-      const newNode = schema.nodes.table.create(null, [headerRow, dataRow, dataRow.copy(dataRow.content)])
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "mermaid") {
-      const defaultCode = `flowchart TD
-    A[Start] --> B{Decision}
-    B -->|Yes| C[Result 1]
-    B -->|No| D[Result 2]`
-      const newNode = schema.nodes.mermaid.create({ code: defaultCode, mode: "split" })
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    } else if (opt.type === "horizontal_rule") {
-      const newNode = schema.nodes.horizontal_rule.create()
-      tr = tr.replaceWith(blockPos, blockPos + node.nodeSize, newNode)
-    }
-
-    dispatch(tr)
-    this.view.focus()
-  }
-
-  private changeSelectedBlocksType(positions: number[], opt: BlockTypeOption) {
-    const { state, dispatch } = this.view
-    const schema = state.schema
-    let tr = state.tr
-
-    // Sort positions in reverse order to change from end to start (preserves positions)
-    const sorted = [...positions].sort((a, b) => b - a)
-
-    for (const blockPos of sorted) {
-      const mappedPos = tr.mapping.map(blockPos)
-      const node = tr.doc.nodeAt(mappedPos)
-      if (!node) continue
-
-      const inlineContent = node.content.size > 0 ? node.content : null
-      const textContent = node.textContent
-      let newNode
-
-      if (opt.type === "paragraph") {
-        newNode = schema.nodes.paragraph.create(null, inlineContent)
-      } else if (opt.type === "heading") {
-        newNode = schema.nodes.heading.create(opt.attrs, inlineContent)
-      } else if (opt.type === "code_block") {
-        newNode = schema.nodes.code_block.create(null, textContent ? schema.text(textContent) : null)
-      } else if (opt.type === "blockquote") {
-        const para = schema.nodes.paragraph.create(null, inlineContent)
-        newNode = schema.nodes.blockquote.create(null, para)
-      } else if (opt.type === "bullet_item") {
-        newNode = schema.nodes.bullet_item.create({ indent: 0 }, inlineContent)
-      } else if (opt.type === "numbered_item") {
-        newNode = schema.nodes.numbered_item.create({ indent: 0 }, inlineContent)
-      } else if (opt.type === "task_item") {
-        newNode = schema.nodes.task_item.create({ indent: 0, checked: false }, inlineContent)
-      } else if (opt.type === "table") {
-        const cell = schema.nodes.table_cell.create(null, textContent ? schema.text(textContent) : schema.text(" "))
-        const emptyCell = schema.nodes.table_cell.create(null, schema.text(" "))
-        const headerCell = schema.nodes.table_header.create(null, textContent ? schema.text(textContent) : schema.text(" "))
-        const emptyHeader = schema.nodes.table_header.create(null, schema.text(" "))
-        const headerRow = schema.nodes.table_row.create(null, [headerCell, emptyHeader, emptyHeader.copy(emptyHeader.content)])
-        const dataRow = schema.nodes.table_row.create(null, [emptyCell, emptyCell.copy(emptyCell.content), emptyCell.copy(emptyCell.content)])
-        newNode = schema.nodes.table.create(null, [headerRow, dataRow, dataRow.copy(dataRow.content)])
-      } else if (opt.type === "mermaid") {
-        const defaultCode = `flowchart TD
-    A[Start] --> B{Decision}
-    B -->|Yes| C[Result 1]
-    B -->|No| D[Result 2]`
-        newNode = schema.nodes.mermaid.create({ code: defaultCode, mode: "split" })
-      } else if (opt.type === "horizontal_rule") {
-        newNode = schema.nodes.horizontal_rule.create()
-      }
-
-      if (newNode) {
-        tr = tr.replaceWith(mappedPos, mappedPos + node.nodeSize, newNode)
-      }
-    }
-
-    // Clear multi-block selection after changing types
-    tr.setMeta(multiBlockSelectionKey, { selectedBlocks: [], anchorBlock: null })
-    dispatch(tr)
-    this.view.focus()
+    dispatch(transaction)
+    if (focusEditor) this.view.focus()
   }
 
   // ── Drag and Drop ──
@@ -1364,7 +1453,6 @@ class BlockDragHandleView {
     if (!e.dataTransfer) return
 
     this.draggedBlock = block
-    this.menuBlock = null
     this.draggedMultiBlocks = null
 
     // Check if dragging a block that's part of a multi-selection
@@ -1852,7 +1940,23 @@ class BlockDragHandleView {
     }
   }
 
-  update() {
+  update(_view: EditorView, previousState: import("prosemirror-state").EditorState) {
+    const previousSelectedBlocks =
+      multiBlockSelectionKey.getState(previousState)?.selectedBlocks ?? []
+    const selectedBlocks =
+      multiBlockSelectionKey.getState(this.view.state)?.selectedBlocks ?? []
+
+    if (
+      !this.isAreaSelecting &&
+      this.draggedBlock === null &&
+      shouldOpenBlockContextMenuForSelection(
+        previousSelectedBlocks,
+        selectedBlocks
+      )
+    ) {
+      this.openContextMenuForSelectedBlocks()
+    }
+
     if (this.hoveredBlock !== null && this.draggedBlock === null) {
       const node = this.view.state.doc.nodeAt(this.hoveredBlock.pos)
       if (node) {
@@ -1895,6 +1999,7 @@ class BlockDragHandleView {
     }
     document.removeEventListener("mousemove", this.onAreaSelectMove)
     document.removeEventListener("mouseup", this.onAreaSelectEnd)
+    document.removeEventListener("mouseup", this.onHandleSelectionMouseUp)
     if (this.scrollParent) {
       this.scrollParent.removeEventListener("scroll", this.onScroll)
     }

@@ -14,6 +14,7 @@ import { baseKeymap } from "prosemirror-commands"
 import { keymap } from "prosemirror-keymap"
 import { schema } from "./schema"
 import { buildKeymap } from "./keymap"
+import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
 import { buildInputRules } from "./inputrules"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { taskListPlugin } from "./plugins/taskList"
@@ -147,6 +148,7 @@ function ProseMirrorEditor(
       plugins: [
         collapsibleHeadingsPlugin(),
         buildInputRules(schema),
+        inactiveBlockSelectionPlugin(),
         multiBlockSelectionPlugin(schema),
         buildKeymap(schema),
         keymap(baseKeymap),

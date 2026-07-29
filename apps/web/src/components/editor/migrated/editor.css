@@ -448,6 +448,15 @@
   background: hsl(213, 70%, 72%);
 }
 
+.prosemirror-editor .ProseMirror.rumi-inactive-block-selection .ProseMirror-selectednode {
+  background: transparent !important;
+  outline: none !important;
+}
+
+.prosemirror-editor .ProseMirror.rumi-inactive-block-selection hr.ProseMirror-selectednode::after {
+  background: hsl(var(--border));
+}
+
 /* Links */
 .prosemirror-editor .ProseMirror a {
   color: #0284c7;

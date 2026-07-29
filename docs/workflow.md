@@ -1,6 +1,7 @@
 # Workflow
 
-The new workflow is designed around architecture layers and test coverage.
+The workflow is designed around product discovery, architecture layers, test coverage, and verified
+delivery.
 
 It replaces the old shape:
 
@@ -11,7 +12,19 @@ task file -> implement feature -> test checklist -> commit
 with:
 
 ```text
-decision -> milestone -> contract -> task -> tests -> implementation -> verification
+product definition / interview
+  -> investigation
+  -> decision / milestone / contract / task as needed
+  -> tests
+  -> implementation
+  -> QA / verification
+  -> code review
+  -> push
+  -> pull request
+  -> merge
+  -> versioned npm release when required
+  -> post-release verification
+  -> documentation follow-up when required
 ```
 
 ## Why
@@ -72,6 +85,28 @@ Use these statuses:
 Tasks can move from `ready` to `doing` only when the owner layer and required coverage are clear.
 
 Tasks can move to `done` only when required coverage exists and relevant checks pass.
+
+## Delivery And Release
+
+QA and code review are separate gates. QA proves the behavior works through the relevant automated
+and manual checks. Code review then looks for unnecessary complexity, hidden coupling, unsafe edge
+cases, and missing coverage.
+
+Meaningful product changes ship through a pull request. Keep the branch current with `main`, include
+required tests and documentation, and merge only when the pull request is clean and review is
+complete.
+
+If the change affects the public `@rumi-md/server` distribution:
+
+1. Include the intended package version in the pull request.
+2. Run the package release check before merge.
+3. Merge the reviewed pull request.
+4. Publish npm from the merged commit on `main`, not from a feature branch.
+5. Verify the exact public version and the `latest` tag after publishing.
+
+Changes that do not affect the distributable package do not need an npm release. After release,
+perform one final documentation check for durable context, release notes, or follow-up work found
+during QA and review.
 
 ## Owner Layer
 

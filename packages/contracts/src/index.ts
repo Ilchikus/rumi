@@ -347,6 +347,8 @@ export interface WorkspaceUploadSettings {
 
 export interface WorkspaceEditorSettings {
   highlightMisspellings: boolean;
+  inlineReplacements: boolean;
+  emojiSuggestions: boolean;
 }
 
 export interface WorkspaceSettings {

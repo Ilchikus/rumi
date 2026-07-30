@@ -9,7 +9,7 @@ coverage:
   - ui-smoke
   - docs
 created: 2026-07-27
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 # M07-008 Workspace Settings
 
@@ -27,6 +27,8 @@ and editor misspelling highlighting without editing `.rumi/config.json` by hand.
 - Keep 50 MB as the default while allowing blank/unlimited and zero/disabled size policies.
 - Include MP4 and WebM in the upload-format policy without adding dedicated video playback.
 - Default browser misspelling highlighting off and let the workspace setting enable it.
+- Default inline replacements and colon emoji suggestions on and let workspace settings disable
+  either behavior independently.
 - Add workspace settings UI opened by a Phosphor Gear action above Trash.
 - Use native Sky 600 checkboxes and a borderless two-column format layout.
 - Remove the sidebar header and footer horizontal rules.
@@ -56,7 +58,8 @@ the blank unlimited state; zero disables uploads; a non-negative whole number ap
 The initial centered dialog was subsequently replaced by the editor-like `/settings` system page in
 M07-009 without changing the settings contract. Asset request bodies stream to hidden temporary
 storage so blank/unlimited does not imply unbounded server memory buffering; complete, signature-
-verified files are then published atomically.
+verified files are then published atomically. Inline replacement and emoji settings were added to
+the same normalized editor settings domain and update an open editor without remounting it.
 
 ## Done When
 

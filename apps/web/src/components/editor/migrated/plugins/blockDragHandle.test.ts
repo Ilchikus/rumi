@@ -3,13 +3,19 @@ import { describe, expect, it } from "vitest"
 import { parseMarkdown } from "../markdown"
 import { schema } from "../schema"
 import {
+  blockDragHandleKey,
+  blockDragHandlePlugin
+} from "./blockDragHandle"
+import {
+  BLOCK_CONTEXT_MENU_INTENT_META,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
-  shouldAdvanceBlockSelectionFromMenu,
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
   shouldOpenBlockContextMenuForSelection,
-  shouldShowBlockMenuActionsForQuery
+  shouldRouteBlockSelectionTypingToSearch,
+  shouldShowBlockMenuActionsForQuery,
+  shouldToggleBlockContextMenuFromMenu
 } from "./blockContextMenuModel"
 import { createBlockTypeChangeTransaction } from "./blockTypeConversion"
 import { BLOCK_TYPE_OPTIONS } from "./blockTypePresentation"
@@ -30,7 +36,7 @@ function selectedBlocks(state: EditorState): number[] {
 }
 
 describe("selected-block handle menu trigger", () => {
-  it("opens the existing handle menu as soon as Cmd+A selects the current block", () => {
+  it("recognizes a new current-block selection as menu-open eligible", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({
       doc,
@@ -76,16 +82,51 @@ describe("selected-block handle menu trigger", () => {
     expect(shouldOpenBlockContextMenuForSelection([0], [])).toBe(false)
   })
 
-  it("does not advance selection again during the Cmd+A event that opened the menu", () => {
-    const commandA = { key: "a", metaKey: true, ctrlKey: false }
+  it("does not retoggle during the Cmd+/ event that opened the menu", () => {
+    const commandSlash = { key: "/", metaKey: true, ctrlKey: false }
 
-    expect(shouldAdvanceBlockSelectionFromMenu(true, false, commandA)).toBe(false)
-    expect(shouldAdvanceBlockSelectionFromMenu(true, true, commandA)).toBe(true)
-    expect(shouldAdvanceBlockSelectionFromMenu(
+    expect(shouldToggleBlockContextMenuFromMenu(
+      true,
+      false,
+      commandSlash
+    )).toBe(false)
+    expect(shouldToggleBlockContextMenuFromMenu(
+      true,
+      true,
+      commandSlash
+    )).toBe(true)
+    expect(shouldToggleBlockContextMenuFromMenu(
       false,
       true,
-      commandA
+      commandSlash
     )).toBe(false)
+    expect(shouldToggleBlockContextMenuFromMenu(
+      true,
+      true,
+      { key: "a", metaKey: true, ctrlKey: false }
+    )).toBe(false)
+  })
+
+  it("tracks explicit close and toggle intents as separate menu requests", () => {
+    const doc = parseMarkdown("One\n", schema)
+    const plugin = blockDragHandlePlugin(schema)
+    let state = EditorState.create({ doc, plugins: [plugin] })
+
+    state = state.apply(
+      state.tr.setMeta(BLOCK_CONTEXT_MENU_INTENT_META, "close")
+    )
+    expect(blockDragHandleKey.getState(state)).toEqual({
+      contextMenuIntent: "close",
+      contextMenuIntentRevision: 1
+    })
+
+    state = state.apply(
+      state.tr.setMeta(BLOCK_CONTEXT_MENU_INTENT_META, "toggle")
+    )
+    expect(blockDragHandleKey.getState(state)).toEqual({
+      contextMenuIntent: "toggle",
+      contextMenuIntentRevision: 2
+    })
   })
 
   it("keeps an 8px gap between the selected-block menu and editor content", () => {
@@ -243,6 +284,47 @@ describe("selected-block handle menu trigger", () => {
     expect(shouldFocusBlockMenuSearchSynchronously(true, false)).toBe(true)
     expect(shouldFocusBlockMenuSearchSynchronously(true, true)).toBe(false)
     expect(shouldFocusBlockMenuSearchSynchronously(false, false)).toBe(false)
+  })
+
+  it("routes immediate printable input to selection-opened search", () => {
+    const printable = {
+      key: "c",
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isComposing: false
+    }
+
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      printable
+    )).toBe(true)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      true,
+      printable
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      false,
+      false,
+      printable
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, key: "Enter" }
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, metaKey: true }
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, isComposing: true }
+    )).toBe(false)
   })
 
   it("prioritizes matching block types from the first search character", () => {

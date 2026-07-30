@@ -15,7 +15,16 @@ import {
 } from "prosemirror-commands"
 import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
-import { duplicateBlocks, moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
+import {
+  duplicateBlocks,
+  moveBlocks,
+  multiBlockSelectionKey,
+  selectAllBlocksInStages
+} from "./plugins/multiBlockSelection"
+import {
+  BLOCK_CONTEXT_MENU_INTENT_META,
+  type BlockContextMenuIntent
+} from "./plugins/blockContextMenuModel"
 import { createCaretlessBlankBlockDeletionTransaction } from "./inactiveBlockSelection"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
@@ -197,6 +206,59 @@ export function splitFlatListItem(schema: Schema): Command {
   }
 }
 
+export function insertLiteralNewlineInCode(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    if (
+      !(selection instanceof TextSelection) ||
+      selection.$from.parent.type !== schema.nodes.code_block ||
+      selection.$to.parent.type !== schema.nodes.code_block ||
+      selection.$from.parent !== selection.$to.parent
+    ) {
+      return false
+    }
+
+    if (dispatch) {
+      dispatch(
+        state.tr
+          .insertText("\n", selection.from, selection.to)
+          .scrollIntoView()
+      )
+    }
+    return true
+  }
+}
+
+function stagedBlockSelection(
+  contextMenuIntent: BlockContextMenuIntent
+): Command {
+  return (state, dispatch) => selectAllBlocksInStages(
+    state,
+    dispatch
+      ? (transaction) => {
+          transaction.setMeta(
+            BLOCK_CONTEXT_MENU_INTENT_META,
+            contextMenuIntent
+          )
+          dispatch(transaction)
+        }
+      : undefined
+  )
+}
+
+const toggleBlockContextMenu: Command = (state, dispatch) => {
+  const selectedBlocks =
+    multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
+  if (selectedBlocks.length === 0) {
+    return stagedBlockSelection("toggle")(state, dispatch)
+  }
+
+  dispatch?.(
+    state.tr.setMeta(BLOCK_CONTEXT_MENU_INTENT_META, "toggle")
+  )
+  return true
+}
+
 function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
@@ -247,7 +309,8 @@ function buildKeymap(schema: Schema) {
   keys["Ctrl-Shift-ArrowDown"] = moveBlocks("down")
   keys["Mod-d"] = duplicateBlocks
   keys["Mod-D"] = duplicateBlocks
-  keys["Mod-a"] = selectAllBlocksInStages
+  keys["Mod-a"] = stagedBlockSelection("close")
+  keys["Mod-/"] = toggleBlockContextMenu
   const deleteEmptyBlock = chainCommands(
     resetEmptyFormattedBlock(schema),
     removeEmptyParagraphBlock(schema)
@@ -344,13 +407,16 @@ function buildKeymap(schema: Schema) {
   // Hard break
   if (schema.nodes.hard_break) {
     const br = schema.nodes.hard_break
-    const cmd: Command = (state, dispatch) => {
+    const insertHardBreak: Command = (state, dispatch) => {
       if (dispatch) {
         dispatch(state.tr.replaceSelectionWith(br.create()).scrollIntoView())
       }
       return true
     }
-    keys["Shift-Enter"] = cmd
+    keys["Shift-Enter"] = chainCommands(
+      insertLiteralNewlineInCode(schema),
+      insertHardBreak
+    )
   }
 
   // Code block - exit with Mod-Enter

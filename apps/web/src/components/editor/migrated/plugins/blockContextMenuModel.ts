@@ -3,13 +3,22 @@ import {
   type BlockTypeOption
 } from "./blockTypePresentation"
 
+export const BLOCK_CONTEXT_MENU_INTENT_META = "rumiBlockContextMenuIntent"
+
+export type BlockContextMenuIntent = "close" | "toggle"
+
 export type BlockContextMenuAnchor =
   | { kind: "pointer"; x: number; y: number }
   | { kind: "selection"; contentStart: number; top: number }
 
-type BlockMenuSelectAllEvent = Pick<
+type BlockMenuShortcutEvent = Pick<
   KeyboardEvent,
   "ctrlKey" | "key" | "metaKey"
+>
+
+type BlockMenuTypingEvent = Pick<
+  KeyboardEvent,
+  "altKey" | "ctrlKey" | "isComposing" | "key" | "metaKey"
 >
 
 export function shouldOpenBlockContextMenuForSelection(
@@ -22,14 +31,14 @@ export function shouldOpenBlockContextMenuForSelection(
   )
 }
 
-export function shouldAdvanceBlockSelectionFromMenu(
+export function shouldToggleBlockContextMenuFromMenu(
   openedFromSelection: boolean,
   selectionShortcutReady: boolean,
-  event: BlockMenuSelectAllEvent
+  event: BlockMenuShortcutEvent
 ): boolean {
   return openedFromSelection &&
     selectionShortcutReady &&
-    event.key.toLowerCase() === "a" &&
+    event.key === "/" &&
     (event.metaKey || event.ctrlKey)
 }
 
@@ -50,6 +59,20 @@ export function shouldFocusBlockMenuSearchSynchronously(
   selectingFromHandle: boolean
 ): boolean {
   return openedFromSelection && !selectingFromHandle
+}
+
+export function shouldRouteBlockSelectionTypingToSearch(
+  openedFromSelection: boolean,
+  searchFocused: boolean,
+  event: BlockMenuTypingEvent
+): boolean {
+  return openedFromSelection &&
+    !searchFocused &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.isComposing &&
+    event.key.length === 1
 }
 
 export function shouldShowBlockMenuActionsForQuery(

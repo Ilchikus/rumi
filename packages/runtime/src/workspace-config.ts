@@ -33,7 +33,9 @@ const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
     allowedFileTypes: Object.keys(SUPPORTED_ASSET_CONTENT_TYPES)
   },
   editor: {
-    highlightMisspellings: false
+    highlightMisspellings: false,
+    inlineReplacements: true,
+    emojiSuggestions: true
   }
 };
 
@@ -114,7 +116,11 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
     : {};
 
   requireOnlyKeys(uploads, ["maxFileSizeMb", "allowedFileTypes"], `${WORKSPACE_CONFIG_PATH} uploads`);
-  requireOnlyKeys(editor, ["highlightMisspellings"], `${WORKSPACE_CONFIG_PATH} editor`);
+  requireOnlyKeys(
+    editor,
+    ["highlightMisspellings", "inlineReplacements", "emojiSuggestions"],
+    `${WORKSPACE_CONFIG_PATH} editor`
+  );
 
   const maxFileSizeMb = "maxFileSizeMb" in uploads
     ? requireMaxFileSizeMb(uploads.maxFileSizeMb)
@@ -125,6 +131,12 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
   const highlightMisspellings = "highlightMisspellings" in editor
     ? requireBoolean(editor.highlightMisspellings, "editor.highlightMisspellings")
     : DEFAULT_WORKSPACE_SETTINGS.editor.highlightMisspellings;
+  const inlineReplacements = "inlineReplacements" in editor
+    ? requireBoolean(editor.inlineReplacements, "editor.inlineReplacements")
+    : DEFAULT_WORKSPACE_SETTINGS.editor.inlineReplacements;
+  const emojiSuggestions = "emojiSuggestions" in editor
+    ? requireBoolean(editor.emojiSuggestions, "editor.emojiSuggestions")
+    : DEFAULT_WORKSPACE_SETTINGS.editor.emojiSuggestions;
 
   return {
     uploads: {
@@ -132,7 +144,9 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
       allowedFileTypes: [...allowedFileTypes]
     },
     editor: {
-      highlightMisspellings
+      highlightMisspellings,
+      inlineReplacements,
+      emojiSuggestions
     }
   };
 }

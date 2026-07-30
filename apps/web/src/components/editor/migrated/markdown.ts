@@ -36,6 +36,7 @@ export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode
     .use(remarkParse)
     .use(remarkGfm)
     .parse(preprocessed) as Root
+  normalizeTaskListItems(tree)
 
   const blocks: ProseMirrorNode[] = []
 
@@ -85,12 +86,27 @@ function preprocessCustomSyntax(markdown: string): string {
     // markers remain eligible for Rumi inline formatting.
     if (/^(?: {4}|\t)(?![-+*]\s|\d+[.)]\s)/.test(line)) return line
 
-    return preprocessOutsideCodeSpans(normalizeCompactTaskMarker(line))
+    return preprocessOutsideCodeSpans(line)
   }).join("\n")
 }
 
-function normalizeCompactTaskMarker(line: string): string {
-  return line.replace(/^((?:\s*>\s*)*\s*-\s+)\[\](?=\s|$)/u, "$1[ ]")
+function normalizeTaskListItems(node: Root | RootContent | ListItem): void {
+  if (node.type === "listItem" && typeof node.checked !== "boolean") {
+    const paragraph = node.children[0]
+    const firstText = paragraph?.type === "paragraph" ? paragraph.children[0] : undefined
+    if (firstText?.type === "text") {
+      const marker = firstText.value.match(/^\[( |x|X)?\](?=\s|$)/u)
+      if (marker) {
+        node.checked = marker[1]?.toLowerCase() === "x"
+        firstText.value = firstText.value.slice(marker[0].length).replace(/^\s+/u, "")
+        if (!firstText.value) paragraph.children.shift()
+      }
+    }
+  }
+
+  if ("children" in node) {
+    for (const child of node.children) normalizeTaskListItems(child as RootContent | ListItem)
+  }
 }
 
 function preprocessOutsideCodeSpans(line: string): string {
@@ -661,7 +677,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "task_item": {
       const itemIndent = node.attrs.indent || 0
-      const checkbox = node.attrs.checked ? "[x]" : "[]"
+      const checkbox = node.attrs.checked ? "[x]" : "[ ]"
       const indentStr = "    ".repeat(itemIndent)
       const content = serializeInline(node)
       lines.push(indent + indentStr + `- ${checkbox}` + (content ? ` ${content}` : ""))

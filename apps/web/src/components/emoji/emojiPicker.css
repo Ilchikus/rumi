@@ -1,0 +1,135 @@
+.rumi-emoji-picker {
+  z-index: 1100;
+  display: flex;
+  width: min(320px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.rumi-emoji-picker-popover,
+.rumi-emoji-picker-dialog {
+  position: fixed;
+}
+
+.rumi-emoji-picker-inline {
+  position: relative;
+}
+
+.rumi-emoji-picker-search {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid hsl(var(--border));
+  font-size: 13px;
+}
+
+.rumi-emoji-picker-search-prefix {
+  margin-right: 1px;
+  color: hsl(var(--muted-foreground));
+}
+
+.rumi-emoji-picker-query {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rumi-emoji-picker-placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.rumi-emoji-picker-caret {
+  width: 1px;
+  height: 16px;
+  margin-left: 1px;
+  animation: rumi-emoji-caret-blink 1s step-end infinite;
+  background: currentColor;
+}
+
+.rumi-emoji-picker-grid {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(var(--emoji-picker-columns, 8), minmax(0, 1fr));
+  gap: 2px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.rumi-emoji-picker-option {
+  display: grid;
+  aspect-ratio: 1;
+  min-width: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.rumi-emoji-picker-option:hover,
+.rumi-emoji-picker-option.is-focused {
+  background: hsl(var(--accent));
+  box-shadow: inset 0 0 0 1px hsl(var(--ring) / 35%);
+}
+
+.rumi-emoji-picker-footer,
+.rumi-emoji-picker-empty {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.rumi-emoji-picker-footer {
+  display: flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  padding: 7px 10px;
+  border-top: 1px solid hsl(var(--border));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rumi-emoji-picker-footer-emoji {
+  color: hsl(var(--foreground));
+  font-size: 17px;
+}
+
+.rumi-emoji-picker-empty {
+  padding: 24px 12px;
+  text-align: center;
+}
+
+@keyframes rumi-emoji-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rumi-emoji-picker-caret {
+    animation: none;
+  }
+}

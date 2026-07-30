@@ -1,7 +1,14 @@
-import { EditorState, NodeSelection, TextSelection } from "prosemirror-state"
+import {
+  EditorState,
+  NodeSelection,
+  TextSelection,
+  type Transaction
+} from "prosemirror-state"
+import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
+  insertLiteralNewlineInCode,
   removeEmptyParagraphBlock,
   resetEmptyFormattedBlock,
   splitFlatListItem
@@ -20,6 +27,9 @@ import {
   inactiveBlockSelectionPlugin,
   transactionLeavesEditorInactive
 } from "./inactiveBlockSelection"
+import {
+  BLOCK_CONTEXT_MENU_INTENT_META
+} from "./plugins/blockContextMenuModel"
 import { schema } from "./schema"
 
 function blockPositions(state: EditorState): number[] {
@@ -125,6 +135,72 @@ describe("live editor staged Select All", () => {
       "Two",
       "Three"
     ])
+  })
+
+  it("keeps staged selection on Mod-A and uses Mod-/ only for the menu", () => {
+    const blockShortcutKeymap = buildKeymap(schema)
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+      plugins: [multiBlockSelectionPlugin(schema), blockShortcutKeymap]
+    })
+    const contextMenuIntents: unknown[] = []
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        contextMenuIntents.push(
+          transaction.getMeta(BLOCK_CONTEXT_MENU_INTENT_META)
+        )
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    const event = (
+      key: string,
+      modifiers: Partial<KeyboardEvent>
+    ): KeyboardEvent => ({
+      key,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault() {},
+      stopPropagation() {},
+      ...modifiers
+    }) as KeyboardEvent
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("a", { ctrlKey: true })
+    )).toBe(true)
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["Two"])
+    expect(contextMenuIntents.at(-1)).toBe("close")
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("/", { ctrlKey: true })
+    )).toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["Two"])
+    expect(contextMenuIntents.at(-1)).toBe("toggle")
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("a", { ctrlKey: true })
+    )).toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["One", "Two", "Three"])
+    expect(contextMenuIntents.at(-1)).toBe("close")
   })
 })
 
@@ -319,4 +395,58 @@ describe("live editor empty list continuation", () => {
       expect(state.selection.$from.parent).toBe(state.doc.child(1))
     }
   )
+})
+
+describe("live editor code newline", () => {
+  it("replaces a code selection with a literal newline inside the same fence", () => {
+    const code = schema.nodes.code_block!.create(
+      { language: "ts" },
+      schema.text("alphaBETAgamma")
+    )
+    const doc = schema.nodes.doc!.create(null, code)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6, 10)
+    })
+
+    expect(insertLiteralNewlineInCode(schema)(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(state.doc.firstChild?.attrs.language).toBe("ts")
+    expect(state.doc.firstChild?.textContent).toBe("alpha\ngamma")
+    expect(serializeMarkdown(state.doc)).toBe("```ts\nalpha\ngamma\n```\n")
+  })
+
+  it("keeps Shift-Enter as a hard break in prose", () => {
+    let state = editorState("Paragraph\n")
+    expect(insertLiteralNewlineInCode(schema)(state)).toBe(false)
+
+    let view: { state: EditorState; dispatch: (transaction: Transaction) => void }
+    view = {
+      state,
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+        view.state = state
+      }
+    }
+    const keymapPlugin = buildKeymap(schema)
+    const handled = keymapPlugin.props.handleKeyDown?.call(
+      keymapPlugin,
+      view as never,
+      {
+        key: "Enter",
+        keyCode: 13,
+        shiftKey: true,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false
+      } as KeyboardEvent
+    )
+
+    expect(handled).toBe(true)
+    expect(state.doc.firstChild?.firstChild?.type).toBe(schema.nodes.hard_break)
+    expect(state.doc.firstChild?.textContent).toBe("Paragraph")
+  })
 })

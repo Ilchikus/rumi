@@ -162,6 +162,8 @@ export function App(): ReactElement {
     useState<WorkspaceSettingsResult | null>(null);
   const [settingsLoadState, setSettingsLoadState] = useState<LoadState>("idle");
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
+  const [inlineReplacements, setInlineReplacements] = useState(true);
+  const [emojiSuggestions, setEmojiSuggestions] = useState(true);
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
@@ -252,6 +254,8 @@ export function App(): ReactElement {
       const result = await api.getWorkspaceSettings();
       setWorkspaceSettingsResult(result);
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+      setInlineReplacements(result.settings.editor.inlineReplacements);
+      setEmojiSuggestions(result.settings.editor.emojiSuggestions);
       setSettingsLoadState("idle");
     } catch (error) {
       setSettingsLoadState("error");
@@ -1372,6 +1376,8 @@ export function App(): ReactElement {
     try {
       const result = await api.updateWorkspaceSettings(settings);
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+      setInlineReplacements(result.settings.editor.inlineReplacements);
+      setEmojiSuggestions(result.settings.editor.emojiSuggestions);
       setSettingsLoadState("idle");
       return true;
     } catch (error) {
@@ -2455,6 +2461,8 @@ export function App(): ReactElement {
                         documents={editorDocuments}
                         onMessage={setMessage}
                         highlightMisspellings={highlightMisspellings}
+                        inlineReplacements={inlineReplacements}
+                        emojiSuggestions={emojiSuggestions}
                         readOnly
                         onDirty={() => undefined}
                       />
@@ -2541,6 +2549,8 @@ export function App(): ReactElement {
                     onUploadAsset={uploadEditorAsset}
                     onMessage={setMessage}
                     highlightMisspellings={highlightMisspellings}
+                    inlineReplacements={inlineReplacements}
+                    emojiSuggestions={emojiSuggestions}
                     onDirty={() => markPageDirty("editor-autosave")}
                   />
                 </Suspense>

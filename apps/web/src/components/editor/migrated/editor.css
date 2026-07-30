@@ -132,8 +132,9 @@
   opacity: 1;
 }
 
-/* Visible on hover when expanded */
-.heading-block:hover .heading-caret {
+/* Expanded headings reveal the affordance only from its own hit target. */
+.heading-caret:hover,
+.heading-caret:focus-visible {
   opacity: 1;
 }
 

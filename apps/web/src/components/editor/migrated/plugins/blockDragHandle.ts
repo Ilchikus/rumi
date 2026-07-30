@@ -4,7 +4,6 @@ import { EditorView } from "prosemirror-view"
 import { Schema, Node as PmNode } from "prosemirror-model"
 import {
   multiBlockSelectionKey,
-  selectAllBlocksInStages,
   selectBlock,
   deleteSelectedBlocks,
   duplicateSelectedBlocks
@@ -13,19 +12,29 @@ import { collapsibleHeadingsKey, findSectionEnd } from "./collapsibleHeadings"
 import type { BlockTypeOption } from "./blockTypePresentation"
 import { listDropIndent } from "../listDropIndent"
 import {
+  BLOCK_CONTEXT_MENU_INTENT_META,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
-  shouldAdvanceBlockSelectionFromMenu,
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
   shouldOpenBlockContextMenuForSelection,
+  shouldRouteBlockSelectionTypingToSearch,
   shouldShowBlockMenuActionsForQuery,
-  type BlockContextMenuAnchor
+  shouldToggleBlockContextMenuFromMenu,
+  type BlockContextMenuAnchor,
+  type BlockContextMenuIntent
 } from "./blockContextMenuModel"
 import { createBlockTypeChangeTransaction } from "./blockTypeConversion"
 import { createCaretlessBlankBlockDeletionTransaction } from "../inactiveBlockSelection"
 
-export const blockDragHandleKey = new PluginKey("blockDragHandle")
+interface BlockDragHandleState {
+  contextMenuIntent: BlockContextMenuIntent | null
+  contextMenuIntentRevision: number
+}
+
+export const blockDragHandleKey = new PluginKey<BlockDragHandleState>(
+  "blockDragHandle"
+)
 
 const GRIP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M108,60A16,16,0,1,1,92,44,16,16,0,0,1,108,60Zm56-16a16,16,0,1,0,16,16A16,16,0,0,0,164,44ZM92,112a16,16,0,1,0,16,16A16,16,0,0,0,92,112Zm72,0a16,16,0,1,0,16,16A16,16,0,0,0,164,112ZM92,180a16,16,0,1,0,16,16A16,16,0,0,0,92,180Zm72,0a16,16,0,1,0,16,16A16,16,0,0,0,164,180Z"></path></svg>`
 const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path></svg>`
@@ -593,6 +602,28 @@ class BlockDragHandleView {
   }
 
   private onDocKeyDown = (e: KeyboardEvent) => {
+    const searchInput = this.contextMenu?.querySelector<HTMLInputElement>(
+      "input.block-type-search"
+    ) ?? null
+    if (
+      this.contextMenuSession &&
+      searchInput &&
+      shouldRouteBlockSelectionTypingToSearch(
+        this.contextMenuSession.openedFromSelection,
+        searchInput === document.activeElement,
+        e
+      )
+    ) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      searchInput.focus({ preventScroll: true })
+      const from = searchInput.selectionStart ?? searchInput.value.length
+      const to = searchInput.selectionEnd ?? from
+      searchInput.setRangeText(e.key, from, to, "end")
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }))
+      return
+    }
+
     // Handle Escape to clear multi-block selection
     if (e.key === "Escape") {
       const pluginState = multiBlockSelectionKey.getState(this.view.state)
@@ -1011,12 +1042,19 @@ class BlockDragHandleView {
       } finally {
         this.selectingFromHandle = false
       }
-      // Return focus to editor after the browser's default action (focusing the button)
-      setTimeout(() => this.view.focus(), 0)
     }
   }
 
   private onHandleSelectionMouseUp = () => {
+    const searchInput = this.contextMenu?.querySelector<HTMLInputElement>(
+      "input.block-type-search"
+    )
+    if (this.contextMenuSession?.openedFromSelection && searchInput) {
+      searchInput.focus({ preventScroll: true })
+    } else {
+      this.view.focus()
+    }
+
     setTimeout(() => {
       this.preserveSelectionThroughHandleClick = false
     }, 0)
@@ -1125,7 +1163,7 @@ class BlockDragHandleView {
       this.selectingFromHandle
     )) {
       input.focus({ preventScroll: true })
-    } else {
+    } else if (!openedFromSelection) {
       requestAnimationFrame(() => input.focus())
     }
   }
@@ -1213,20 +1251,13 @@ class BlockDragHandleView {
     const session = this.contextMenuSession
     if (!this.contextMenu || !session) return
 
-    if (shouldAdvanceBlockSelectionFromMenu(
+    if (shouldToggleBlockContextMenuFromMenu(
       session.openedFromSelection,
       session.selectionShortcutReady,
       e
     )) {
       e.preventDefault()
       this.closeContextMenu()
-      const handled = selectAllBlocksInStages(
-        this.view.state,
-        (transaction) => this.view.dispatch(transaction)
-      )
-      if (handled && !this.contextMenu) {
-        this.openContextMenuForSelectedBlocks()
-      }
       return
     }
 
@@ -1945,8 +1976,25 @@ class BlockDragHandleView {
       multiBlockSelectionKey.getState(previousState)?.selectedBlocks ?? []
     const selectedBlocks =
       multiBlockSelectionKey.getState(this.view.state)?.selectedBlocks ?? []
+    const previousHandleState = blockDragHandleKey.getState(previousState)
+    const handleState = blockDragHandleKey.getState(this.view.state)
+    const contextMenuIntent =
+      handleState &&
+      previousHandleState &&
+      handleState.contextMenuIntentRevision !==
+        previousHandleState.contextMenuIntentRevision
+        ? handleState.contextMenuIntent
+        : null
 
-    if (
+    if (contextMenuIntent === "close") {
+      this.closeContextMenu()
+    } else if (contextMenuIntent === "toggle") {
+      if (this.contextMenu) {
+        this.closeContextMenu()
+      } else {
+        this.openContextMenuForSelectedBlocks()
+      }
+    } else if (
       !this.isAreaSelecting &&
       this.draggedBlock === null &&
       shouldOpenBlockContextMenuForSelection(
@@ -2013,6 +2061,25 @@ export function blockDragHandlePlugin(_schema: Schema) {
 
   return new Plugin({
     key: blockDragHandleKey,
+    state: {
+      init(): BlockDragHandleState {
+        return {
+          contextMenuIntent: null,
+          contextMenuIntentRevision: 0
+        }
+      },
+      apply(transaction, value): BlockDragHandleState {
+        const contextMenuIntent = transaction.getMeta(
+          BLOCK_CONTEXT_MENU_INTENT_META
+        ) as BlockContextMenuIntent | undefined
+        if (!contextMenuIntent) return value
+        return {
+          contextMenuIntent,
+          contextMenuIntentRevision:
+            value.contextMenuIntentRevision + 1
+        }
+      }
+    },
     view(editorView) {
       viewInstance = new BlockDragHandleView(editorView)
       return viewInstance

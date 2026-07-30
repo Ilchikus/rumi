@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-27"
+updated: "2026-07-29"
 ---
 # File Format
 
@@ -48,7 +48,9 @@ example:
     "allowedFileTypes": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".mp4", ".webm"]
   },
   "editor": {
-    "highlightMisspellings": false
+    "highlightMisspellings": false,
+    "inlineReplacements": true,
+    "emojiSuggestions": true
   }
 }
 ```
@@ -67,7 +69,13 @@ top-level domains and applies upload-policy changes immediately.
 
 `editor.highlightMisspellings` controls the browser's native spellcheck underlines in the official
 editor. It defaults to `false`; setting it to `true` enables the browser's spelling suggestions for
-every page in the workspace. Unknown editor settings and non-boolean values are rejected.
+every page in the workspace.
+
+`editor.inlineReplacements` controls direct-typing replacements such as `->` to `→`, and
+`editor.emojiSuggestions` controls the caret-anchored selector opened by a valid `:` prose trigger.
+Both default to `true`. Replacement symbols and selected emoji are stored as literal UTF-8 Markdown
+text; opening, pasting, or externally reconciling content does not invoke either typing feature.
+Unknown editor settings and non-boolean values are rejected.
 
 SQLite index data is rebuildable.
 

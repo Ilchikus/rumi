@@ -13,6 +13,8 @@ describe("workspace settings page", () => {
     expect(viewSource).not.toContain("<Dialog");
     expect(viewSource).not.toContain("<section");
     expect(viewSource).toContain("Highlight misspelled words");
+    expect(viewSource).toContain("Enable inline replacements");
+    expect(viewSource).toContain("Enable emoji suggestions");
     expect(viewSource).toContain("Maximum file size");
     expect(viewSource).toContain("Allowed file formats");
     expect(viewSource).toContain("text-xs");
@@ -22,6 +24,8 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("animate={animateMisspellings}");
     expect(viewSource).toContain("setAnimateMisspellings(false)");
     expect(viewSource).toContain("setHighlightMisspellings(checked)");
+    expect(viewSource).toContain("setInlineReplacements(checked)");
+    expect(viewSource).toContain("setEmojiSuggestions(checked)");
   });
 
   it("uses a switch for misspellings, Sky checkboxes for formats, and saves blank as unlimited", () => {
@@ -48,6 +52,12 @@ describe("workspace settings page", () => {
     expect(appSource).toContain(
       "setHighlightMisspellings(result.settings.editor.highlightMisspellings)"
     );
+    expect(appSource).toContain(
+      "setInlineReplacements(result.settings.editor.inlineReplacements)"
+    );
+    expect(appSource).toContain(
+      "setEmojiSuggestions(result.settings.editor.emojiSuggestions)"
+    );
     expect(appSource).toContain("settingsSaveInFlightRef.current");
     expect(viewSource).not.toContain("saving:");
     expect(viewSource).not.toContain("disabled={saving}");
@@ -55,9 +65,13 @@ describe("workspace settings page", () => {
 
   it("wires workspace settings and highlighting into the editor", () => {
     expect(viewSource).toContain("highlightMisspellings");
+    expect(viewSource).toContain("inlineReplacements");
+    expect(viewSource).toContain("emojiSuggestions");
     expect(appSource).toContain("api.getWorkspaceSettings()");
     expect(appSource).toContain("api.updateWorkspaceSettings(settings)");
     expect(appSource).toContain("highlightMisspellings={highlightMisspellings}");
+    expect(appSource).toContain("inlineReplacements={inlineReplacements}");
+    expect(appSource).toContain("emojiSuggestions={emojiSuggestions}");
     expect(appSource).toContain("showReservedSystemRouteToast");
     expect(appSource).toContain("is reserved for the system page");
     expect(appSource).toContain('href={route.url}');

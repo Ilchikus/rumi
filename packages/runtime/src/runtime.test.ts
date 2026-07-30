@@ -149,7 +149,9 @@ describe("WorkspaceRuntime", () => {
           allowedFileTypes: expect.arrayContaining([".png", ".pdf"])
         },
         editor: {
-          highlightMisspellings: false
+          highlightMisspellings: false,
+          inlineReplacements: true,
+          emojiSuggestions: true
         }
       },
       constraints: {
@@ -166,11 +168,17 @@ describe("WorkspaceRuntime", () => {
         allowedFileTypes: [".png"]
       },
       editor: {
-        highlightMisspellings: true
+        highlightMisspellings: true,
+        inlineReplacements: false,
+        emojiSuggestions: false
       }
     });
 
-    expect(updated.settings.editor.highlightMisspellings).toBe(true);
+    expect(updated.settings.editor).toEqual({
+      highlightMisspellings: true,
+      inlineReplacements: false,
+      emojiSuggestions: false
+    });
     expect(runtime.assetPolicy).toEqual({
       maxFileSizeBytes: 2 * 1024 * 1024,
       maxFileSizeMb: 2,
@@ -195,7 +203,9 @@ describe("WorkspaceRuntime", () => {
         allowedFileTypes: [".png"]
       },
       editor: {
-        highlightMisspellings: false
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true
       }
     });
     await expect(runtime.saveAsset("disabled.png", png)).rejects.toThrow(
@@ -208,7 +218,9 @@ describe("WorkspaceRuntime", () => {
         allowedFileTypes: [".png"]
       },
       editor: {
-        highlightMisspellings: false
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true
       }
     });
     expect(runtime.assetPolicy).toMatchObject({
@@ -225,7 +237,9 @@ describe("WorkspaceRuntime", () => {
         allowedFileTypes: []
       },
       editor: {
-        highlightMisspellings: false
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true
       }
     });
     await expect(runtime.saveAsset("disabled-by-format.png", png)).rejects.toThrow(
@@ -244,7 +258,9 @@ describe("WorkspaceRuntime", () => {
         allowedFileTypes: [".png"]
       },
       editor: {
-        highlightMisspellings: false
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true
       }
     });
 

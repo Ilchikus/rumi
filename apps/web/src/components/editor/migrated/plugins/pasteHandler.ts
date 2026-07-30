@@ -131,6 +131,24 @@ export function createUrlPasteTransaction(
   return state.tr.replaceSelectionWith(schema.text(href, [link.create({ href })]), false)
 }
 
+export function createCodeTextPasteTransaction(
+  state: EditorState,
+  text: string,
+  schema: Schema = state.schema
+): Transaction | null {
+  const { selection } = state
+  if (
+    !(selection instanceof TextSelection) ||
+    selection.$from.parent.type !== schema.nodes.code_block ||
+    selection.$to.parent.type !== schema.nodes.code_block ||
+    selection.$from.parent !== selection.$to.parent
+  ) {
+    return null
+  }
+
+  return state.tr.insertText(text, selection.from, selection.to)
+}
+
 export function pasteHandlerPlugin(schema: Schema) {
   return new Plugin({
     key: pasteHandlerKey,
@@ -170,6 +188,16 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         const html = clipboard.getData("text/html")
         const text = clipboard.getData("text/plain")
+
+        // Code is literal text. Handle it before URL detection, rich HTML, or
+        // Markdown parsing so ProseMirror never has to fit block nodes into the
+        // code_block's text-only content expression.
+        const codeTransaction = createCodeTextPasteTransaction(view.state, text, schema)
+        if (codeTransaction) {
+          event.preventDefault()
+          view.dispatch(codeTransaction.scrollIntoView())
+          return true
+        }
 
         // A URL is always pasted as a normal inline link. Handle this before
         // rich HTML so a browser-provided anchor cannot replace selected text.

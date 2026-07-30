@@ -1,8 +1,14 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
-import { Plugin, PluginKey, NodeSelection, TextSelection } from "prosemirror-state"
+import {
+  Plugin,
+  PluginKey,
+  NodeSelection,
+  TextSelection,
+  type EditorState,
+  type Transaction
+} from "prosemirror-state"
 import { Decoration, DecorationSet, EditorView, NodeView } from "prosemirror-view"
 import { Node as PmNode } from "prosemirror-model"
-import { splitBlock } from "prosemirror-commands"
 import { multiBlockSelectionKey } from "./multiBlockSelection"
 
 // Phosphor CaretDown (regular/outline) — rotated via CSS for collapsed state
@@ -51,6 +57,10 @@ export function findSectionEnd(doc: PmNode, headingPos: number, headingLevel: nu
   while (pos < doc.content.size) {
     const node = doc.nodeAt(pos)
     if (!node) break
+    if (node.type.name === "horizontal_rule") {
+      sectionEnd = pos
+      break
+    }
     if (node.type.name === "heading" && node.attrs.level <= headingLevel) {
       sectionEnd = pos
       break
@@ -59,6 +69,63 @@ export function findSectionEnd(doc: PmNode, headingPos: number, headingLevel: nu
   }
 
   return sectionEnd
+}
+
+export function createCollapsedHeadingExitTransaction(
+  state: EditorState
+): Transaction | null {
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return null
+
+  const { $from } = selection
+  if (
+    $from.depth !== 1 ||
+    $from.parent.type !== state.schema.nodes.heading ||
+    $from.parentOffset !== $from.parent.content.size
+  ) {
+    return null
+  }
+
+  const headingPos = $from.before(1)
+  const pluginState = collapsibleHeadingsKey.getState(state)
+  if (!pluginState?.collapsed.has(headingPos)) return null
+
+  const horizontalRule = state.schema.nodes.horizontal_rule
+  const paragraph = state.schema.nodes.paragraph
+  if (!horizontalRule || !paragraph) return null
+
+  const sectionEnd = findSectionEnd(
+    state.doc,
+    headingPos,
+    Number($from.parent.attrs.level)
+  )
+  const boundary = state.doc.nodeAt(sectionEnd)
+  let transaction = state.tr
+  let paragraphPos: number
+
+  if (boundary?.type === horizontalRule) {
+    const afterBoundary = sectionEnd + boundary.nodeSize
+    const nextNode = state.doc.nodeAt(afterBoundary)
+    if (nextNode?.type === paragraph && nextNode.content.size === 0) {
+      paragraphPos = afterBoundary
+    } else {
+      transaction = transaction.insert(afterBoundary, paragraph.create())
+      paragraphPos = afterBoundary
+    }
+  } else {
+    const rule = horizontalRule.create()
+    transaction = transaction.replaceWith(
+      sectionEnd,
+      sectionEnd,
+      [rule, paragraph.create()]
+    )
+    paragraphPos = sectionEnd + rule.nodeSize
+  }
+
+  transaction.setSelection(
+    TextSelection.create(transaction.doc, paragraphPos + 1)
+  )
+  return transaction.scrollIntoView()
 }
 
 export function collapsibleHeadingsPlugin() {
@@ -93,13 +160,10 @@ export function collapsibleHeadingsPlugin() {
     props: {
       handleKeyDown(view, event) {
         if (event.key !== "Enter") return false
-        const { $from } = view.state.selection
-        if ($from.parent.type.name !== "heading") return false
-        const headingPos = $from.before($from.depth)
-        const pluginState = collapsibleHeadingsKey.getState(view.state)
-        if (!pluginState?.collapsed.has(headingPos)) return false
-        expandHeading(view, headingPos)
-        splitBlock(view.state, view.dispatch)
+        const transaction = createCollapsedHeadingExitTransaction(view.state)
+        if (!transaction) return false
+        event.preventDefault()
+        view.dispatch(transaction)
         return true
       },
 

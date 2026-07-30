@@ -9,6 +9,7 @@ import {
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
   shouldOpenBlockContextMenuForSelection,
+  shouldRouteBlockSelectionTypingToSearch,
   shouldShowBlockMenuActionsForQuery
 } from "./blockContextMenuModel"
 import { createBlockTypeChangeTransaction } from "./blockTypeConversion"
@@ -243,6 +244,47 @@ describe("selected-block handle menu trigger", () => {
     expect(shouldFocusBlockMenuSearchSynchronously(true, false)).toBe(true)
     expect(shouldFocusBlockMenuSearchSynchronously(true, true)).toBe(false)
     expect(shouldFocusBlockMenuSearchSynchronously(false, false)).toBe(false)
+  })
+
+  it("routes immediate printable input to selection-opened search", () => {
+    const printable = {
+      key: "c",
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isComposing: false
+    }
+
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      printable
+    )).toBe(true)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      true,
+      printable
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      false,
+      false,
+      printable
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, key: "Enter" }
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, metaKey: true }
+    )).toBe(false)
+    expect(shouldRouteBlockSelectionTypingToSearch(
+      true,
+      false,
+      { ...printable, isComposing: true }
+    )).toBe(false)
   })
 
   it("prioritizes matching block types from the first search character", () => {

@@ -2,7 +2,10 @@ import { EditorState, TextSelection } from "prosemirror-state"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
-import { createUrlPasteTransaction } from "./plugins/pasteHandler"
+import {
+  createCodeTextPasteTransaction,
+  createUrlPasteTransaction
+} from "./plugins/pasteHandler"
 
 function stateWithSelection(markdown: string, from: number, to = from): EditorState {
   const doc = parseMarkdown(markdown, schema)
@@ -32,5 +35,55 @@ describe("live editor URL paste", () => {
     const state = stateWithSelection("```ts\nconst url = \"\"\n```", 2)
 
     expect(createUrlPasteTransaction(state, "https://rumi.md", schema)).toBeNull()
+  })
+})
+
+describe("live editor code paste", () => {
+  it("keeps a multiline paste and the surrounding source in one code block", () => {
+    const code = schema.nodes.code_block!.create(
+      { language: "ts" },
+      schema.text("alphaBETAgamma")
+    )
+    const doc = schema.nodes.doc!.create(null, code)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6, 10)
+    })
+
+    const transaction = createCodeTextPasteTransaction(
+      state,
+      "beta\ndelta",
+      schema
+    )
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.childCount).toBe(1)
+    expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(transaction!.doc.firstChild?.attrs.language).toBe("ts")
+    expect(transaction!.doc.firstChild?.textContent).toBe("alphabeta\ndeltagamma")
+    expect(serializeMarkdown(transaction!.doc)).toBe(
+      "```ts\nalphabeta\ndeltagamma\n```\n"
+    )
+  })
+
+  it("preserves whitespace, Markdown punctuation, and URLs literally", () => {
+    const code = schema.nodes.code_block!.create({ language: null })
+    const doc = schema.nodes.doc!.create(null, code)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1)
+    })
+    const pasted = "  # literal\nhttps://rumi.md\n\n\tend  "
+
+    const transaction = createCodeTextPasteTransaction(state, pasted, schema)
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.firstChild?.textContent).toBe(pasted)
+    expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.code_block)
+  })
+
+  it("does not claim text selections outside code", () => {
+    const state = stateWithSelection("Paragraph", 1)
+    expect(createCodeTextPasteTransaction(state, "text", schema)).toBeNull()
   })
 })

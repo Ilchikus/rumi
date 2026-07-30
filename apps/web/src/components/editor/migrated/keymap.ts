@@ -197,6 +197,29 @@ export function splitFlatListItem(schema: Schema): Command {
   }
 }
 
+export function insertLiteralNewlineInCode(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    if (
+      !(selection instanceof TextSelection) ||
+      selection.$from.parent.type !== schema.nodes.code_block ||
+      selection.$to.parent.type !== schema.nodes.code_block ||
+      selection.$from.parent !== selection.$to.parent
+    ) {
+      return false
+    }
+
+    if (dispatch) {
+      dispatch(
+        state.tr
+          .insertText("\n", selection.from, selection.to)
+          .scrollIntoView()
+      )
+    }
+    return true
+  }
+}
+
 function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
@@ -344,13 +367,16 @@ function buildKeymap(schema: Schema) {
   // Hard break
   if (schema.nodes.hard_break) {
     const br = schema.nodes.hard_break
-    const cmd: Command = (state, dispatch) => {
+    const insertHardBreak: Command = (state, dispatch) => {
       if (dispatch) {
         dispatch(state.tr.replaceSelectionWith(br.create()).scrollIntoView())
       }
       return true
     }
-    keys["Shift-Enter"] = cmd
+    keys["Shift-Enter"] = chainCommands(
+      insertLiteralNewlineInCode(schema),
+      insertHardBreak
+    )
   }
 
   // Code block - exit with Mod-Enter

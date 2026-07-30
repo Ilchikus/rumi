@@ -12,6 +12,11 @@ type BlockMenuSelectAllEvent = Pick<
   "ctrlKey" | "key" | "metaKey"
 >
 
+type BlockMenuTypingEvent = Pick<
+  KeyboardEvent,
+  "altKey" | "ctrlKey" | "isComposing" | "key" | "metaKey"
+>
+
 export function shouldOpenBlockContextMenuForSelection(
   previousSelectedBlocks: readonly number[],
   selectedBlocks: readonly number[]
@@ -50,6 +55,20 @@ export function shouldFocusBlockMenuSearchSynchronously(
   selectingFromHandle: boolean
 ): boolean {
   return openedFromSelection && !selectingFromHandle
+}
+
+export function shouldRouteBlockSelectionTypingToSearch(
+  openedFromSelection: boolean,
+  searchFocused: boolean,
+  event: BlockMenuTypingEvent
+): boolean {
+  return openedFromSelection &&
+    !searchFocused &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.isComposing &&
+    event.key.length === 1
 }
 
 export function shouldShowBlockMenuActionsForQuery(

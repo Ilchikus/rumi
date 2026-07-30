@@ -19,6 +19,7 @@ import {
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
   shouldOpenBlockContextMenuForSelection,
+  shouldRouteBlockSelectionTypingToSearch,
   shouldShowBlockMenuActionsForQuery,
   type BlockContextMenuAnchor
 } from "./blockContextMenuModel"
@@ -593,6 +594,28 @@ class BlockDragHandleView {
   }
 
   private onDocKeyDown = (e: KeyboardEvent) => {
+    const searchInput = this.contextMenu?.querySelector<HTMLInputElement>(
+      "input.block-type-search"
+    ) ?? null
+    if (
+      this.contextMenuSession &&
+      searchInput &&
+      shouldRouteBlockSelectionTypingToSearch(
+        this.contextMenuSession.openedFromSelection,
+        searchInput === document.activeElement,
+        e
+      )
+    ) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      searchInput.focus({ preventScroll: true })
+      const from = searchInput.selectionStart ?? searchInput.value.length
+      const to = searchInput.selectionEnd ?? from
+      searchInput.setRangeText(e.key, from, to, "end")
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }))
+      return
+    }
+
     // Handle Escape to clear multi-block selection
     if (e.key === "Escape") {
       const pluginState = multiBlockSelectionKey.getState(this.view.state)
@@ -1011,12 +1034,19 @@ class BlockDragHandleView {
       } finally {
         this.selectingFromHandle = false
       }
-      // Return focus to editor after the browser's default action (focusing the button)
-      setTimeout(() => this.view.focus(), 0)
     }
   }
 
   private onHandleSelectionMouseUp = () => {
+    const searchInput = this.contextMenu?.querySelector<HTMLInputElement>(
+      "input.block-type-search"
+    )
+    if (this.contextMenuSession?.openedFromSelection && searchInput) {
+      searchInput.focus({ preventScroll: true })
+    } else {
+      this.view.focus()
+    }
+
     setTimeout(() => {
       this.preserveSelectionThroughHandleClick = false
     }, 0)
@@ -1125,7 +1155,7 @@ class BlockDragHandleView {
       this.selectingFromHandle
     )) {
       input.focus({ preventScroll: true })
-    } else {
+    } else if (!openedFromSelection) {
       requestAnimationFrame(() => input.focus())
     }
   }

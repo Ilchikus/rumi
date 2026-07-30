@@ -10,6 +10,7 @@ import { schema } from "../schema"
 import {
   collapsibleHeadingsKey,
   collapsibleHeadingsPlugin,
+  createCollapsedHeadingExitAtDocumentEndTransaction,
   createCollapsedHeadingExitTransaction,
   findSectionEnd
 } from "./collapsibleHeadings"
@@ -82,6 +83,56 @@ describe("toggleable heading boundaries", () => {
 
     const positions = blockPositions(state)
     expect(findSectionEnd(state.doc, 0, 1)).toBe(positions[4])
+  })
+
+  it("exits a code-only collapsed section when selection remains in its hidden code", () => {
+    let state = collapsedHeadingState(
+      "# Project\n\n```ts\nconst answer = 42\n```\n"
+    )
+    const codePos = blockPositions(state)[1]!
+    const code = state.doc.nodeAt(codePos)!
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, codePos + 1 + code.content.size)
+      )
+    )
+
+    const transaction = createCollapsedHeadingExitTransaction(state)
+    expect(transaction).not.toBeNull()
+    state = state.apply(transaction!)
+
+    expect(Array.from(
+      { length: state.doc.childCount },
+      (_, index) => state.doc.child(index).type.name
+    )).toEqual([
+      "heading",
+      "code_block",
+      "horizontal_rule",
+      "paragraph"
+    ])
+    expect(state.selection.$from.parent.type).toBe(schema.nodes.paragraph)
+    expect(collapsibleHeadingsKey.getState(state)?.collapsed).toEqual(new Set([0]))
+  })
+
+  it("uses the collapsed-section exit when a code-only section is the document end", () => {
+    let state = collapsedHeadingState(
+      "# Project\n\n```ts\nconst answer = 42\n```\n"
+    )
+
+    const transaction = createCollapsedHeadingExitAtDocumentEndTransaction(state)
+    expect(transaction).not.toBeNull()
+    state = state.apply(transaction!)
+
+    expect(Array.from(
+      { length: state.doc.childCount },
+      (_, index) => state.doc.child(index).type.name
+    )).toEqual([
+      "heading",
+      "code_block",
+      "horizontal_rule",
+      "paragraph"
+    ])
+    expect(state.selection.$from.parent.type).toBe(schema.nodes.paragraph)
   })
 
   it("reuses an existing divider and inserts only the missing blank paragraph", () => {

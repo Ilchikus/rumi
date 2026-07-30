@@ -1,5 +1,5 @@
 ---
-status: done
+status: verify
 type: feature
 milestone: M07
 owner_layer: editor
@@ -285,6 +285,12 @@ Candidate files:
   always visible.
 - [x] Real-browser smoke: paste, immediate selected-block typing, Shift-Enter, caret hover, and
   collapsed-heading escape all work in the active editor.
+- [x] Follow-up transaction test: a code-only collapsed section exits even when its hidden code
+  retained the text selection.
+- [x] Follow-up document-end tests: clicking below a final collapsed section uses the same divider
+  escape, while expanded headings and existing final blank paragraphs retain normal behavior.
+- [ ] Follow-up real-browser smoke: repeat collapsed-heading Enter and bottom-padding click with a
+  code-only final section, then confirm both ordinary expanded-heading paths remain unchanged.
 - [x] Update the editor interaction contract with the code-local input and horizontal-rule boundary
   behavior.
 
@@ -313,6 +319,17 @@ Automated verification on 2026-07-30:
 - TypeScript typecheck passed;
 - production web build and bundled `@rumi-md/server@0.1.11` build passed;
 - manual QA confirmed the reported editor fixes and the final Mod-A/Mod-/ shortcut split.
+
+Follow-up implementation on 2026-07-30:
+
+- Enter now resolves an empty selection retained anywhere inside a collapsed section back to that
+  section's exit transaction, preventing hidden code from receiving the newline;
+- bottom-padding clicks detect a final collapsed section before inspecting its hidden final node and
+  reuse the same divider-plus-paragraph transaction;
+- ordinary expanded-heading Enter and document-end paragraph creation remain unchanged;
+- focused follow-up coverage passed: 2 files, 11 tests;
+- full repository verification passed: 55 test files, 400 tests, typecheck, production web build,
+  and bundled server build.
 
 ## QA Scenarios
 

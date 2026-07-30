@@ -71,22 +71,13 @@ export function findSectionEnd(doc: PmNode, headingPos: number, headingLevel: nu
   return sectionEnd
 }
 
-export function createCollapsedHeadingExitTransaction(
-  state: EditorState
+function createCollapsedHeadingExitTransactionAtPosition(
+  state: EditorState,
+  headingPos: number
 ): Transaction | null {
-  const { selection } = state
-  if (!(selection instanceof TextSelection) || !selection.empty) return null
+  const heading = state.doc.nodeAt(headingPos)
+  if (heading?.type !== state.schema.nodes.heading) return null
 
-  const { $from } = selection
-  if (
-    $from.depth !== 1 ||
-    $from.parent.type !== state.schema.nodes.heading ||
-    $from.parentOffset !== $from.parent.content.size
-  ) {
-    return null
-  }
-
-  const headingPos = $from.before(1)
   const pluginState = collapsibleHeadingsKey.getState(state)
   if (!pluginState?.collapsed.has(headingPos)) return null
 
@@ -97,7 +88,7 @@ export function createCollapsedHeadingExitTransaction(
   const sectionEnd = findSectionEnd(
     state.doc,
     headingPos,
-    Number($from.parent.attrs.level)
+    Number(heading.attrs.level)
   )
   const boundary = state.doc.nodeAt(sectionEnd)
   let transaction = state.tr
@@ -126,6 +117,70 @@ export function createCollapsedHeadingExitTransaction(
     TextSelection.create(transaction.doc, paragraphPos + 1)
   )
   return transaction.scrollIntoView()
+}
+
+function collapsedHeadingForSelection(state: EditorState): number | null {
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return null
+
+  const { $from } = selection
+  if (
+    $from.depth !== 1 ||
+    $from.parent.type !== state.schema.nodes.heading ||
+    $from.parentOffset !== $from.parent.content.size
+  ) {
+    const pluginState = collapsibleHeadingsKey.getState(state)
+    if (!pluginState) return null
+
+    for (const headingPos of [...pluginState.collapsed].sort((a, b) => a - b)) {
+      const heading = state.doc.nodeAt(headingPos)
+      if (heading?.type !== state.schema.nodes.heading) continue
+
+      const sectionStart = headingPos + heading.nodeSize
+      const sectionEnd = findSectionEnd(
+        state.doc,
+        headingPos,
+        Number(heading.attrs.level)
+      )
+      if (selection.from >= sectionStart && selection.to <= sectionEnd) {
+        return headingPos
+      }
+    }
+    return null
+  }
+
+  return $from.before(1)
+}
+
+export function createCollapsedHeadingExitTransaction(
+  state: EditorState
+): Transaction | null {
+  const headingPos = collapsedHeadingForSelection(state)
+  if (headingPos === null) return null
+  return createCollapsedHeadingExitTransactionAtPosition(state, headingPos)
+}
+
+export function createCollapsedHeadingExitAtDocumentEndTransaction(
+  state: EditorState
+): Transaction | null {
+  const pluginState = collapsibleHeadingsKey.getState(state)
+  if (!pluginState) return null
+
+  for (const headingPos of [...pluginState.collapsed].sort((a, b) => a - b)) {
+    const heading = state.doc.nodeAt(headingPos)
+    if (heading?.type !== state.schema.nodes.heading) continue
+    if (
+      findSectionEnd(
+        state.doc,
+        headingPos,
+        Number(heading.attrs.level)
+      ) === state.doc.content.size
+    ) {
+      return createCollapsedHeadingExitTransactionAtPosition(state, headingPos)
+    }
+  }
+
+  return null
 }
 
 export function collapsibleHeadingsPlugin() {

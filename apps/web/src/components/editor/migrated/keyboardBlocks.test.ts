@@ -4,6 +4,7 @@ import {
   TextSelection,
   type Transaction
 } from "prosemirror-state"
+import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
@@ -131,6 +132,54 @@ describe("live editor staged Select All", () => {
       "Two",
       "Three"
     ])
+  })
+
+  it("binds staged block selection to Mod-/ and leaves Mod-A unclaimed", () => {
+    const blockShortcutKeymap = buildKeymap(schema)
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+      plugins: [multiBlockSelectionPlugin(schema), blockShortcutKeymap]
+    })
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    const event = (
+      key: string,
+      modifiers: Partial<KeyboardEvent>
+    ): KeyboardEvent => ({
+      key,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault() {},
+      stopPropagation() {},
+      ...modifiers
+    }) as KeyboardEvent
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("a", { ctrlKey: true })
+    )).toBe(false)
+    expect(state.selection).toBeInstanceOf(TextSelection)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("/", { ctrlKey: true })
+    )).toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["Two"])
   })
 })
 

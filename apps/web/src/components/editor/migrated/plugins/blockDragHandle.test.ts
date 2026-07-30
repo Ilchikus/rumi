@@ -31,7 +31,7 @@ function selectedBlocks(state: EditorState): number[] {
 }
 
 describe("selected-block handle menu trigger", () => {
-  it("opens the existing handle menu as soon as Cmd+A selects the current block", () => {
+  it("opens the existing handle menu as soon as Cmd+/ selects the current block", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({
       doc,
@@ -77,15 +77,20 @@ describe("selected-block handle menu trigger", () => {
     expect(shouldOpenBlockContextMenuForSelection([0], [])).toBe(false)
   })
 
-  it("does not advance selection again during the Cmd+A event that opened the menu", () => {
-    const commandA = { key: "a", metaKey: true, ctrlKey: false }
+  it("does not advance selection again during the Cmd+/ event that opened the menu", () => {
+    const commandSlash = { key: "/", metaKey: true, ctrlKey: false }
 
-    expect(shouldAdvanceBlockSelectionFromMenu(true, false, commandA)).toBe(false)
-    expect(shouldAdvanceBlockSelectionFromMenu(true, true, commandA)).toBe(true)
+    expect(shouldAdvanceBlockSelectionFromMenu(true, false, commandSlash)).toBe(false)
+    expect(shouldAdvanceBlockSelectionFromMenu(true, true, commandSlash)).toBe(true)
     expect(shouldAdvanceBlockSelectionFromMenu(
       false,
       true,
-      commandA
+      commandSlash
+    )).toBe(false)
+    expect(shouldAdvanceBlockSelectionFromMenu(
+      true,
+      true,
+      { key: "a", metaKey: true, ctrlKey: false }
     )).toBe(false)
   })
 

@@ -14,10 +14,11 @@
 - Move a multi-block selection together without changing its internal order.
 - Preserve the cursor or block selection after keyboard movement and scroll the moved content into view.
 - Keep keyboard block movement separate from list indentation and outdentation.
-- Press `Command-A` on macOS or `Control-A` on Windows and Linux once to select the entire block containing the cursor.
-- Show the first `Select All` state as an active highlighted block selection rather than an inline text selection.
-- Press `Command-A` on macOS or `Control-A` on Windows and Linux a second time to select every block in the document.
-- Preserve the two-stage `Select All` behavior for blocks with rich inline formatting, nested lists, embeds, and multi-block selections.
+- Keep `Command-A` on macOS or `Control-A` on Windows and Linux as native editable Select All so typing can replace the selected content.
+- Press `Command-/` on macOS or `Control-/` on Windows and Linux once to select the entire block containing the cursor and open its context menu.
+- Show the first block-menu shortcut state as an active highlighted block selection rather than an inline text selection.
+- Press `Command-/` on macOS or `Control-/` on Windows and Linux a second time to select every block in the document.
+- Preserve the two-stage block-menu shortcut behavior for blocks with rich inline formatting, nested lists, embeds, and multi-block selections.
 - Open global workspace search with `Command-K` on macOS and `Control-K` on Windows and Linux.
 - Search global page titles, paths, frontmatter, and Markdown body content and open results through normal client navigation.
 - Open find for the current page with `Command-F` on macOS and `Control-F` on Windows and Linux.

@@ -270,7 +270,7 @@ function buildKeymap(schema: Schema) {
   keys["Ctrl-Shift-ArrowDown"] = moveBlocks("down")
   keys["Mod-d"] = duplicateBlocks
   keys["Mod-D"] = duplicateBlocks
-  keys["Mod-a"] = selectAllBlocksInStages
+  keys["Mod-/"] = selectAllBlocksInStages
   const deleteEmptyBlock = chainCommands(
     resetEmptyFormattedBlock(schema),
     removeEmptyParagraphBlock(schema)

@@ -34,7 +34,7 @@ export function shouldAdvanceBlockSelectionFromMenu(
 ): boolean {
   return openedFromSelection &&
     selectionShortcutReady &&
-    event.key.toLowerCase() === "a" &&
+    event.key === "/" &&
     (event.metaKey || event.ctrlKey)
 }
 

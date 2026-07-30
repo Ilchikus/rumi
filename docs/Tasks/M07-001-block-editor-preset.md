@@ -121,6 +121,7 @@ extensions. Focused Markdown coverage also follows `==highlighted==` through par
 schema's semantic `<mark>` output contract.
 
 Triple-click selection now stops at explicit row boundaries inside a text block, including hard
-breaks and literal code-block newlines. Whole-block selection and its context menu use Mod-/ so
-Mod-A retains normal editable Select All behavior. Focused selection-command coverage protects both
-shortcut paths.
+breaks and literal code-block newlines. Mod-A keeps its two-stage whole-block selection without
+opening the context menu: the first press selects the current block and the second selects every
+block. Mod-/ independently toggles the context menu for the existing selection or current block.
+Focused selection-command coverage protects both shortcut paths.

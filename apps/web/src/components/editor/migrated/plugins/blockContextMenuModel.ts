@@ -3,11 +3,15 @@ import {
   type BlockTypeOption
 } from "./blockTypePresentation"
 
+export const BLOCK_CONTEXT_MENU_INTENT_META = "rumiBlockContextMenuIntent"
+
+export type BlockContextMenuIntent = "close" | "toggle"
+
 export type BlockContextMenuAnchor =
   | { kind: "pointer"; x: number; y: number }
   | { kind: "selection"; contentStart: number; top: number }
 
-type BlockMenuSelectAllEvent = Pick<
+type BlockMenuShortcutEvent = Pick<
   KeyboardEvent,
   "ctrlKey" | "key" | "metaKey"
 >
@@ -27,10 +31,10 @@ export function shouldOpenBlockContextMenuForSelection(
   )
 }
 
-export function shouldAdvanceBlockSelectionFromMenu(
+export function shouldToggleBlockContextMenuFromMenu(
   openedFromSelection: boolean,
   selectionShortcutReady: boolean,
-  event: BlockMenuSelectAllEvent
+  event: BlockMenuShortcutEvent
 ): boolean {
   return openedFromSelection &&
     selectionShortcutReady &&

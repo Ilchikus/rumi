@@ -15,7 +15,16 @@ import {
 } from "prosemirror-commands"
 import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
-import { duplicateBlocks, moveBlocks, selectAllBlocksInStages } from "./plugins/multiBlockSelection"
+import {
+  duplicateBlocks,
+  moveBlocks,
+  multiBlockSelectionKey,
+  selectAllBlocksInStages
+} from "./plugins/multiBlockSelection"
+import {
+  BLOCK_CONTEXT_MENU_INTENT_META,
+  type BlockContextMenuIntent
+} from "./plugins/blockContextMenuModel"
 import { createCaretlessBlankBlockDeletionTransaction } from "./inactiveBlockSelection"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
@@ -220,6 +229,36 @@ export function insertLiteralNewlineInCode(schema: Schema): Command {
   }
 }
 
+function stagedBlockSelection(
+  contextMenuIntent: BlockContextMenuIntent
+): Command {
+  return (state, dispatch) => selectAllBlocksInStages(
+    state,
+    dispatch
+      ? (transaction) => {
+          transaction.setMeta(
+            BLOCK_CONTEXT_MENU_INTENT_META,
+            contextMenuIntent
+          )
+          dispatch(transaction)
+        }
+      : undefined
+  )
+}
+
+const toggleBlockContextMenu: Command = (state, dispatch) => {
+  const selectedBlocks =
+    multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
+  if (selectedBlocks.length === 0) {
+    return stagedBlockSelection("toggle")(state, dispatch)
+  }
+
+  dispatch?.(
+    state.tr.setMeta(BLOCK_CONTEXT_MENU_INTENT_META, "toggle")
+  )
+  return true
+}
+
 function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
@@ -270,7 +309,8 @@ function buildKeymap(schema: Schema) {
   keys["Ctrl-Shift-ArrowDown"] = moveBlocks("down")
   keys["Mod-d"] = duplicateBlocks
   keys["Mod-D"] = duplicateBlocks
-  keys["Mod-/"] = selectAllBlocksInStages
+  keys["Mod-a"] = stagedBlockSelection("close")
+  keys["Mod-/"] = toggleBlockContextMenu
   const deleteEmptyBlock = chainCommands(
     resetEmptyFormattedBlock(schema),
     removeEmptyParagraphBlock(schema)

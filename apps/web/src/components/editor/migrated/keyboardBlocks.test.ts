@@ -27,6 +27,9 @@ import {
   inactiveBlockSelectionPlugin,
   transactionLeavesEditorInactive
 } from "./inactiveBlockSelection"
+import {
+  BLOCK_CONTEXT_MENU_INTENT_META
+} from "./plugins/blockContextMenuModel"
 import { schema } from "./schema"
 
 function blockPositions(state: EditorState): number[] {
@@ -134,7 +137,7 @@ describe("live editor staged Select All", () => {
     ])
   })
 
-  it("binds staged block selection to Mod-/ and leaves Mod-A unclaimed", () => {
+  it("keeps staged selection on Mod-A and uses Mod-/ only for the menu", () => {
     const blockShortcutKeymap = buildKeymap(schema)
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({
@@ -142,11 +145,15 @@ describe("live editor staged Select All", () => {
       selection: TextSelection.create(doc, 6),
       plugins: [multiBlockSelectionPlugin(schema), blockShortcutKeymap]
     })
+    const contextMenuIntents: unknown[] = []
     const view = {
       get state() {
         return state
       },
       dispatch(transaction: Transaction) {
+        contextMenuIntents.push(
+          transaction.getMeta(BLOCK_CONTEXT_MENU_INTENT_META)
+        )
         state = state.apply(transaction)
       }
     } as unknown as EditorView
@@ -168,9 +175,12 @@ describe("live editor staged Select All", () => {
       blockShortcutKeymap,
       view,
       event("a", { ctrlKey: true })
-    )).toBe(false)
-    expect(state.selection).toBeInstanceOf(TextSelection)
-    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
+    )).toBe(true)
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["Two"])
+    expect(contextMenuIntents.at(-1)).toBe("close")
 
     expect(blockShortcutKeymap.props.handleKeyDown?.call(
       blockShortcutKeymap,
@@ -180,6 +190,17 @@ describe("live editor staged Select All", () => {
     expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
       (pos) => state.doc.nodeAt(pos)?.textContent
     )).toEqual(["Two"])
+    expect(contextMenuIntents.at(-1)).toBe("toggle")
+
+    expect(blockShortcutKeymap.props.handleKeyDown?.call(
+      blockShortcutKeymap,
+      view,
+      event("a", { ctrlKey: true })
+    )).toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["One", "Two", "Three"])
+    expect(contextMenuIntents.at(-1)).toBe("close")
   })
 })
 

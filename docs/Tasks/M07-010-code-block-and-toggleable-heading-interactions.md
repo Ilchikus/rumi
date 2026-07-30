@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -17,8 +17,8 @@ updated: "2026-07-30"
 Fix five related editing defects without changing Rumi's Markdown format or save boundary:
 
 - paste text literally inside an existing code block;
-- route typing on a selected code block to the block-type replacement search instead of replacing
-  the code block;
+- preserve staged Mod-A block selection for direct replacement while providing Mod-/ as the
+  explicit block-menu toggle;
 - keep Shift-Enter and all content after the cursor inside the same code block;
 - reveal an expanded heading's collapse caret only from the caret's own hit target, not from hovering
   the whole heading row;
@@ -58,7 +58,8 @@ though its structure no longer matches the user's code fence or collapsed-sectio
 - Preserve one code block, its language, and all text before and after the cursor for code-local
   paste and Shift-Enter.
 - Preserve clipboard whitespace and line breaks literally in code.
-- Make selected-block typing reliably operate the existing block-type replacement search.
+- Keep staged Mod-A block selection available for direct replacement and use Mod-/ to toggle the
+  existing block-type replacement search.
 - Keep handle click/drag behavior intact while closing its deferred-focus input race.
 - Make the heading caret's reveal area match the caret control rather than the heading row.
 - Provide a one-keystroke escape from a collapsed heading into visible content below its section.
@@ -118,10 +119,9 @@ after
 
 The entire result remains within the original fenced block.
 
-### Typing With A Code Block Selected
+### Block Selection And Replacement Menu
 
-When the code block is selected as a block through its handle or the staged block-selection
-shortcut:
+When the code block is selected through its handle or area selection:
 
 - The existing block-type replacement menu opens.
 - Its search field owns the first printable character, including a character typed immediately
@@ -133,6 +133,14 @@ shortcut:
 
 This requirement includes the short interval between handle selection and the next animation frame.
 It is not sufficient for the search field to focus eventually.
+
+The staged keyboard shortcuts are intentionally distinct:
+
+- the first Mod-A selects the current block without opening the menu, so typing replaces the block;
+- the second Mod-A selects all blocks;
+- Mod-/ toggles the block menu for the existing selection, or selects the current block when there
+  is no block selection;
+- a second Mod-/ closes the menu without expanding the block selection.
 
 ### Shift-Enter Inside Code
 
@@ -267,15 +275,15 @@ Candidate files:
 - [ ] Regression test: non-code URL, HTML/Markdown, and asset paste behavior remains unchanged.
 - [x] Editor command test: Shift-Enter inside code inserts a literal newline and serializes to one
   fence; Shift-Enter in prose still creates a hard break.
-- [ ] Block-menu interaction test: immediate printable input after handle selection reaches the
+- [x] Block-menu interaction test: immediate printable input after handle selection reaches the
   search and does not change the selected code node.
 - [x] Heading command tests: collapsed-heading end Enter inserts/reuses one divider at the section
   end, keeps the heading collapsed, and focuses the paragraph below it.
-- [ ] Section-boundary tests: horizontal rules stop collapse decoration, collapsed-heading drag
+- [x] Section-boundary tests: horizontal rules stop collapse decoration, collapsed-heading drag
   range, and collapsed-heading drop append range.
-- [ ] Styling/UI smoke: expanded caret appears only over its own target, while a collapsed caret is
+- [x] Styling/UI smoke: expanded caret appears only over its own target, while a collapsed caret is
   always visible.
-- [ ] Real-browser smoke: paste, immediate selected-block typing, Shift-Enter, caret hover, and
+- [x] Real-browser smoke: paste, immediate selected-block typing, Shift-Enter, caret hover, and
   collapsed-heading escape all work in the active editor.
 - [x] Update the editor interaction contract with the code-local input and horizontal-rule boundary
   behavior.
@@ -293,17 +301,18 @@ Implemented on `codex/settings`:
 - `findSectionEnd` treats a horizontal rule as a shared collapse and drag/drop boundary;
 - Enter at a collapsed heading's end inserts or reuses that boundary after the hidden descendants
   and focuses a blank paragraph below it.
-
-The task remains in `verify` until the real-browser QA scenarios are completed.
+- the first Mod-A selects the current block, the second selects every block, and Mod-/ independently
+  toggles the block context menu without expanding the selection.
 
 ## Verification
 
 Automated verification on 2026-07-30:
 
 - focused editor coverage passed: 4 files, 52 tests;
-- full repository tests passed: 54 files, 390 tests;
+- full repository tests passed: 54 files, 395 tests;
 - TypeScript typecheck passed;
-- production web build and bundled `@rumi-md/server@0.1.10` build passed.
+- production web build and bundled `@rumi-md/server@0.1.11` build passed;
+- manual QA confirmed the reported editor fixes and the final Mod-A/Mod-/ shortcut split.
 
 ## QA Scenarios
 
@@ -329,7 +338,8 @@ Automated verification on 2026-07-30:
 
 - All five reported interactions match the product behavior above in the active editor.
 - Code paste and Shift-Enter cannot split a code fence or move its suffix into prose.
-- Selected-block typing cannot mutate a code node before the replacement search receives focus.
+- Handle- or area-selected block typing cannot mutate a code node before the replacement search
+  receives focus, while staged Mod-A selection remains directly replaceable.
 - Horizontal rules consistently break toggleable areas for visibility and drag/drop calculations.
 - The editor interaction contract is updated.
 - Focused tests, typecheck, production web build, and the real-browser smoke pass.

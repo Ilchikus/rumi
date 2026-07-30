@@ -5,6 +5,10 @@ import { Schema } from "prosemirror-model"
 import { setBlockType, wrapIn } from "prosemirror-commands"
 import { chooseAndUploadAsset, reportEditorError } from "../platform"
 import { BLOCK_TYPE_ICONS } from "./blockTypePresentation"
+import {
+  claimSuggestionMenu,
+  suggestionMenuClaim
+} from "./suggestionMenus"
 
 const FILE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,82.34l-44-44A8,8,0,0,0,164,36H72A20,20,0,0,0,52,56V200a20,20,0,0,0,20,20H184a20,20,0,0,0,20-20V88A8,8,0,0,0,213.66,82.34ZM172,63.31,188.69,80H172ZM188,200a4,4,0,0,1-4,4H72a4,4,0,0,1-4-4V56a4,4,0,0,1,4-4h84V88a8,8,0,0,0,8,8h24Z"></path></svg>`
 const IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Zm48,68a8,8,0,0,1-8,8H72a8,8,0,0,1-6.65-12.44l24-36a8,8,0,0,1,12.46-.81L126.4,153l34.93-46.58a8,8,0,0,1,12.73-.15l40,48A8,8,0,0,1,212,168Z"></path></svg>`
@@ -402,6 +406,17 @@ export function slashCommandsPlugin(schema: Schema) {
       },
 
       apply(tr, state): PluginState {
+        const claim = suggestionMenuClaim(tr)
+        if (claim && claim !== "slash" && state.active) {
+          state = {
+            ...state,
+            active: false,
+            query: "",
+            range: null,
+            selectedIndex: 0,
+            filteredCommands: commands
+          }
+        }
         const meta = tr.getMeta(slashCommandsPluginKey)
         if (meta) {
           return { ...state, ...meta }
@@ -511,13 +526,14 @@ export function slashCommandsPlugin(schema: Schema) {
             if (isAtLineStart) {
               // Activate slash commands after the / is inserted
               setTimeout(() => {
-                const tr = view.state.tr.setMeta(slashCommandsPluginKey, {
+                let tr = view.state.tr.setMeta(slashCommandsPluginKey, {
                   active: true,
                   query: "",
                   range: { from: view.state.selection.from - 1, to: view.state.selection.from },
                   selectedIndex: 0,
                   filteredCommands: commands
                 })
+                tr = claimSuggestionMenu(tr, "slash")
                 view.dispatch(tr)
               }, 0)
             }

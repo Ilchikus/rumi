@@ -147,13 +147,17 @@ describe("editor layout contracts", () => {
     expect(codeLanguagePicker).not.toContain("<select");
   });
 
-  it("defaults browser misspelling highlighting off and updates it without remounting", () => {
+  it("updates live editor assistance settings without remounting", () => {
     expect(migratedEditor).toContain("highlightMisspellings = false");
+    expect(migratedEditor).toContain("inlineReplacements = true");
+    expect(migratedEditor).toContain("emojiSuggestions = true");
     expect(migratedEditor).toContain(
       'spellcheck: highlightMisspellings ? "true" : "false"'
     );
     expect(migratedEditor).toContain('viewRef.current?.dom.setAttribute(');
     expect(migratedEditor).toContain('[highlightMisspellings]');
+    expect(migratedEditor).toContain("setInlineReplacementsEnabled(view, inlineReplacements)");
+    expect(migratedEditor).toContain("setEmojiSuggestionsEnabled(view, emojiSuggestions)");
   });
 });
 

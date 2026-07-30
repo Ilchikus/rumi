@@ -139,7 +139,11 @@ describe("Rumi server API", () => {
       path.join(root, ".rumi", "config.json"),
       JSON.stringify({
         uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] },
-        editor: { highlightMisspellings: false }
+        editor: {
+          highlightMisspellings: false,
+          inlineReplacements: true,
+          emojiSuggestions: true
+        }
       }),
       "utf8"
     );
@@ -166,7 +170,11 @@ describe("Rumi server API", () => {
       url: "/api/workspace/settings",
       payload: {
         uploads: { maxFileSizeMb: null, allowedFileTypes: [".pdf"] },
-        editor: { highlightMisspellings: true }
+        editor: {
+          highlightMisspellings: true,
+          inlineReplacements: false,
+          emojiSuggestions: false
+        }
       }
     });
     const allowedPdf = await server.inject({
@@ -180,7 +188,11 @@ describe("Rumi server API", () => {
       url: "/api/workspace/settings",
       payload: {
         uploads: { maxFileSizeMb: 2, allowedFileTypes: [".pdf"] },
-        editor: { highlightMisspellings: "yes" }
+        editor: {
+          highlightMisspellings: "yes",
+          inlineReplacements: true,
+          emojiSuggestions: true
+        }
       }
     });
 
@@ -188,7 +200,11 @@ describe("Rumi server API", () => {
     expect(initial.json()).toMatchObject({
       settings: {
         uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] },
-        editor: { highlightMisspellings: false }
+        editor: {
+          highlightMisspellings: false,
+          inlineReplacements: true,
+          emojiSuggestions: true
+        }
       },
       constraints: {
         uploads: { defaultMaxFileSizeMb: 50 }
@@ -206,7 +222,11 @@ describe("Rumi server API", () => {
     expect(update.json()).toMatchObject({
       settings: {
         uploads: { maxFileSizeMb: null, allowedFileTypes: [".pdf"] },
-        editor: { highlightMisspellings: true }
+        editor: {
+          highlightMisspellings: true,
+          inlineReplacements: false,
+          emojiSuggestions: false
+        }
       }
     });
     expect(allowedPdf.statusCode).toBe(200);

@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-06-23"
-updated: "2026-07-27"
+updated: "2026-07-29"
 ---
 # M07-001 Rumi Block Editor Preset
 
@@ -105,12 +105,15 @@ placement boundaries and the conversion from viewport to canvas coordinates.
 Task input rules now recognize `[]` and `[x]` with an optional leading dash and optional space after
 that dash, including the intermediate bullet block created by typing `- `. The shortcut converts
 only after a trailing Space, so incomplete bracket sequences remain literal. The Markdown bridge
-reads standard spaced GFM task markers and compact unchecked markers, then writes the canonical
-`- []` or `- [x]` form without trailing whitespace on empty items. Enter preserves an empty bullet,
-number, or task row and creates the next row. Backspace/Delete exits an empty list item in place by
-replacing it with a plain blank paragraph; a subsequent deletion follows the ordinary blank-block
-behavior. Focused input-rule, keyboard-command, and Markdown roundtrip tests protect these
-interactions.
+reads standard spaced GFM task markers and legacy compact unchecked markers at every supported
+nesting depth, then writes the portable canonical `- [ ]` or `- [x]` form without trailing
+whitespace on empty items. Enter preserves an empty bullet, number, or task row and creates the next
+row. Backspace/Delete exits an empty list item in place by replacing it with a plain blank paragraph;
+a subsequent deletion follows the ordinary blank-block behavior. Focused input-rule,
+keyboard-command, and exhaustive checked-state Markdown roundtrip tests protect these interactions.
+Checkbox changes resolve the owning task node from its rendered element, including a task in the
+first document position, and persist the browser's actual checked value through the ordinary
+autosave path. Empty tasks remain task nodes after reload rather than degrading into bullet items.
 
 The root [Markdown syntax reference](../../MARKDOWN.md) now names GFM as the portability baseline
 and documents Rumi's highlight, underline, compact-task, embed, and read-time compatibility

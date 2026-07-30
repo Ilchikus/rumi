@@ -7,6 +7,10 @@ import {
   renderedMentionKind,
   type MentionItemKind
 } from "../mentionTypes"
+import {
+  claimSuggestionMenu,
+  suggestionMenuClaim
+} from "./suggestionMenus"
 
 export { mentionKindForPath } from "../mentionTypes"
 
@@ -48,6 +52,10 @@ export function atMentionPlugin(schema: Schema, getFiles: () => FileItem[]) {
       },
 
       apply(tr, state): PluginState {
+        const claim = suggestionMenuClaim(tr)
+        if (claim && claim !== "mention" && state.active) {
+          state = { active: false, query: "", range: null, selectedIndex: 0 }
+        }
         const meta = tr.getMeta(atMentionPluginKey)
         if (meta) {
           return { ...state, ...meta }
@@ -160,12 +168,13 @@ export function atMentionPlugin(schema: Schema, getFiles: () => FileItem[]) {
             if (isValidPosition) {
               // Activate after @ is inserted
               setTimeout(() => {
-                const tr = view.state.tr.setMeta(atMentionPluginKey, {
+                let tr = view.state.tr.setMeta(atMentionPluginKey, {
                   active: true,
                   query: "",
                   range: { from: view.state.selection.from - 1, to: view.state.selection.from },
                   selectedIndex: 0
                 })
+                tr = claimSuggestionMenu(tr, "mention")
                 view.dispatch(tr)
               }, 0)
             }

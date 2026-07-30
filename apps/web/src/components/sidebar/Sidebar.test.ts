@@ -72,7 +72,9 @@ describe("sidebar active ancestor trail", () => {
     expect(sidebarSource).toContain("zIndex: Math.max(1, 20 - stickyAncestorIndex)");
     expect(sidebarSource).toContain("paddingLeft: TREE_ROW_PADDING_PX + depth * TREE_INDENT_PX");
     expect(sidebarSource).toContain("<TreeDepthGuides");
-    expect(sidebarSource).toContain('className="min-h-0 overflow-y-auto overscroll-contain"');
+    expect(sidebarSource).toContain(
+      'className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain"'
+    );
     expect(sidebarSource).not.toContain("stickyReleaseFrameRef");
     expect(sidebarSource).not.toContain("activeRow.getBoundingClientRect()");
     expect(sidebarSource).not.toContain("--rumi-sidebar-sticky-release");

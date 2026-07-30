@@ -51,7 +51,9 @@ describe("workspace upload configuration", () => {
         allowedFileTypes: [".png", ".jpg"]
       },
       editor: {
-        highlightMisspellings: false
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true
       }
     });
 
@@ -89,7 +91,9 @@ describe("workspace upload configuration", () => {
         allowedFileTypes: ["PNG", ".pdf", ".PNG"]
       },
       editor: {
-        highlightMisspellings: true
+        highlightMisspellings: true,
+        inlineReplacements: false,
+        emojiSuggestions: false
       }
     });
     const persisted = JSON.parse(
@@ -102,7 +106,9 @@ describe("workspace upload configuration", () => {
         allowedFileTypes: [".png", ".pdf"]
       },
       editor: {
-        highlightMisspellings: true
+        highlightMisspellings: true,
+        inlineReplacements: false,
+        emojiSuggestions: false
       }
     });
     expect(persisted).toEqual({
@@ -138,6 +144,14 @@ describe("workspace upload configuration", () => {
       {
         source: JSON.stringify({ editor: { highlightMisspellings: "yes" } }),
         message: /editor\.highlightMisspellings must be a boolean/u
+      },
+      {
+        source: JSON.stringify({ editor: { inlineReplacements: "yes" } }),
+        message: /editor\.inlineReplacements must be a boolean/u
+      },
+      {
+        source: JSON.stringify({ editor: { emojiSuggestions: 1 } }),
+        message: /editor\.emojiSuggestions must be a boolean/u
       },
       {
         source: JSON.stringify({ editor: { spellcheck: false } }),

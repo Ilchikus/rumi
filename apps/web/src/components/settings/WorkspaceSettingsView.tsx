@@ -26,6 +26,8 @@ export function WorkspaceSettingsView({
   const [maxFileSizeInput, setMaxFileSizeInput] = useState("");
   const [allowedFileTypes, setAllowedFileTypes] = useState<string[]>([]);
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
+  const [inlineReplacements, setInlineReplacements] = useState(true);
+  const [emojiSuggestions, setEmojiSuggestions] = useState(true);
   const [formError, setFormError] = useState("");
   const [saved, setSaved] = useState(false);
   const [animateMisspellings, setAnimateMisspellings] = useState(false);
@@ -52,6 +54,8 @@ export function WorkspaceSettingsView({
     );
     setAllowedFileTypes([...result.settings.uploads.allowedFileTypes]);
     setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+    setInlineReplacements(result.settings.editor.inlineReplacements);
+    setEmojiSuggestions(result.settings.editor.emojiSuggestions);
     setFormError("");
     switchAnimationFrameRef.current = requestAnimationFrame(() => {
       switchAnimationFrameRef.current = null;
@@ -100,7 +104,9 @@ export function WorkspaceSettingsView({
         allowedFileTypes
       },
       editor: {
-        highlightMisspellings
+        highlightMisspellings,
+        inlineReplacements,
+        emojiSuggestions
       }
     });
     if (!didSave) return;
@@ -143,6 +149,48 @@ export function WorkspaceSettingsView({
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
               Show browser spelling suggestions and red underlines while editing.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <label htmlFor="inline-replacements" className="text-sm font-medium">
+                Inline replacements
+              </label>
+              <Switch
+                id="inline-replacements"
+                animate={animateMisspellings}
+                checked={inlineReplacements}
+                aria-label="Enable inline replacements"
+                onCheckedChange={(checked) => {
+                  clearSavedState();
+                  setInlineReplacements(checked);
+                }}
+              />
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Replace typed shorthand such as -&gt; with symbols such as →.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <label htmlFor="emoji-suggestions" className="text-sm font-medium">
+                Emoji suggestions
+              </label>
+              <Switch
+                id="emoji-suggestions"
+                animate={animateMisspellings}
+                checked={emojiSuggestions}
+                aria-label="Enable emoji suggestions"
+                onCheckedChange={(checked) => {
+                  clearSavedState();
+                  setEmojiSuggestions(checked);
+                }}
+              />
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Open the emoji selector when typing : in prose.
             </p>
           </div>
 

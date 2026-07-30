@@ -18,6 +18,7 @@
     "build": "corepack pnpm --filter @rumi/web build && corepack pnpm --filter @rumi-md/server build:bundle",
     "check": "corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
     "check:server-package": "corepack pnpm --filter @rumi-md/server release:check",
+    "generate:emoji": "node scripts/generate-emoji-catalog.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

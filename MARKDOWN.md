@@ -35,7 +35,7 @@ This is __underlined text__.
 Rumi renders this as `<u>underlined text</u>`. This deliberately differs from GFM, where double
 underscores represent strong emphasis. Use `**bold text**` for portable bold text.
 
-### Compact task items
+### Task items
 
 Rumi reads the standard GFM task markers and its compact unchecked form:
 
@@ -45,8 +45,9 @@ Rumi reads the standard GFM task markers and its compact unchecked form:
 - [x] Checked task
 ```
 
-When saving, Rumi writes unchecked tasks as `- []` and checked tasks as `- [x]`. The compact
-unchecked form is a Rumi extension and may appear as an ordinary list item in other GFM renderers.
+When saving, Rumi writes portable GFM task markers: `- [ ]` for unchecked tasks and `- [x]` for
+checked tasks. The compact unchecked form remains readable at every nesting depth for compatibility
+with existing Rumi files.
 
 In the web editor, typing `[]`, `[x]`, `- []`, `- [x]`, `-[]`, or `-[x]` at the beginning of a
 line creates a task item after the following Space is typed. The standard `- [ ]` form is accepted

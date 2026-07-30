@@ -34,6 +34,14 @@ import { mermaidNodeView } from "./plugins/mermaidNodeView"
 import { databaseEmbedNodeView } from "./plugins/databaseEmbedNodeView"
 import { pasteHandlerPlugin } from "./plugins/pasteHandler"
 import { collapsibleHeadingsPlugin, headingNodeView } from "./plugins/collapsibleHeadings"
+import {
+  inlineReplacementsPlugin,
+  setInlineReplacementsEnabled
+} from "./plugins/inlineReplacements"
+import {
+  emojiSuggestionsPlugin,
+  setEmojiSuggestionsEnabled
+} from "./plugins/emojiSuggestions"
 import { setMigratedEditorPlatform } from "./platform"
 
 export interface RumiBlockEditorHandle {
@@ -65,6 +73,8 @@ export interface RumiBlockEditorProps {
   onUploadAsset?: (file: File) => Promise<string>
   onMessage?: (message: string) => void
   highlightMisspellings?: boolean
+  inlineReplacements?: boolean
+  emojiSuggestions?: boolean
   readOnly?: boolean
   onDirty: () => void
 }
@@ -82,6 +92,8 @@ function ProseMirrorEditor(
     onUploadAsset,
     onMessage,
     highlightMisspellings = false,
+    inlineReplacements = true,
+    emojiSuggestions = true,
     readOnly = false,
     onDirty
   },
@@ -148,6 +160,11 @@ function ProseMirrorEditor(
       plugins: [
         collapsibleHeadingsPlugin(),
         buildInputRules(schema),
+        inlineReplacementsPlugin(schema, inlineReplacements),
+        emojiSuggestionsPlugin(schema, {
+          enabled: emojiSuggestions,
+          workspaceKey
+        }),
         inactiveBlockSelectionPlugin(),
         multiBlockSelectionPlugin(schema),
         buildKeymap(schema),
@@ -228,6 +245,16 @@ function ProseMirrorEditor(
       highlightMisspellings ? "true" : "false"
     )
   }, [highlightMisspellings])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (view) setInlineReplacementsEnabled(view, inlineReplacements)
+  }, [inlineReplacements])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (view) setEmojiSuggestionsEnabled(view, emojiSuggestions)
+  }, [emojiSuggestions])
 
   useImperativeHandle(ref, () => ({
     focus() {

@@ -42,9 +42,9 @@ function typeText(text: string): EditorState {
 
 describe("live editor task input rules", () => {
   it.each([
-    ["bare unchecked", "[] ", false, "- []\n"],
-    ["spaced-dash unchecked", "- [] ", false, "- []\n"],
-    ["compact-dash unchecked", "-[] ", false, "- []\n"],
+    ["bare unchecked", "[] ", false, "- [ ]\n"],
+    ["spaced-dash unchecked", "- [] ", false, "- [ ]\n"],
+    ["compact-dash unchecked", "-[] ", false, "- [ ]\n"],
     ["bare checked", "[x] ", true, "- [x]\n"],
     ["spaced-dash checked", "- [x] ", true, "- [x]\n"],
     ["compact-dash checked", "-[x] ", true, "- [x]\n"]
@@ -77,7 +77,7 @@ describe("live editor task input rules", () => {
 
     expect(state.doc.firstChild?.type.name).toBe("task_item")
     expect(state.doc.firstChild?.attrs.checked).toBe(false)
-    expect(serializeMarkdown(state.doc)).toBe("- []\n")
+    expect(serializeMarkdown(state.doc)).toBe("- [ ]\n")
   })
 })
 

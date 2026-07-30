@@ -410,7 +410,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-neutral-50 text-foreground">
+    <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-neutral-50 text-foreground">
       <header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0">
@@ -450,7 +450,7 @@ export function Sidebar({
       </header>
 
       <div
-        className="min-h-0 overflow-y-auto overscroll-contain"
+        className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain"
         onContextMenu={openRootMenu}
       >
         {tree ? (

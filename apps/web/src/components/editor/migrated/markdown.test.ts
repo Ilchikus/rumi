@@ -19,6 +19,14 @@ describe("markdown file embeds", () => {
 })
 
 describe("live editor Markdown round trips", () => {
+  it("preserves replacement symbols and multi-code-point emoji as literal UTF-8 text", () => {
+    const markdown = "→ ← ↔ ⇒ ⇔ ≤ ≥ ≠ ≈ ± … © ® ™ ❤️ 👩‍💻 👍🏽\n"
+    const parsed = parseMarkdown(markdown, schema)
+
+    expect(serializeMarkdown(parsed)).toBe(markdown)
+    expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
   it("distinguishes no selected database view from a stable view ID named table", () => {
     const implicit = parseMarkdown([
       "```db",
@@ -163,7 +171,7 @@ describe("live editor Markdown round trips", () => {
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
   })
 
-  it("accepts GFM task markers and writes compact canonical checkbox markers", () => {
+  it("accepts legacy compact task markers and writes canonical GFM markers", () => {
     const markdown = [
       "- [ ] Standard unchecked",
       "- [] Compact unchecked",
@@ -183,8 +191,8 @@ describe("live editor Markdown round trips", () => {
       ["task_item", true, "Checked"]
     ])
     expect(serialized).toBe([
-      "- [] Standard unchecked",
-      "- [] Compact unchecked",
+      "- [ ] Standard unchecked",
+      "- [ ] Compact unchecked",
       "- [x] Checked",
       ""
     ].join("\n"))
@@ -196,16 +204,111 @@ describe("live editor Markdown round trips", () => {
       schema.nodes.task_item!.create({ indent: 0, checked: false }),
       schema.nodes.task_item!.create({ indent: 0, checked: true })
     ])
+    const serialized = serializeMarkdown(doc)
 
-    expect(serializeMarkdown(doc)).toBe("- []\n- [x]\n")
+    expect(serialized).toBe("- [ ]\n- [x]\n")
+    expect(parseMarkdown(serialized, schema).toJSON()).toEqual(doc.toJSON())
   })
 
-  it("roundtrips compact unchecked task markers inside blockquotes", () => {
+  it("canonicalizes compact unchecked task markers inside blockquotes", () => {
     const parsed = parseMarkdown("> - [ ] Quoted task\n", schema)
     const serialized = serializeMarkdown(parsed)
 
-    expect(serialized).toContain("> - [] Quoted task")
+    expect(serialized).toContain("> - [ ] Quoted task")
     expect(parseMarkdown(serialized, schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("recovers deeply nested legacy compact tasks and preserves every checked state", () => {
+    const legacyMarkdown = [
+      "- [] Root",
+      "    - [x] Child",
+      "        - [] Grandchild",
+      "            - [x] Great-grandchild",
+      ""
+    ].join("\n")
+    const parsed = parseMarkdown(legacyMarkdown, schema)
+    const serialized = serializeMarkdown(parsed)
+
+    expect(parsed.content.content.map((node) => [
+      node.type.name,
+      node.attrs.indent,
+      node.attrs.checked
+    ])).toEqual([
+      ["task_item", 0, false],
+      ["task_item", 1, true],
+      ["task_item", 2, false],
+      ["task_item", 3, true]
+    ])
+    expect(serialized).toBe([
+      "- [ ] Root",
+      "    - [x] Child",
+      "        - [ ] Grandchild",
+      "            - [x] Great-grandchild",
+      ""
+    ].join("\n"))
+    expect(parseMarkdown(serialized, schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it("roundtrips every checked-state combination across all supported task depths", () => {
+    for (let mask = 0; mask < 16; mask += 1) {
+      const taskItems = Array.from({ length: 4 }, (_, indent) =>
+        schema.nodes.task_item!.create(
+          { indent, checked: Boolean(mask & (1 << indent)) },
+          schema.text(`Depth ${indent}`)
+        )
+      )
+      const doc = schema.nodes.doc!.create(null, taskItems)
+      const serialized = serializeMarkdown(doc)
+      const reparsed = parseMarkdown(serialized, schema)
+
+      expect(serialized).not.toContain("- []")
+      expect(reparsed.toJSON(), `checked-state mask ${mask}`).toEqual(doc.toJSON())
+    }
+  })
+
+  it("roundtrips empty legacy and GFM tasks across all supported depths", () => {
+    const legacyMarkdown = [
+      "- []",
+      "    - [x]",
+      "        - [ ]",
+      "            - []",
+      ""
+    ].join("\n")
+    const parsed = parseMarkdown(legacyMarkdown, schema)
+    const serialized = serializeMarkdown(parsed)
+
+    expect(parsed.content.content.map((node) => [
+      node.type.name,
+      node.attrs.indent,
+      node.attrs.checked,
+      node.textContent
+    ])).toEqual([
+      ["task_item", 0, false, ""],
+      ["task_item", 1, true, ""],
+      ["task_item", 2, false, ""],
+      ["task_item", 3, false, ""]
+    ])
+    expect(serialized).toBe([
+      "- [ ]",
+      "    - [x]",
+      "        - [ ]",
+      "            - [ ]",
+      ""
+    ].join("\n"))
+    expect(parseMarkdown(serialized, schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it.each([
+    ["unchecked GFM marker", "    - [ ]\n", "- [ ]"],
+    ["checked GFM marker", "    - [x]\n", "- [x]"],
+    ["deep compact marker", "        - []\n", "    - []"]
+  ])("preserves task-looking text in indented code: %s", (_name, markdown, code) => {
+    const parsed = parseMarkdown(markdown, schema)
+
+    expect(parsed.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(parsed.firstChild?.textContent).toBe(code)
+    expect(serializeMarkdown(parsed)).not.toContain("rumi-empty-task")
+    expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
   })
 
   it("keeps aligned GFM tables as tables and preserves column alignment", () => {

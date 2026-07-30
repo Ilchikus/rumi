@@ -1,4 +1,9 @@
-import { EditorState, TextSelection } from "prosemirror-state"
+import {
+  EditorState,
+  TextSelection,
+  type Transaction
+} from "prosemirror-state"
+import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown } from "../markdown"
 import { schema } from "../schema"
@@ -15,13 +20,16 @@ function blockPositions(state: EditorState): number[] {
   return positions
 }
 
-function collapsedHeadingState(markdown: string): EditorState {
+function collapsedHeadingState(
+  markdown: string,
+  plugin = collapsibleHeadingsPlugin()
+): EditorState {
   const doc = parseMarkdown(markdown, schema)
   const heading = doc.firstChild!
   let state = EditorState.create({
     doc,
     selection: TextSelection.create(doc, 1 + heading.content.size),
-    plugins: [collapsibleHeadingsPlugin()]
+    plugins: [plugin]
   })
   state = state.apply(
     state.tr.setMeta(collapsibleHeadingsKey, {
@@ -149,5 +157,40 @@ describe("toggleable heading boundaries", () => {
       plugins: [collapsibleHeadingsPlugin()]
     })
     expect(createCollapsedHeadingExitTransaction(expanded)).toBeNull()
+  })
+
+  it("leaves modified Enter shortcuts to the editor keymap", () => {
+    const plugin = collapsibleHeadingsPlugin()
+    let state = collapsedHeadingState("# Project\n\nSecret\n", plugin)
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+
+    for (const modifiers of [
+      { shiftKey: true },
+      { metaKey: true },
+      { ctrlKey: true },
+      { altKey: true }
+    ]) {
+      const handled = plugin.props.handleKeyDown?.call(
+        plugin,
+        view,
+        {
+          key: "Enter",
+          shiftKey: false,
+          metaKey: false,
+          ctrlKey: false,
+          altKey: false,
+          ...modifiers
+        } as KeyboardEvent
+      )
+      expect(handled).toBe(false)
+      expect(state.doc.childCount).toBe(2)
+    }
   })
 })

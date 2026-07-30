@@ -138,6 +138,7 @@ export function createCodeTextPasteTransaction(
 ): Transaction | null {
   const { selection } = state
   if (
+    text.length === 0 ||
     !(selection instanceof TextSelection) ||
     selection.$from.parent.type !== schema.nodes.code_block ||
     selection.$to.parent.type !== schema.nodes.code_block ||
@@ -188,11 +189,20 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         const html = clipboard.getData("text/html")
         const text = clipboard.getData("text/plain")
+        const codeText = text.length > 0
+          ? text
+          : html
+            ? slice.content.textBetween(0, slice.content.size, "\n", "\n")
+            : text
 
         // Code is literal text. Handle it before URL detection, rich HTML, or
         // Markdown parsing so ProseMirror never has to fit block nodes into the
         // code_block's text-only content expression.
-        const codeTransaction = createCodeTextPasteTransaction(view.state, text, schema)
+        const codeTransaction = createCodeTextPasteTransaction(
+          view.state,
+          codeText,
+          schema
+        )
         if (codeTransaction) {
           event.preventDefault()
           view.dispatch(codeTransaction.scrollIntoView())

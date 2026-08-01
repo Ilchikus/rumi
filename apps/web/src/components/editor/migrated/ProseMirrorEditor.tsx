@@ -25,7 +25,6 @@ import { atMentionPlugin, FileItem } from "./plugins/atMention"
 import { blockDragHandlePlugin } from "./plugins/blockDragHandle"
 import { multiBlockSelectionPlugin } from "./plugins/multiBlockSelection"
 import { tableEditing, columnResizing } from "prosemirror-tables"
-import { tableControlsPlugin } from "./plugins/tableControls"
 import { codeBlockNodeView } from "./plugins/codeBlockView"
 import { codeHighlightPlugin } from "./plugins/codeHighlight"
 import { fileNodeView } from "./plugins/fileNodeView"
@@ -180,7 +179,6 @@ function ProseMirrorEditor(
         atMentionPlugin(schema, getFiles),
         columnResizing(),
         tableEditing(),
-        tableControlsPlugin(),
         codeHighlightPlugin(),
       ]
     })

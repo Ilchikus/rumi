@@ -21,14 +21,13 @@ type BlockMenuTypingEvent = Pick<
   "altKey" | "ctrlKey" | "isComposing" | "key" | "metaKey"
 >
 
-export function shouldOpenBlockContextMenuForSelection(
-  previousSelectedBlocks: readonly number[],
-  selectedBlocks: readonly number[]
-): boolean {
-  return selectedBlocks.length > 0 && (
-    previousSelectedBlocks.length !== selectedBlocks.length ||
-    previousSelectedBlocks.some((pos, index) => pos !== selectedBlocks[index])
-  )
+export function blockSelectionForHandleContextMenu(
+  selectedBlocks: readonly number[],
+  blockPos: number
+): number[] {
+  return selectedBlocks.includes(blockPos)
+    ? [...selectedBlocks]
+    : [blockPos]
 }
 
 export function shouldToggleBlockContextMenuFromMenu(

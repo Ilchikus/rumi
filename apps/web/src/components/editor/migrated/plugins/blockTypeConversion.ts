@@ -32,7 +32,28 @@ function sourceInlineContent(node: PmNode, schema: Schema): Fragment | null {
   return text ? Fragment.from(schema.text(text)) : null
 }
 
+function singleColumnTableRows(node: PmNode): Array<Fragment | null> | null {
+  if (node.type.name !== "table") return null
+
+  const rows: Array<Fragment | null> = []
+  let isSingleColumn = true
+  node.forEach((row) => {
+    if (row.childCount !== 1) {
+      isSingleColumn = false
+      return
+    }
+
+    const cell = row.firstChild
+    rows.push(cell && cell.content.size > 0 ? cell.content : null)
+  })
+
+  return isSingleColumn ? rows : null
+}
+
 function splitInlineContentIntoLines(node: PmNode, schema: Schema): Array<Fragment | null> {
+  const tableRows = singleColumnTableRows(node)
+  if (tableRows) return tableRows
+
   if (!node.isTextblock) {
     return [sourceInlineContent(node, schema)]
   }

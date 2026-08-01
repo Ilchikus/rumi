@@ -8,11 +8,11 @@ import {
 } from "./blockDragHandle"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
-  shouldOpenBlockContextMenuForSelection,
   shouldRouteBlockSelectionTypingToSearch,
   shouldShowBlockMenuActionsForQuery,
   shouldToggleBlockContextMenuFromMenu
@@ -36,50 +36,14 @@ function selectedBlocks(state: EditorState): number[] {
 }
 
 describe("selected-block handle menu trigger", () => {
-  it("recognizes a new current-block selection as menu-open eligible", () => {
-    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
-    let state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, doc.child(0).nodeSize + 1),
-      plugins: [multiBlockSelectionPlugin(schema)]
-    })
-    const before = selectedBlocks(state)
-
-    expect(selectAllBlocksInStages(state, (transaction) => {
-      state = state.apply(transaction)
-    })).toBe(true)
-
-    expect(shouldOpenBlockContextMenuForSelection(
-      before,
-      selectedBlocks(state)
-    )).toBe(true)
-    expect(selectedBlocks(state).map(
-      (pos) => state.doc.nodeAt(pos)?.textContent
-    )).toEqual(["Two"])
+  it("preserves selection when the context-clicked handle belongs to it", () => {
+    expect(blockSelectionForHandleContextMenu([0, 5, 10], 5)).toEqual([0, 5, 10])
   })
 
-  it("reopens the handle menu when the block selection expands", () => {
-    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
-    let state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 1),
-      plugins: [multiBlockSelectionPlugin(schema)]
-    })
-
-    selectAllBlocksInStages(state, (transaction) => { state = state.apply(transaction) })
-    const before = selectedBlocks(state)
-    selectAllBlocksInStages(state, (transaction) => { state = state.apply(transaction) })
-
-    expect(shouldOpenBlockContextMenuForSelection(
-      before,
-      selectedBlocks(state)
-    )).toBe(true)
-    expect(selectedBlocks(state)).toHaveLength(3)
-  })
-
-  it("does not open for an unchanged or cleared block selection", () => {
-    expect(shouldOpenBlockContextMenuForSelection([0], [0])).toBe(false)
-    expect(shouldOpenBlockContextMenuForSelection([0], [])).toBe(false)
+  it("resets selection when the context-clicked handle is outside it", () => {
+    expect(blockSelectionForHandleContextMenu([0, 5, 10], 15)).toEqual([15])
+    expect(blockSelectionForHandleContextMenu([10], 15)).toEqual([15])
+    expect(blockSelectionForHandleContextMenu([], 15)).toEqual([15])
   })
 
   it("does not retoggle during the Cmd+/ event that opened the menu", () => {
@@ -247,6 +211,47 @@ describe("selected-block handle menu trigger", () => {
     expect(transaction!.selection.$from.parent).toBe(transaction!.doc.lastChild)
     expect(transaction!.selection.$from.parentOffset).toBe("Third".length)
   })
+
+  it.each(["bullet_item", "numbered_item", "task_item"])(
+    "turns each single-column table row into a separate %s without flattening cell breaks",
+    (type) => {
+      const bold = schema.marks.bold!.create()
+      const header = schema.nodes.table_header!.create(null, schema.text("Header"))
+      const multilineCell = schema.nodes.table_cell!.create(null, [
+        schema.text("First line"),
+        schema.nodes.soft_break!.create(),
+        schema.text("Second line", [bold])
+      ])
+      const lastCell = schema.nodes.table_cell!.create(null, schema.text("Last"))
+      const table = schema.nodes.table!.create(null, [
+        schema.nodes.table_row!.create(null, [header]),
+        schema.nodes.table_row!.create(null, [multilineCell]),
+        schema.nodes.table_row!.create(null, [lastCell])
+      ])
+      const doc = schema.nodes.doc!.create(null, [table])
+      const state = EditorState.create({
+        doc,
+        plugins: [multiBlockSelectionPlugin(schema)]
+      })
+      const option = BLOCK_TYPE_OPTIONS.find(candidate => candidate.type === type)!
+      const transaction = createBlockTypeChangeTransaction(state, [0], option)
+
+      expect(transaction).not.toBeNull()
+      expect(transaction!.doc.childCount).toBe(3)
+      expect(Array.from(
+        { length: transaction!.doc.childCount },
+        (_, index) => transaction!.doc.child(index).type.name
+      )).toEqual([type, type, type])
+      expect(transaction!.doc.child(0).textContent).toBe("Header")
+      expect(transaction!.doc.child(1).content.content.map(node => node.type.name)).toEqual([
+        "text",
+        "soft_break",
+        "text"
+      ])
+      expect(transaction!.doc.child(1).lastChild?.marks).toContainEqual(bold)
+      expect(transaction!.doc.child(2).textContent).toBe("Last")
+    }
+  )
 
   it("replaces deleted selected blocks with one focused blank paragraph", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)

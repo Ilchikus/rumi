@@ -13,11 +13,11 @@ import type { BlockTypeOption } from "./blockTypePresentation"
 import { listDropIndent } from "../listDropIndent"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
   shouldDeleteBlockFromMenu,
   shouldFocusBlockMenuSearchSynchronously,
-  shouldOpenBlockContextMenuForSelection,
   shouldRouteBlockSelectionTypingToSearch,
   shouldShowBlockMenuActionsForQuery,
   shouldToggleBlockContextMenuFromMenu,
@@ -928,10 +928,6 @@ class BlockDragHandleView {
       // View might be in invalid state, ignore
     }
 
-    if (hadBlocks) {
-      this.openContextMenuForSelectedBlocks()
-    }
-
     // A click normally follows mouseup and is intercepted by onWrapperClick. If
     // mouseup happened outside the wrapper, clear the guard on the next task so
     // it cannot swallow a later, unrelated click.
@@ -1002,6 +998,7 @@ class BlockDragHandleView {
     if (this.hoveredBlock === null) return
 
     if (e.button === 0) {
+      this.closeContextMenu()
       this.preserveSelectionThroughHandleClick = true
       document.removeEventListener("mouseup", this.onHandleSelectionMouseUp)
       document.addEventListener("mouseup", this.onHandleSelectionMouseUp, { once: true })
@@ -1012,10 +1009,8 @@ class BlockDragHandleView {
       try {
         // All blocks support multi-block selection
         const pluginState = multiBlockSelectionKey.getState(this.view.state)
-        const isInCurrentSelection = pluginState &&
-          pluginState.selectedBlocks &&
-          pluginState.selectedBlocks.length > 1 &&
-          pluginState.selectedBlocks.includes(block.pos)
+        const isInCurrentSelection =
+          pluginState?.selectedBlocks.includes(block.pos) ?? false
 
         if (isInCurrentSelection) {
           // Block is part of current multi-selection - preserve selection
@@ -1064,10 +1059,38 @@ class BlockDragHandleView {
     e.preventDefault()
     e.stopPropagation()
     if (this.hoveredBlock === null) return
+
+    const selectedBlocks =
+      multiBlockSelectionKey.getState(this.view.state)?.selectedBlocks ?? []
+    const nextSelectedBlocks = blockSelectionForHandleContextMenu(
+      selectedBlocks,
+      this.hoveredBlock.pos
+    )
+    const selectionChanged =
+      nextSelectedBlocks.length !== selectedBlocks.length ||
+      nextSelectedBlocks.some((pos, index) => pos !== selectedBlocks[index])
+    if (selectionChanged) {
+      this.selectOnlyBlock(this.hoveredBlock.pos)
+    }
+
     this.showContextMenu(
       { kind: "pointer", x: e.clientX, y: e.clientY },
       this.hoveredBlock
     )
+  }
+
+  private selectOnlyBlock(blockPos: number) {
+    const node = this.view.state.doc.nodeAt(blockPos)
+    if (!node) return
+
+    const tr = this.view.state.tr
+      .setSelection(NodeSelection.create(this.view.state.doc, blockPos))
+      .setMeta(multiBlockSelectionKey, {
+        selectedBlocks: [blockPos],
+        anchorBlock: blockPos
+      })
+      .setMeta("multiBlockKeep", true)
+    this.view.dispatch(tr)
   }
 
   private onAddButtonClick = (event: MouseEvent) => {
@@ -1972,10 +1995,6 @@ class BlockDragHandleView {
   }
 
   update(_view: EditorView, previousState: import("prosemirror-state").EditorState) {
-    const previousSelectedBlocks =
-      multiBlockSelectionKey.getState(previousState)?.selectedBlocks ?? []
-    const selectedBlocks =
-      multiBlockSelectionKey.getState(this.view.state)?.selectedBlocks ?? []
     const previousHandleState = blockDragHandleKey.getState(previousState)
     const handleState = blockDragHandleKey.getState(this.view.state)
     const contextMenuIntent =
@@ -1994,15 +2013,6 @@ class BlockDragHandleView {
       } else {
         this.openContextMenuForSelectedBlocks()
       }
-    } else if (
-      !this.isAreaSelecting &&
-      this.draggedBlock === null &&
-      shouldOpenBlockContextMenuForSelection(
-        previousSelectedBlocks,
-        selectedBlocks
-      )
-    ) {
-      this.openContextMenuForSelectedBlocks()
     }
 
     if (this.hoveredBlock !== null && this.draggedBlock === null) {

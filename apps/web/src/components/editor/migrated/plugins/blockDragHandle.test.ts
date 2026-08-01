@@ -219,6 +219,35 @@ describe("selected-block handle menu trigger", () => {
     expect(state.selection.$from.parentOffset).toBe("Three".length)
   })
 
+  it.each([
+    ["bullet_item", ["bullet_item", "bullet_item", "bullet_item"]],
+    ["numbered_item", ["numbered_item", "numbered_item", "numbered_item"]],
+    ["task_item", ["task_item", "task_item", "task_item"]]
+  ])("turns each visible line in one paragraph into a separate %s", (type, expectedTypes) => {
+    const doc = parseMarkdown(
+      "**First**\nSecond with [link](https://example.com)\nThird\n",
+      schema
+    )
+    const state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    const option = BLOCK_TYPE_OPTIONS.find(candidate => candidate.type === type)!
+    const transaction = createBlockTypeChangeTransaction(state, [0], option)
+
+    expect(transaction).not.toBeNull()
+    expect(Array.from(
+      { length: transaction!.doc.childCount },
+      (_, index) => transaction!.doc.child(index).type.name
+    )).toEqual(expectedTypes)
+    expect(transaction!.doc.child(0).firstChild?.marks.map(mark => mark.type.name)).toContain("bold")
+    expect(transaction!.doc.child(1).content.content.some(node =>
+      node.marks.some(mark => mark.type.name === "link")
+    )).toBe(true)
+    expect(transaction!.selection.$from.parent).toBe(transaction!.doc.lastChild)
+    expect(transaction!.selection.$from.parentOffset).toBe("Third".length)
+  })
+
   it("replaces deleted selected blocks with one focused blank paragraph", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({

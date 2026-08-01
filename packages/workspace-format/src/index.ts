@@ -81,14 +81,13 @@ export interface WorkspaceNameSanitizationResult {
 }
 
 export function sanitizeWorkspaceName(input: string): WorkspaceNameSanitizationResult {
-  const trimmed = input.trim();
-  const withoutSeparators = trimmed.replace(PATH_SEPARATOR_CHARS, PATH_SEPARATOR_REPLACEMENT);
+  const withoutSeparators = input.replace(PATH_SEPARATOR_CHARS, PATH_SEPARATOR_REPLACEMENT);
   const sanitized = withoutSeparators.replace(PORTABLE_FILENAME_UNSAFE_CHARS, " ");
 
   return {
     sanitized,
     changed: sanitized !== input,
-    replacedSeparators: withoutSeparators !== trimmed,
+    replacedSeparators: withoutSeparators !== input,
     replacedUnsafeChars: sanitized !== withoutSeparators
   };
 }

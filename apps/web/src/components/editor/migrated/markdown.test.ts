@@ -19,6 +19,40 @@ describe("markdown file embeds", () => {
 })
 
 describe("live editor Markdown round trips", () => {
+  it("stores visible soft line breaks as nodes and blank lines as paragraph boundaries", () => {
+    const markdown = "first paragraph\nsecond line\n\nnew paragraph\n"
+    const parsed = parseMarkdown(markdown, schema)
+
+    expect(parsed.childCount).toBe(2)
+    expect(parsed.firstChild?.content.content.map((node) => node.type.name)).toEqual([
+      "text",
+      "soft_break",
+      "text"
+    ])
+    parsed.descendants((node) => {
+      if (node.isText) {
+        expect(node.text).not.toContain("\n")
+      }
+    })
+    expect(serializeMarkdown(parsed)).toBe(markdown)
+    expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
+  })
+
+  it.each([
+    ["two-space hard break", "first  \nsecond\n"],
+    ["backslash hard break", "first\\\nsecond\n"],
+    ["HTML hard break", "first<br>\nsecond\n"]
+  ])("keeps %s distinct from a soft line break", (_name, markdown) => {
+    const parsed = parseMarkdown(markdown, schema)
+
+    expect(parsed.firstChild?.content.content.map((node) => node.type.name)).toEqual([
+      "text",
+      "hard_break",
+      "text"
+    ])
+    expect(serializeMarkdown(parsed)).toBe("first  \nsecond\n")
+  })
+
   it("preserves replacement symbols and multi-code-point emoji as literal UTF-8 text", () => {
     const markdown = "→ ← ↔ ⇒ ⇔ ≤ ≥ ≠ ≈ ± … © ® ™ ❤️ 👩‍💻 👍🏽\n"
     const parsed = parseMarkdown(markdown, schema)

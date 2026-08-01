@@ -32,11 +32,39 @@ function sourceInlineContent(node: PmNode, schema: Schema): Fragment | null {
   return text ? Fragment.from(schema.text(text)) : null
 }
 
+function splitInlineContentIntoLines(node: PmNode, schema: Schema): Array<Fragment | null> {
+  if (!node.isTextblock) {
+    return [sourceInlineContent(node, schema)]
+  }
+
+  const lines: PmNode[][] = [[]]
+
+  node.forEach((child) => {
+    if (child.type.name === "soft_break" || child.type.name === "hard_break") {
+      lines.push([])
+      return
+    }
+
+    if (child.isText && child.text?.includes("\n")) {
+      const parts = child.text.split("\n")
+      parts.forEach((part, index) => {
+        if (part) lines.at(-1)!.push(schema.text(part, child.marks))
+        if (index < parts.length - 1) lines.push([])
+      })
+      return
+    }
+
+    lines.at(-1)!.push(child)
+  })
+
+  return lines.map((line) => line.length > 0 ? Fragment.fromArray(line) : null)
+}
+
 function createBlockNodeForType(
   schema: Schema,
   sourceNode: PmNode,
   option: BlockTypeOption
-): PmNode | null {
+): PmNode[] | null {
   const targetType = schema.nodes[option.type]
   if (!targetType) return null
 
@@ -45,28 +73,28 @@ function createBlockNodeForType(
 
   switch (option.type) {
     case "paragraph":
-      return targetType.create(null, inlineContent)
+      return [targetType.create(null, inlineContent)]
     case "heading":
-      return targetType.create(option.attrs, inlineContent)
+      return [targetType.create(option.attrs, inlineContent)]
     case "code_block":
-      return targetType.create(
+      return [targetType.create(
         null,
         text ? schema.text(text) : null
-      )
+      )]
     case "blockquote": {
       const paragraph = schema.nodes.paragraph
       if (!paragraph) return null
-      return targetType.create(null, paragraph.create(null, inlineContent))
+      return [targetType.create(null, paragraph.create(null, inlineContent))]
     }
     case "bullet_item":
-      return targetType.create({ indent: 0 }, inlineContent)
+      return splitInlineContentIntoLines(sourceNode, schema)
+        .map((line) => targetType.create({ indent: 0 }, line))
     case "numbered_item":
-      return targetType.create({ indent: 0 }, inlineContent)
+      return splitInlineContentIntoLines(sourceNode, schema)
+        .map((line) => targetType.create({ indent: 0 }, line))
     case "task_item":
-      return targetType.create(
-        { indent: 0, checked: false },
-        inlineContent
-      )
+      return splitInlineContentIntoLines(sourceNode, schema)
+        .map((line) => targetType.create({ indent: 0, checked: false }, line))
     case "table": {
       const tableHeader = schema.nodes.table_header
       const tableCell = schema.nodes.table_cell
@@ -85,18 +113,18 @@ function createBlockNodeForType(
         null,
         [emptyCell, emptyCell.copy(emptyCell.content), emptyCell.copy(emptyCell.content)]
       )
-      return targetType.create(
+      return [targetType.create(
         null,
         [headerRow, dataRow, dataRow.copy(dataRow.content)]
-      )
+      )]
     }
     case "mermaid":
-      return targetType.create({
+      return [targetType.create({
         code: DEFAULT_MERMAID_CODE,
         mode: "split"
-      })
+      })]
     case "horizontal_rule":
-      return targetType.create()
+      return [targetType.create()]
     default:
       return null
   }
@@ -135,27 +163,34 @@ export function createBlockTypeChangeTransaction(
 
   let transaction = state.tr
   const descendingPositions = [...validPositions].sort((left, right) => right - left)
+  const finalOriginalPos = Math.max(...validPositions)
+  let finalReplacementNodes: readonly PmNode[] | null = null
 
   for (const originalPos of descendingPositions) {
     const blockPos = transaction.mapping.map(originalPos)
     const sourceNode = transaction.doc.nodeAt(blockPos)
     if (!sourceNode || blockAlreadyHasMenuType(sourceNode, option)) continue
 
-    const replacement = createBlockNodeForType(
+    const replacements = createBlockNodeForType(
       state.schema,
       sourceNode,
       option
     )
-    if (!replacement) continue
+    if (!replacements) continue
 
     transaction = transaction.replaceWith(
       blockPos,
       blockPos + sourceNode.nodeSize,
-      replacement
+      replacements
     )
+    if (originalPos === finalOriginalPos) finalReplacementNodes = replacements
   }
 
-  const finalOriginalPos = Math.max(...validPositions)
-  const finalBlockPos = transaction.mapping.map(finalOriginalPos)
+  let finalBlockPos = transaction.mapping.map(finalOriginalPos, -1)
+  if (finalReplacementNodes && finalReplacementNodes.length > 1) {
+    finalBlockPos += finalReplacementNodes
+      .slice(0, -1)
+      .reduce((size, node) => size + node.nodeSize, 0)
+  }
   return finishBlockTypeChangeTransaction(transaction, finalBlockPos)
 }

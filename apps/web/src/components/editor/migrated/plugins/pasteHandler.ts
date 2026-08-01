@@ -1,82 +1,21 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Plugin, PluginKey, TextSelection } from "prosemirror-state"
 import type { EditorState, Transaction } from "prosemirror-state"
-import { Node as ProseMirrorNode, Schema, Slice } from "prosemirror-model"
+import { Fragment, Node as ProseMirrorNode, Schema, Slice } from "prosemirror-model"
 import { EditorView } from "prosemirror-view"
-import TurndownService from "turndown"
-import { parseMarkdown } from "../markdown"
 import { reportEditorError, uploadEditorAsset } from "../platform"
+import {
+  RUMI_SLICE_MIME,
+  parseRumiClipboardSlice,
+  serializeClipboardHtml,
+  serializeClipboardText,
+  serializeRumiClipboardSlice
+} from "../clipboardSerialization"
 
 export const pasteHandlerKey = new PluginKey("pasteHandler")
 
 // URL regex that matches common URL patterns
 const URL_REGEX = /^(https?:\/\/[^\s<>\"]+)$/i
-
-// More permissive URL regex for inline detection
-const INLINE_URL_REGEX = /https?:\/\/[^\s<>\"]+/gi
-
-// Initialize Turndown with sensible defaults
-function createTurndownService(): TurndownService {
-  const turndown = new TurndownService({
-    headingStyle: "atx",
-    hr: "---",
-    bulletListMarker: "-",
-    codeBlockStyle: "fenced",
-    emDelimiter: "*",
-    strongDelimiter: "**",
-    linkStyle: "inlined",
-  })
-
-  // Keep common semantic elements
-  turndown.addRule("strikethrough", {
-    filter: ["del", "s", "strike"],
-    replacement: (content) => `~~${content}~~`,
-  })
-
-  turndown.addRule("underline", {
-    filter: ["u", "ins"],
-    replacement: (content) => `__${content}__`,
-  })
-
-  turndown.addRule("mark", {
-    filter: "mark",
-    replacement: (content) => `==${content}==`,
-  })
-
-  // Handle tables better
-  turndown.addRule("tableCell", {
-    filter: ["th", "td"],
-    replacement: (content, node) => {
-      return ` ${content.trim().replace(/\n/g, " ")} |`
-    },
-  })
-
-  turndown.addRule("tableRow", {
-    filter: "tr",
-    replacement: (content, node) => {
-      return `|${content}\n`
-    },
-  })
-
-  turndown.addRule("table", {
-    filter: "table",
-    replacement: (content, node) => {
-      const rows = content.trim().split("\n").filter(Boolean)
-      if (rows.length === 0) return ""
-
-      // Add separator after header row
-      const headerRow = rows[0]
-      const colCount = (headerRow.match(/\|/g) || []).length - 1
-      const separator = "|" + " --- |".repeat(colCount)
-
-      return rows[0] + "\n" + separator + "\n" + rows.slice(1).join("\n") + "\n\n"
-    },
-  })
-
-  return turndown
-}
-
-const turndownService = createTurndownService()
 
 function insertBlockAtSelection(view: EditorView, blockNode: ProseMirrorNode) {
   const { state, dispatch } = view
@@ -150,13 +89,111 @@ export function createCodeTextPasteTransaction(
   return state.tr.insertText(text, selection.from, selection.to)
 }
 
+export function createPlainTextPasteSlice(text: string, schema: Schema): Slice {
+  const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/u, "")
+  const paragraphs = normalized.split(/\n[\t ]*\n+/u).map((paragraphText) => {
+    const inline: ProseMirrorNode[] = []
+    const lines = paragraphText.split("\n")
+    lines.forEach((line, index) => {
+      if (line) inline.push(schema.text(line))
+      if (index < lines.length - 1 && schema.nodes.soft_break) {
+        inline.push(schema.nodes.soft_break.create())
+      }
+    })
+    return schema.nodes.paragraph.create(null, inline)
+  })
+  const doc = schema.nodes.doc.create(null, paragraphs)
+  return Slice.maxOpen(doc.content, true)
+}
+
+function normalizePastedNode(node: ProseMirrorNode, schema: Schema): ProseMirrorNode {
+  if (node.type === schema.nodes.table && schema.nodes.table_header) {
+    const rows: ProseMirrorNode[] = []
+    node.forEach((row, _offset, rowIndex) => {
+      if (rowIndex !== 0) {
+        rows.push(normalizePastedNode(row, schema))
+        return
+      }
+
+      const cells: ProseMirrorNode[] = []
+      row.forEach((cell) => {
+        cells.push(
+          cell.type === schema.nodes.table_header
+            ? cell
+            : schema.nodes.table_header.create(cell.attrs, cell.content)
+        )
+      })
+      rows.push(row.copy(Fragment.fromArray(cells)))
+    })
+    return node.copy(Fragment.fromArray(rows))
+  }
+
+  if (node.isLeaf) return node
+  const children: ProseMirrorNode[] = []
+  node.forEach((child) => children.push(normalizePastedNode(child, schema)))
+  return node.copy(Fragment.fromArray(children))
+}
+
+export function normalizePastedTables(slice: Slice, schema: Schema): Slice {
+  const children: ProseMirrorNode[] = []
+  slice.content.forEach((node) => children.push(normalizePastedNode(node, schema)))
+  return new Slice(Fragment.fromArray(children), slice.openStart, slice.openEnd)
+}
+
+function writePortableClipboard(
+  view: EditorView,
+  event: ClipboardEvent,
+  cut: boolean
+): boolean {
+  const clipboard = event.clipboardData
+  const { selection } = view.state
+  if (!clipboard || selection.empty) return false
+
+  const slice = selection.content()
+  clipboard.clearData()
+  clipboard.setData("text/html", serializeClipboardHtml(slice))
+  clipboard.setData("text/plain", serializeClipboardText(slice))
+  try {
+    clipboard.setData(RUMI_SLICE_MIME, serializeRumiClipboardSlice(slice))
+  } catch {
+    // Some browser clipboard implementations reject custom MIME types. The
+    // portable HTML and plain-text flavors are still complete fallbacks.
+  }
+  event.preventDefault()
+
+  if (cut) {
+    view.dispatch(
+      view.state.tr
+        .deleteSelection()
+        .setMeta("uiEvent", "cut")
+        .scrollIntoView()
+    )
+  }
+
+  return true
+}
+
 export function pasteHandlerPlugin(schema: Schema) {
+  let pasteWasExplicitlyPlainText = false
+
   return new Plugin({
     key: pasteHandlerKey,
     props: {
+      clipboardTextParser(text, _context, plain) {
+        pasteWasExplicitlyPlainText = plain
+        return createPlainTextPasteSlice(text, schema)
+      },
+
+      transformPasted(slice, _view, plain) {
+        if (!plain) pasteWasExplicitlyPlainText = false
+        return plain ? slice : normalizePastedTables(slice, schema)
+      },
+
       handlePaste(view, event, slice) {
         const clipboard = event.clipboardData
         if (!clipboard) return false
+        const plainTextPaste = pasteWasExplicitlyPlainText
+        pasteWasExplicitlyPlainText = false
 
         // Handle image files from clipboard
         const imageFile = Array.from(clipboard.files).find((file) =>
@@ -209,64 +246,45 @@ export function pasteHandlerPlugin(schema: Schema) {
           return true
         }
 
+        if (!plainTextPaste) {
+          const exactSlice = parseRumiClipboardSlice(
+            clipboard.getData(RUMI_SLICE_MIME),
+            schema
+          )
+          if (exactSlice) {
+            event.preventDefault()
+            view.dispatch(
+              view.state.tr
+                .replaceSelection(exactSlice)
+                .setMeta("uiEvent", "paste")
+                .scrollIntoView()
+            )
+            return true
+          }
+        }
+
         // A URL is always pasted as a normal inline link. Handle this before
         // rich HTML so a browser-provided anchor cannot replace selected text.
         const urlTransaction = createUrlPasteTransaction(view.state, text, schema)
         if (urlTransaction) {
-          view.dispatch(urlTransaction)
+          event.preventDefault()
+          view.dispatch(urlTransaction.scrollIntoView())
           return true
         }
-
-        // If we have HTML content (from web/docs), convert it
-        if (html && html.trim()) {
-          // Convert HTML to Markdown
-          const markdown = turndownService.turndown(html)
-
-          // Parse markdown to ProseMirror document
-          const doc = parseMarkdown(markdown, schema)
-
-          // Extract content from doc (skip doc wrapper)
-          const content = doc.content
-
-          if (content.childCount > 0) {
-            const tr = view.state.tr
-            tr.replaceSelection(new Slice(content, 0, 0))
-            view.dispatch(tr)
-            return true
-          }
-        }
-
-        // Handle plain text / markdown
-        if (text && text.trim()) {
-          // Check if text contains URLs that should be auto-linked
-          if (INLINE_URL_REGEX.test(text)) {
-            // Parse as markdown which will handle link syntax
-            // But first, let's auto-link bare URLs in the text
-            const linkedText = autoLinkUrls(text)
-            const doc = parseMarkdown(linkedText, schema)
-            const content = doc.content
-
-            if (content.childCount > 0) {
-              const tr = view.state.tr
-              tr.replaceSelection(new Slice(content, 0, 0))
-              view.dispatch(tr)
-              return true
-            }
-          }
-
-          // Parse as markdown
-          const doc = parseMarkdown(text, schema)
-          const content = doc.content
-
-          if (content.childCount > 0) {
-            const tr = view.state.tr
-            tr.replaceSelection(new Slice(content, 0, 0))
-            view.dispatch(tr)
-            return true
-          }
-        }
-
+        // ProseMirror has already chosen the modifier-aware clipboard flavor:
+        // rich HTML for a normal paste, or our LF-preserving parser for plain
+        // text. Returning false inserts that parsed slice without flattening it
+        // through an HTML-to-Markdown conversion.
         return false
+      },
+
+      handleDOMEvents: {
+        copy(view, event) {
+          return writePortableClipboard(view, event, false)
+        },
+        cut(view, event) {
+          return writePortableClipboard(view, event, true)
+        }
       },
 
       handleDrop(view, event, slice, moved) {
@@ -312,19 +330,5 @@ export function pasteHandlerPlugin(schema: Schema) {
         return false
       },
     },
-  })
-}
-
-// Convert bare URLs to markdown links
-function autoLinkUrls(text: string): string {
-  // Don't process if it's already a markdown link
-  if (/\[.*?\]\(.*?\)/.test(text)) {
-    return text
-  }
-
-  // Replace bare URLs with markdown links
-  return text.replace(INLINE_URL_REGEX, (url) => {
-    // Check if URL is already inside a markdown link syntax
-    return `[${url}](${url})`
   })
 }

@@ -1,12 +1,15 @@
 import { Slice } from "prosemirror-model"
-import { EditorState, TextSelection, type Transaction } from "prosemirror-state"
+import { AllSelection, EditorState, TextSelection, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
+import { RUMI_SLICE_MIME, serializeRumiClipboardSlice } from "./clipboardSerialization"
 import {
+  createPlainTextPasteSlice,
   createCodeTextPasteTransaction,
   createUrlPasteTransaction,
+  normalizePastedTables,
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
 
@@ -38,6 +41,225 @@ describe("live editor URL paste", () => {
     const state = stateWithSelection("```ts\nconst url = \"\"\n```", 2)
 
     expect(createUrlPasteTransaction(state, "https://rumi.md", schema)).toBeNull()
+  })
+})
+
+describe("live editor plain-text paste", () => {
+  it("keeps single line breaks inside one paragraph and blank lines between paragraphs", () => {
+    const slice = createPlainTextPasteSlice("first\nsecond\n\nthird", schema)
+
+    expect(slice.content.childCount).toBe(2)
+    expect(slice.content.firstChild?.content.content.map(node => node.type.name)).toEqual([
+      "text",
+      "soft_break",
+      "text"
+    ])
+    expect(slice.content.lastChild?.textContent).toBe("third")
+  })
+
+  it("keeps Markdown punctuation literal instead of adding formatting", () => {
+    const slice = createPlainTextPasteSlice(
+      "# literal heading\n**literal bold**\n\n- literal list item",
+      schema
+    )
+
+    expect(slice.content.childCount).toBe(2)
+    expect(slice.content.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(slice.content.firstChild?.textContent).toBe("# literal heading\n**literal bold**")
+    expect(slice.content.firstChild?.content.content.every(node => node.marks.length === 0)).toBe(true)
+    expect(slice.content.lastChild?.type).toBe(schema.nodes.paragraph)
+    expect(slice.content.lastChild?.textContent).toBe("- literal list item")
+
+    const doc = schema.nodes.doc!.create(null, slice.content)
+    expect(parseMarkdown(serializeMarkdown(doc), schema).toJSON()).toEqual(doc.toJSON())
+  })
+
+  it("preserves code-indenting prose whitespace without reopening it as code", () => {
+    const slice = createPlainTextPasteSlice("\tfirst\n    second", schema)
+    const doc = schema.nodes.doc!.create(null, slice.content)
+    const markdown = serializeMarkdown(doc)
+
+    expect(markdown).toBe("&#9;first\n&#32;&#32;&#32;&#32;second\n")
+    expect(parseMarkdown(markdown, schema).toJSON()).toEqual(doc.toJSON())
+  })
+
+  it("ignores rich and private clipboard flavors for paste-as-plain-text", () => {
+    const plugin = pasteHandlerPlugin(schema)
+    const plainSlice = createPlainTextPasteSlice("first\nsecond", schema)
+    const exactSlice = new Slice(parseMarkdown("- [x] Exact\n", schema).content, 0, 0)
+    let state = stateWithSelection("", 1)
+    let dispatched = false
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) {
+        dispatched = true
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    const parsedPlain = plugin.props.clipboardTextParser?.call(
+      plugin,
+      "first\nsecond",
+      state.selection.$from,
+      true,
+      view
+    )
+    const transformed = plugin.props.transformPasted?.call(plugin, parsedPlain ?? plainSlice, view, true)
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === "text/html") return "<table><tr><td>Rich</td></tr></table>"
+          if (type === "text/plain") return "first\nsecond"
+          if (type === RUMI_SLICE_MIME) return serializeRumiClipboardSlice(exactSlice)
+          return ""
+        }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+
+    const handled = plugin.props.handlePaste?.call(plugin, view, event, transformed!)
+
+    expect(handled).toBe(false)
+    expect(dispatched).toBe(false)
+    expect(transformed?.content.firstChild?.content.content.map(node => node.type.name)).toEqual([
+      "text",
+      "soft_break",
+      "text"
+    ])
+  })
+})
+
+describe("live editor rich paste", () => {
+  it("uses the already-parsed rich table slice and promotes its first row to headers", () => {
+    const text = (value: string) => schema.text(value)
+    const cell = (value: string) => schema.nodes.table_cell!.create(null, text(value))
+    const row = (...values: string[]) => schema.nodes.table_row!.create(null, values.map(cell))
+    const table = schema.nodes.table!.create(null, [row("Name", "State"), row("Rumi", "Ready")])
+    const richSlice = new Slice(schema.nodes.doc!.create(null, table).content, 0, 0)
+    const normalized = normalizePastedTables(richSlice, schema)
+
+    expect(normalized.content.firstChild?.type).toBe(schema.nodes.table)
+    expect(normalized.content.firstChild?.firstChild?.firstChild?.type).toBe(schema.nodes.table_header)
+
+    const plugin = pasteHandlerPlugin(schema)
+    let state = stateWithSelection("", 1)
+    let dispatched = false
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) {
+        dispatched = true
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    const transformed = plugin.props.transformPasted?.call(plugin, richSlice, view, false)
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === "text/html") return "<table><tr><td>Name</td><td>State</td></tr></table>"
+          if (type === "text/plain") return "Name\tState"
+          return ""
+        }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+
+    const handled = plugin.props.handlePaste?.call(plugin, view, event, transformed!)
+    expect(handled).toBe(false)
+    expect(dispatched).toBe(false)
+    expect(transformed?.content.firstChild?.firstChild?.firstChild?.type).toBe(schema.nodes.table_header)
+  })
+
+  it("prefers an exact Rumi slice for a normal paste", () => {
+    const exactSlice = new Slice(parseMarkdown("- [x] Exact task\n", schema).content, 0, 0)
+    const plugin = pasteHandlerPlugin(schema)
+    let state = stateWithSelection("", 1)
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const fallback = createPlainTextPasteSlice("Fallback", schema)
+    plugin.props.transformPasted?.call(plugin, fallback, view, false)
+    let prevented = false
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === RUMI_SLICE_MIME) return serializeRumiClipboardSlice(exactSlice)
+          if (type === "text/html") return "<p>Fallback</p>"
+          if (type === "text/plain") return "Fallback"
+          return ""
+        }
+      },
+      preventDefault() { prevented = true }
+    } as unknown as ClipboardEvent
+
+    const handled = plugin.props.handlePaste?.call(plugin, view, event, fallback)
+
+    expect(handled).toBe(true)
+    expect(prevented).toBe(true)
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+    expect(state.doc.firstChild?.attrs.checked).toBe(true)
+    expect(state.doc.firstChild?.textContent).toBe("Exact task")
+  })
+
+  it("still prefers the exact flavor when a normal paste has no HTML flavor", () => {
+    const exactSlice = new Slice(parseMarkdown("- [x] Exact task\n", schema).content, 0, 0)
+    const plugin = pasteHandlerPlugin(schema)
+    let state = stateWithSelection("", 1)
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const parsedText = plugin.props.clipboardTextParser?.call(
+      plugin,
+      "Fallback",
+      state.selection.$from,
+      false,
+      view
+    ) ?? createPlainTextPasteSlice("Fallback", schema)
+    const transformed = plugin.props.transformPasted?.call(plugin, parsedText, view, true) ?? parsedText
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === RUMI_SLICE_MIME) return serializeRumiClipboardSlice(exactSlice)
+          if (type === "text/plain") return "Fallback"
+          return ""
+        }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+
+    expect(plugin.props.handlePaste?.call(plugin, view, event, transformed)).toBe(true)
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+  })
+})
+
+describe("live editor copy", () => {
+  it("writes portable HTML, readable text, and an exact Rumi flavor", () => {
+    const doc = parseMarkdown("# Heading\n\n- [x] Done\n", schema)
+    let state = EditorState.create({ doc, selection: new AllSelection(doc) })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const data = new Map<string, string>()
+    const event = {
+      clipboardData: {
+        clearData() { data.clear() },
+        setData(type: string, value: string) { data.set(type, value) }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+    const plugin = pasteHandlerPlugin(schema)
+    const handled = plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)
+
+    expect(handled).toBe(true)
+    expect(data.get("text/html")).toContain("<h1>Heading</h1>")
+    expect(data.get("text/html")).toContain('type="checkbox" checked')
+    expect(data.get("text/plain")).toBe("Heading\n\n- [x] Done")
+    expect(data.get(RUMI_SLICE_MIME)).toContain('"version":1')
   })
 })
 

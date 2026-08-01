@@ -3,11 +3,16 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-29"
+updated: "2026-08-01"
 ---
 # File Format
 
 Canonical user content is Markdown with one normal YAML frontmatter block.
+
+Within prose, a single LF is a soft line break in the same paragraph and a blank line is the
+paragraph/block boundary. The official editor displays soft line breaks visibly, matching Obsidian's
+non-strict line-break mode. Explicit Markdown hard breaks remain distinct and readable; Rumi does not
+require trailing spaces for ordinary multiline prose.
 
 Avoid:
 

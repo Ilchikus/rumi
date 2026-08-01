@@ -11,6 +11,10 @@ import {
   serializeClipboardText,
   serializeRumiClipboardSlice
 } from "../clipboardSerialization"
+import {
+  createDeleteSelectedBlocksTransaction,
+  multiBlockSelectionKey
+} from "./multiBlockSelection"
 
 export const pasteHandlerKey = new PluginKey("pasteHandler")
 
@@ -140,6 +144,20 @@ export function normalizePastedTables(slice: Slice, schema: Schema): Slice {
   return new Slice(Fragment.fromArray(children), slice.openStart, slice.openEnd)
 }
 
+function explicitBlockClipboardSlice(state: EditorState): Slice | null {
+  const selectedBlocks =
+    multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
+  if (selectedBlocks.length === 0) return null
+
+  const nodes = [...new Set(selectedBlocks)]
+    .sort((left, right) => left - right)
+    .map((pos) => state.doc.nodeAt(pos))
+    .filter((node): node is ProseMirrorNode => Boolean(node))
+  return nodes.length > 0
+    ? new Slice(Fragment.fromArray(nodes), 0, 0)
+    : null
+}
+
 function writePortableClipboard(
   view: EditorView,
   event: ClipboardEvent,
@@ -147,9 +165,10 @@ function writePortableClipboard(
 ): boolean {
   const clipboard = event.clipboardData
   const { selection } = view.state
-  if (!clipboard || selection.empty) return false
+  const blockSlice = explicitBlockClipboardSlice(view.state)
+  if (!clipboard || (selection.empty && !blockSlice)) return false
 
-  const slice = selection.content()
+  const slice = blockSlice ?? selection.content()
   clipboard.clearData()
   clipboard.setData("text/html", serializeClipboardHtml(slice))
   clipboard.setData("text/plain", serializeClipboardText(slice))
@@ -162,12 +181,13 @@ function writePortableClipboard(
   event.preventDefault()
 
   if (cut) {
-    view.dispatch(
-      view.state.tr
-        .deleteSelection()
-        .setMeta("uiEvent", "cut")
-        .scrollIntoView()
-    )
+    const transaction = blockSlice
+      ? createDeleteSelectedBlocksTransaction(view.state)
+      : view.state.tr.deleteSelection().scrollIntoView()
+    if (transaction) {
+      transaction.setMeta("uiEvent", "cut")
+      view.dispatch(transaction)
+    }
   }
 
   return true

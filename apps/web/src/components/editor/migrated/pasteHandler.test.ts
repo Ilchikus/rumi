@@ -1,10 +1,19 @@
 import { Slice } from "prosemirror-model"
-import { AllSelection, EditorState, TextSelection, type Transaction } from "prosemirror-state"
+import { EditorState, NodeSelection, TextSelection, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
-import { RUMI_SLICE_MIME, serializeRumiClipboardSlice } from "./clipboardSerialization"
+import {
+  RUMI_SLICE_MIME,
+  parseRumiClipboardSlice,
+  serializeRumiClipboardSlice
+} from "./clipboardSerialization"
+import {
+  multiBlockSelectionKey,
+  multiBlockSelectionPlugin,
+  selectAllBlocksInStages
+} from "./plugins/multiBlockSelection"
 import {
   createPlainTextPasteSlice,
   createCodeTextPasteTransaction,
@@ -237,29 +246,109 @@ describe("live editor rich paste", () => {
 })
 
 describe("live editor copy", () => {
-  it("writes portable HTML, readable text, and an exact Rumi flavor", () => {
-    const doc = parseMarkdown("# Heading\n\n- [x] Done\n", schema)
-    let state = EditorState.create({ doc, selection: new AllSelection(doc) })
-    const view = {
-      get state() { return state },
-      dispatch(transaction: Transaction) { state = state.apply(transaction) }
-    } as unknown as EditorView
+  function clipboardEvent() {
     const data = new Map<string, string>()
+    let prevented = false
     const event = {
       clipboardData: {
         clearData() { data.clear() },
         setData(type: string, value: string) { data.set(type, value) }
       },
-      preventDefault() {}
+      preventDefault() { prevented = true }
     } as unknown as ClipboardEvent
+    return { data, event, wasPrevented: () => prevented }
+  }
+
+  it("writes every staged document block to portable HTML, readable text, and the Rumi flavor", () => {
+    const doc = parseMarkdown(
+      "# Heading\n\nBody with **bold**\n\n- [x] Done\n",
+      schema
+    )
+    let state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    selectAllBlocksInStages(state, (transaction) => { state = state.apply(transaction) })
+    selectAllBlocksInStages(state, (transaction) => { state = state.apply(transaction) })
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+    expect(state.selection.content().content.childCount).toBe(1)
+
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const { data, event, wasPrevented } = clipboardEvent()
     const plugin = pasteHandlerPlugin(schema)
     const handled = plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)
 
     expect(handled).toBe(true)
-    expect(data.get("text/html")).toContain("<h1>Heading</h1>")
-    expect(data.get("text/html")).toContain('type="checkbox" checked')
-    expect(data.get("text/plain")).toBe("Heading\n\n- [x] Done")
-    expect(data.get(RUMI_SLICE_MIME)).toContain('"version":1')
+    expect(wasPrevented()).toBe(true)
+    expect(data.get("text/html")).toBe(
+      "<h1>Heading</h1><p>Body with <strong>bold</strong></p>" +
+      '<ul><li><input type="checkbox" checked disabled>Done</li></ul>'
+    )
+    expect(data.get("text/plain")).toBe(
+      "Heading\n\nBody with bold\n\n- [x] Done"
+    )
+    expect(parseRumiClipboardSlice(data.get(RUMI_SLICE_MIME) ?? "", schema)
+      ?.content.childCount).toBe(3)
+  })
+
+  it("copies an unordered marquee-style block selection in document order from an empty cursor", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
+    const firstPos = 0
+    const secondPos = doc.child(0).nodeSize
+    const thirdPos = secondPos + doc.child(1).nodeSize
+    let state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [thirdPos, firstPos],
+      anchorBlock: thirdPos
+    }))
+    expect(state.selection.empty).toBe(true)
+
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const { data, event } = clipboardEvent()
+    const plugin = pasteHandlerPlugin(schema)
+
+    expect(plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)).toBe(true)
+    expect(data.get("text/html")).toBe("<p>One</p><p>Three</p>")
+    expect(data.get("text/plain")).toBe("One\n\nThree")
+    expect(data.get("text/html")).not.toContain("Two")
+  })
+
+  it("cuts every explicitly selected block after exporting the same complete payload", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
+    const firstPos = 0
+    const thirdPos = doc.child(0).nodeSize + doc.child(1).nodeSize
+    let state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [thirdPos, firstPos],
+      anchorBlock: firstPos
+    }))
+
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const { data, event } = clipboardEvent()
+    const plugin = pasteHandlerPlugin(schema)
+
+    expect(plugin.props.handleDOMEvents?.cut?.call(plugin, view, event)).toBe(true)
+    expect(data.get("text/html")).toBe("<p>One</p><p>Three</p>")
+    expect(Array.from(
+      { length: state.doc.childCount },
+      (_, index) => state.doc.child(index).textContent
+    )).toEqual(["", "Two"])
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
   })
 })
 

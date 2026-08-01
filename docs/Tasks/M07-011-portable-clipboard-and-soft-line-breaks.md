@@ -64,6 +64,8 @@ flavor for exact Rumi-to-Rumi round trips.
 - Export portable semantic clipboard HTML for paragraphs, headings, lists, tasks, quotes, tables,
   code, links, inline marks, images, files, Mermaid, database embeds, and dividers.
 - Export a readable plain-text clipboard fallback.
+- Export every block in Rumi's explicit block selection, in document order, even though the native
+  ProseMirror selection represents only its first block or remains an empty text selection.
 - When one multiline paragraph is converted to a bullet, numbered, or task list, create one list
   item per visible line while preserving the marks on each line.
 - Keep code-block paste literal.
@@ -95,6 +97,9 @@ editor, with Markdown serialization and web clipboard integration at the existin
       per line and retains inline marks.
 - [x] Clipboard serialization: portable HTML contains semantic common-format elements.
 - [x] Clipboard serialization: plain text retains hard/soft line breaks and list/task markers.
+- [x] Live editor copy: handle, marquee, and staged whole-document block selections export every
+      selected block through HTML, plain text, and Rumi's private flavor.
+- [x] Live editor cut: every explicitly selected block is exported and removed together.
 - [ ] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
       shortcuts in a real browser.
 - [x] Full typecheck, test, and production build.
@@ -124,13 +129,15 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - Normal Google Sheets paste creates a table; paste-as-plain-text creates stable multiline prose.
 - Converting multiline prose to any list type creates one item per line.
 - Normal copy provides useful semantic HTML to rich destinations and readable plain text elsewhere.
+- Copying an explicit block selection never truncates the portable payload to its first native
+  `NodeSelection` block.
 - Exact Rumi-to-Rumi copy/paste does not lose supported block types or attributes.
 - Required automated checks pass and the browser clipboard smoke cases are recorded.
 
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 419 tests)
+- `corepack pnpm test` (56 files, 425 tests)
 - `corepack pnpm build`
 - Release candidate version: `@rumi-md/server@0.1.12`.
 - `corepack pnpm check:server-package` built, packed, clean-installed, and exercised the `0.1.12`

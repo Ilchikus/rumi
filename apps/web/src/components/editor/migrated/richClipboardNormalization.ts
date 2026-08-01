@@ -45,6 +45,47 @@ function removeUnderlineStyle(element: HTMLElement) {
   }
 }
 
+function boundaryWhitespace(anchor: HTMLAnchorElement) {
+  const walker = anchor.ownerDocument.createTreeWalker(anchor, NodeFilter.SHOW_TEXT)
+  const textNodes: Text[] = []
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node instanceof Text) textNodes.push(node)
+  }
+
+  let leading = ""
+  for (const node of textNodes) {
+    const match = /^[\s\u00a0]+/u.exec(node.nodeValue ?? "")
+    if (!match) break
+    leading += match[0]
+    node.nodeValue = (node.nodeValue ?? "").slice(match[0].length)
+    if (node.nodeValue) break
+  }
+
+  let trailing = ""
+  for (const node of [...textNodes].reverse()) {
+    const match = /[\s\u00a0]+$/u.exec(node.nodeValue ?? "")
+    if (!match) break
+    trailing = match[0] + trailing
+    node.nodeValue = (node.nodeValue ?? "").slice(0, -match[0].length)
+    if (node.nodeValue) break
+  }
+
+  return {
+    leading: leading.replace(/\u00a0/gu, " "),
+    trailing: trailing.replace(/\u00a0/gu, " ")
+  }
+}
+
+function siblingText(anchor: HTMLAnchorElement, side: "before" | "after"): string {
+  const parent = anchor.parentNode
+  if (!parent) return ""
+  const range = anchor.ownerDocument.createRange()
+  range.selectNodeContents(parent)
+  if (side === "before") range.setEndBefore(anchor)
+  else range.setStartAfter(anchor)
+  return range.toString()
+}
+
 function normalizeGoogleDocsLinks(root: HTMLElement) {
   root.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => {
     removeUnderlineStyle(anchor)
@@ -52,6 +93,12 @@ function normalizeGoogleDocsLinks(root: HTMLElement) {
     anchor.querySelectorAll<HTMLElement>("u").forEach((underline) => {
       underline.replaceWith(...Array.from(underline.childNodes))
     })
+
+    const before = siblingText(anchor, "before")
+    const after = siblingText(anchor, "after")
+    const { leading, trailing } = boundaryWhitespace(anchor)
+    if (leading && before.trim()) anchor.before(anchor.ownerDocument.createTextNode(leading))
+    if (trailing && after.trim()) anchor.after(anchor.ownerDocument.createTextNode(trailing))
 
     if (!(anchor.textContent ?? "").trim()) {
       anchor.replaceWith(...Array.from(anchor.childNodes))

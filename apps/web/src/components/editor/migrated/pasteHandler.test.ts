@@ -264,6 +264,77 @@ describe("live editor rich paste", () => {
     expect(plugin.props.handlePaste?.call(plugin, view, event, transformed)).toBe(true)
     expect(state.doc.firstChild?.type).toBe(schema.nodes.task_item)
   })
+
+  it("replaces every explicitly selected block and clears block selection after paste", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
+    const positions: number[] = []
+    doc.forEach((_node, pos) => positions.push(pos))
+    let state = EditorState.create({
+      doc,
+      selection: NodeSelection.create(doc, positions[0]!),
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(state.tr
+      .setMeta(multiBlockSelectionKey, {
+        selectedBlocks: positions,
+        anchorBlock: positions[0]
+      })
+      .setMeta("multiBlockKeep", true))
+
+    const replacement = new Slice(schema.nodes.doc!.create(null, [
+      schema.nodes.paragraph!.create(null, schema.text("Replacement one")),
+      schema.nodes.paragraph!.create(null, schema.text("Replacement two"))
+    ]).content, 0, 0)
+    const plugin = pasteHandlerPlugin(schema)
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    let prevented = false
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === "text/html") return "<p>Replacement one</p><p>Replacement two</p>"
+          if (type === "text/plain") return "Replacement one\n\nReplacement two"
+          return ""
+        }
+      },
+      preventDefault() { prevented = true }
+    } as unknown as ClipboardEvent
+
+    expect(plugin.props.handlePaste?.call(plugin, view, event, replacement)).toBe(true)
+    expect(prevented).toBe(true)
+    expect(state.doc.content.content.map(node => node.textContent)).toEqual([
+      "Replacement one",
+      "Replacement two"
+    ])
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
+    expect(state.selection).toBeInstanceOf(TextSelection)
+  })
+
+  it("moves a paste-created node selection back to a text cursor", () => {
+    const pastePlugin = pasteHandlerPlugin(schema)
+    let state = EditorState.create({
+      doc: parseMarkdown("", schema),
+      plugins: [multiBlockSelectionPlugin(schema), pastePlugin]
+    })
+    const replacement = new Slice(schema.nodes.doc!.create(null, [
+      schema.nodes.paragraph!.create(null, schema.text("Content")),
+      schema.nodes.horizontal_rule!.create()
+    ]).content, 0, 0)
+    let transaction = state.tr
+      .replaceSelection(replacement)
+      .setMeta("uiEvent", "paste")
+    const dividerPos = transaction.doc.child(0).nodeSize
+    transaction = transaction.setSelection(NodeSelection.create(transaction.doc, dividerPos))
+
+    state = state.applyTransaction(transaction).state
+
+    expect(state.selection).toBeInstanceOf(TextSelection)
+    expect(state.selection.$from.parent.textContent).toBe("Content")
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
+  })
 })
 
 describe("live editor external rich paste normalization", () => {
@@ -416,9 +487,8 @@ describe("live editor external rich paste normalization", () => {
       '<b id="docs-internal-guid-12345678-1234-1234-1234-1234567890ab" style="font-weight:normal">',
       "<p>Open",
       '<a href="https://example.com" style="text-decoration:none">',
-      '<span style="color:#1155cc;text-decoration:underline"> </span></a>',
-      '<a href="https://example.com" style="text-decoration:none">',
-      '<span style="color:#1155cc;text-decoration:underline">Example</span></a>',
+      '<span style="color:#1155cc;text-decoration:underline"> Example </span></a>',
+      "next",
       "</p>",
       '<p><span style="text-decoration:underline">Explicit underline</span></p>',
       "</b>"
@@ -429,7 +499,7 @@ describe("live editor external rich paste normalization", () => {
     const linkText = linkParagraph.content.content.find(node => node.text === "Example")
     const explicitText = nodes[1]?.firstChild
 
-    expect(linkParagraph.textContent).toBe("Open Example")
+    expect(linkParagraph.textContent).toBe("Open Example next")
     expect(linkText?.marks.map(mark => mark.type.name)).toEqual(["link"])
     expect(explicitText?.marks.map(mark => mark.type.name)).toContain("underline")
   })

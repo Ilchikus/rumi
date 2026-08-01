@@ -52,6 +52,11 @@ Normal browser copy therefore supplies both `text/html` and `text/plain`; rich d
 HTML and plain destinations retain a useful fallback. Rumi may also supply a private structural
 flavor for exact Rumi-to-Rumi round trips.
 
+An explicit block selection is authoritative for paste. Pasting replaces every selected block at
+the first selected block's position even when the native ProseMirror selection represents only one
+block or a stale text cursor. A completed paste clears both explicit block selection and any native
+node highlight, preferring an available text cursor near the inserted content.
+
 ## Scope
 
 - Add a stable soft-break representation to the active ProseMirror schema.
@@ -73,7 +78,10 @@ flavor for exact Rumi-to-Rumi round trips.
 - Give portable code HTML an explicit neutral monospace presentation and recover Google Docs runs
   carrying that complete presentation without classifying ordinary monospace paragraphs as code.
 - Remove Google Docs' default visual underline from pasted link descendants while retaining the link
-  itself and explicit underline outside links.
+  itself and explicit underline outside links. Move Docs-folded boundary whitespace outside the
+  anchor when it separates surrounding text, and discard it at an otherwise empty block edge.
+- Treat Rumi's explicit block selection as the complete paste replacement range and clear block and
+  native node highlights after successful paste.
 - When one multiline paragraph is converted to a bullet, numbered, or task list, create one list
   item per visible line while preserving the marks on each line.
 - Keep code-block paste literal.
@@ -121,6 +129,12 @@ editor, with Markdown serialization and web clipboard integration at the existin
       while ordinary monospace prose remains prose.
 - [x] External rich paste: Docs' default link decoration does not become an explicit underline mark,
       while non-link underline remains semantic.
+- [x] External rich paste: Docs-folded leading/trailing anchor whitespace does not become part of
+      the link label.
+- [x] Paste transaction: an explicit multi-block selection is replaced rather than appended to, and
+      all block selection state clears afterward.
+- [x] Paste transaction: a native node selection left at the last pasted block returns to an
+      available text cursor.
 - [ ] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
       shortcuts in a real browser.
 - [x] Full typecheck, test, and production build.
@@ -156,7 +170,12 @@ editor, with Markdown serialization and web clipboard integration at the existin
   unavailable when Docs removes it.
 - Google Docs represents its ordinary link appearance as an underline style inside the anchor.
   Strip that redundant style only for Docs-origin HTML so Markdown does not gain an explicit
-  underline mark merely from traversing Docs.
+  underline mark merely from traversing Docs. Docs can also fold adjacent separator whitespace into
+  the anchor; detach that boundary whitespace before ProseMirror parses the link.
+- Do not use the native ProseMirror cursor as the replacement range while explicit block selection
+  exists. Delete the complete selected position set from the end, replace its first block with the
+  parsed slice, clear the plugin selection explicitly, and avoid leaving a `NodeSelection` on the
+  pasted tail.
 
 ## Done When
 
@@ -171,13 +190,15 @@ editor, with Markdown serialization and web clipboard integration at the existin
   blocks whenever their surviving text is unambiguous.
 - Google Docs round-trips keep code as one block when its complete portable presentation survives,
   and default links return as links without an added underline mark.
+- Paste never adds boundary whitespace to a link label, leaves the final pasted block highlighted,
+  or appends content when the user explicitly selected blocks to replace.
 - Exact Rumi-to-Rumi copy/paste does not lose supported block types or attributes.
 - Required automated checks pass and the browser clipboard smoke cases are recorded.
 
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 431 tests)
+- `corepack pnpm test` (56 files, 433 tests)
 - `corepack pnpm build`
 - Release candidate version: `@rumi-md/server@0.1.12`.
 - `corepack pnpm check:server-package` built, packed, clean-installed, and exercised the `0.1.12`

@@ -1,5 +1,5 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
-import { Plugin, PluginKey, TextSelection } from "prosemirror-state"
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "prosemirror-state"
 import type { EditorState, Transaction } from "prosemirror-state"
 import { Fragment, Node as ProseMirrorNode, Schema, Slice } from "prosemirror-model"
 import { EditorView } from "prosemirror-view"
@@ -115,6 +115,70 @@ export function createPlainTextPasteSlice(text: string, schema: Schema): Slice {
   })
   const doc = schema.nodes.doc.create(null, paragraphs)
   return Slice.maxOpen(doc.content, true)
+}
+
+function explicitBlockPositions(state: EditorState): number[] {
+  const selectedBlocks = multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
+  return [...new Set(selectedBlocks)]
+    .filter((pos) => state.doc.nodeAt(pos) !== null)
+    .sort((left, right) => left - right)
+}
+
+function textSelectionNear(doc: ProseMirrorNode, pos: number): TextSelection | null {
+  const resolved = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)))
+  for (const direction of [-1, 1] as const) {
+    const selection = Selection.findFrom(resolved, direction, true)
+    if (selection instanceof TextSelection) return selection
+  }
+  return null
+}
+
+function finishPasteTransaction(
+  transaction: Transaction,
+  preferredSelectionPos = transaction.selection.to
+): Transaction {
+  if (!(transaction.selection instanceof TextSelection)) {
+    const selection = textSelectionNear(transaction.doc, preferredSelectionPos)
+    if (selection) transaction.setSelection(selection)
+  }
+  transaction.setMeta(multiBlockSelectionKey, {
+    selectedBlocks: [],
+    anchorBlock: null
+  })
+  transaction.setMeta("uiEvent", "paste")
+  return transaction.scrollIntoView()
+}
+
+export function createSelectedBlocksPasteTransaction(
+  state: EditorState,
+  slice: Slice
+): Transaction | null {
+  const positions = explicitBlockPositions(state)
+  if (positions.length === 0 || slice.content.size === 0) return null
+
+  const firstPos = positions[0]!
+  let transaction = state.tr
+
+  for (const pos of positions.slice(1).reverse()) {
+    const mappedPos = transaction.mapping.map(pos)
+    const node = transaction.doc.nodeAt(mappedPos)
+    if (node) transaction.delete(mappedPos, mappedPos + node.nodeSize)
+  }
+
+  const mappedFirstPos = transaction.mapping.map(firstPos)
+  const firstNode = transaction.doc.nodeAt(mappedFirstPos)
+  if (!firstNode) return null
+
+  const closedSlice = new Slice(slice.content, 0, 0)
+  transaction.replace(
+    mappedFirstPos,
+    mappedFirstPos + firstNode.nodeSize,
+    closedSlice
+  )
+  return finishPasteTransaction(
+    transaction,
+    mappedFirstPos + closedSlice.content.size
+  )
 }
 
 function explicitBlockClipboardSlice(state: EditorState): Slice | null {
@@ -239,25 +303,34 @@ export function pasteHandlerPlugin(schema: Schema) {
         )
         if (codeTransaction) {
           event.preventDefault()
-          view.dispatch(codeTransaction.scrollIntoView())
+          view.dispatch(finishPasteTransaction(codeTransaction))
           return true
         }
 
+        let exactSlice: Slice | null = null
         if (!plainTextPaste) {
-          const exactSlice = parseRumiClipboardSlice(
+          exactSlice = parseRumiClipboardSlice(
             clipboard.getData(RUMI_SLICE_MIME),
             schema
           )
           if (exactSlice) {
             event.preventDefault()
             view.dispatch(
-              view.state.tr
-                .replaceSelection(exactSlice)
-                .setMeta("uiEvent", "paste")
-                .scrollIntoView()
+              createSelectedBlocksPasteTransaction(view.state, exactSlice) ??
+              finishPasteTransaction(view.state.tr.replaceSelection(exactSlice))
             )
             return true
           }
+        }
+
+        const selectedBlocksTransaction = createSelectedBlocksPasteTransaction(
+          view.state,
+          slice
+        )
+        if (selectedBlocksTransaction) {
+          event.preventDefault()
+          view.dispatch(selectedBlocksTransaction)
+          return true
         }
 
         // A URL is always pasted as a normal inline link. Handle this before
@@ -265,7 +338,7 @@ export function pasteHandlerPlugin(schema: Schema) {
         const urlTransaction = createUrlPasteTransaction(view.state, text, schema)
         if (urlTransaction) {
           event.preventDefault()
-          view.dispatch(urlTransaction.scrollIntoView())
+          view.dispatch(finishPasteTransaction(urlTransaction))
           return true
         }
         // ProseMirror has already chosen the modifier-aware clipboard flavor:
@@ -327,5 +400,27 @@ export function pasteHandlerPlugin(schema: Schema) {
         return false
       },
     },
+
+    appendTransaction(transactions, _oldState, newState) {
+      const pasted = transactions.some((transaction) => {
+        return transaction.getMeta("uiEvent") === "paste" || transaction.getMeta("paste") === true
+      })
+      if (!pasted) return null
+
+      const selectedBlocks =
+        multiBlockSelectionKey.getState(newState)?.selectedBlocks ?? []
+      const nodeSelected = newState.selection instanceof NodeSelection
+      if (selectedBlocks.length === 0 && !nodeSelected) return null
+
+      const transaction = newState.tr.setMeta(multiBlockSelectionKey, {
+        selectedBlocks: [],
+        anchorBlock: null
+      })
+      if (nodeSelected) {
+        const selection = textSelectionNear(newState.doc, newState.selection.to)
+        if (selection) transaction.setSelection(selection)
+      }
+      return transaction
+    }
   })
 }

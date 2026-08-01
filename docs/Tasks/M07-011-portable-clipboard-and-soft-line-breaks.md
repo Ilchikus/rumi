@@ -45,6 +45,7 @@ Clipboard behavior depends on the paste intent:
 | Any source with paste-as-plain-text | Ignore clipboard HTML, insert the plain-text flavor literally without interpreting Markdown punctuation, preserve single line breaks as soft breaks, and preserve blank lines as paragraph boundaries. |
 | Rumi with normal paste | Prefer Rumi's exact structural clipboard flavor, then supported rich HTML, then plain text. |
 | Rumi copied into Google Docs, Slack, or another rich target | Provide portable semantic HTML for common blocks and marks. |
+| Google Docs or another rich editor copied back into Rumi | Normalize semantic lists and block-wrapped table cells into Rumi's schema before parsing. Recover Mermaid and database embeds when their textual grammars remain recognizable after the intermediary strips Rumi metadata. |
 | Rumi copied into a plain-text target | Provide readable text with line, paragraph, list, task, table, code, and embed boundaries intact. |
 
 Normal browser copy therefore supplies both `text/html` and `text/plain`; rich destinations choose
@@ -66,6 +67,9 @@ flavor for exact Rumi-to-Rumi round trips.
 - Export a readable plain-text clipboard fallback.
 - Export every block in Rumi's explicit block selection, in document order, even though the native
   ProseMirror selection represents only its first block or remains an empty text selection.
+- Normalize external semantic lists into Rumi's flat list blocks with their available indentation,
+  and flatten paragraph wrappers inside table cells without moving cell content outside the table.
+- Promote recognizable Mermaid and database configuration text runs back to their semantic blocks.
 - When one multiline paragraph is converted to a bullet, numbered, or task list, create one list
   item per visible line while preserving the marks on each line.
 - Keep code-block paste literal.
@@ -75,6 +79,9 @@ flavor for exact Rumi-to-Rumi round trips.
 - A user-facing strict-line-break setting.
 - Making every third-party HTML/CSS construct round-trip exactly.
 - Preserving spreadsheet formulas, merged-cell geometry, or proprietary Google Sheets styling.
+- Exact recovery of task checked state, code language, Mermaid mode, database fields, or other
+  metadata that an intermediary removes from both HTML and text.
+- Guessing that arbitrary styled or monospaced paragraphs are code when no semantic `<pre>` survives.
 - Replacing Markdown as the canonical editor boundary.
 - Changing runtime or API save contracts.
 - Redesigning asynchronous asset-upload placement; that remains a separate clipboard follow-up.
@@ -100,6 +107,11 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - [x] Live editor copy: handle, marquee, and staged whole-document block selections export every
       selected block through HTML, plain text, and Rumi's private flavor.
 - [x] Live editor cut: every explicitly selected block is exported and removed together.
+- [x] External rich paste: native and Google Docs-style lists retain family and available nesting.
+- [x] External rich paste: paragraph-wrapped table cells remain in one rectangular table with
+      inline marks and line boundaries.
+- [x] External rich paste: recognizable Mermaid and database text is promoted while ordinary
+      semantic code remains code.
 - [ ] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
       shortcuts in a real browser.
 - [x] Full typecheck, test, and production build.
@@ -121,6 +133,13 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - Plain spreadsheet TSV remains text rather than a table. Preserve row LFs and tabs; encode leading
   whitespace safely in Markdown source so save and reopen cannot turn prose into an indented code
   block.
+- Flatten native external list containers into Rumi's existing flat list nodes before ProseMirror
+  parses the HTML. Prefer explicit Google Docs list levels and ARIA metadata, then structural or
+  margin nesting.
+- Flatten only block wrappers inside table cells; retain the table, row/cell attributes, inline
+  marks, and visible boundaries between multiple cell paragraphs.
+- Treat Mermaid starters and database `source`/`view`/`filter`/`sort` runs as recovery signatures,
+  including unlabeled preformatted blocks. Do not infer arbitrary styled paragraphs as code.
 
 ## Done When
 
@@ -131,13 +150,15 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - Normal copy provides useful semantic HTML to rich destinations and readable plain text elsewhere.
 - Copying an explicit block selection never truncates the portable payload to its first native
   `NodeSelection` block.
+- Google Docs round-trips keep supported list and table structure, and restore Mermaid/database
+  blocks whenever their surviving text is unambiguous.
 - Exact Rumi-to-Rumi copy/paste does not lose supported block types or attributes.
 - Required automated checks pass and the browser clipboard smoke cases are recorded.
 
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 425 tests)
+- `corepack pnpm test` (56 files, 429 tests)
 - `corepack pnpm build`
 - Release candidate version: `@rumi-md/server@0.1.12`.
 - `corepack pnpm check:server-package` built, packed, clean-installed, and exercised the `0.1.12`

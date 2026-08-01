@@ -15,6 +15,13 @@ import {
   createDeleteSelectedBlocksTransaction,
   multiBlockSelectionKey
 } from "./multiBlockSelection"
+import {
+  normalizeExternalClipboardHtml,
+  normalizeExternalRichSlice,
+  normalizePastedTables
+} from "../richClipboardNormalization"
+
+export { normalizePastedTables } from "../richClipboardNormalization"
 
 export const pasteHandlerKey = new PluginKey("pasteHandler")
 
@@ -110,40 +117,6 @@ export function createPlainTextPasteSlice(text: string, schema: Schema): Slice {
   return Slice.maxOpen(doc.content, true)
 }
 
-function normalizePastedNode(node: ProseMirrorNode, schema: Schema): ProseMirrorNode {
-  if (node.type === schema.nodes.table && schema.nodes.table_header) {
-    const rows: ProseMirrorNode[] = []
-    node.forEach((row, _offset, rowIndex) => {
-      if (rowIndex !== 0) {
-        rows.push(normalizePastedNode(row, schema))
-        return
-      }
-
-      const cells: ProseMirrorNode[] = []
-      row.forEach((cell) => {
-        cells.push(
-          cell.type === schema.nodes.table_header
-            ? cell
-            : schema.nodes.table_header.create(cell.attrs, cell.content)
-        )
-      })
-      rows.push(row.copy(Fragment.fromArray(cells)))
-    })
-    return node.copy(Fragment.fromArray(rows))
-  }
-
-  if (node.isLeaf) return node
-  const children: ProseMirrorNode[] = []
-  node.forEach((child) => children.push(normalizePastedNode(child, schema)))
-  return node.copy(Fragment.fromArray(children))
-}
-
-export function normalizePastedTables(slice: Slice, schema: Schema): Slice {
-  const children: ProseMirrorNode[] = []
-  slice.content.forEach((node) => children.push(normalizePastedNode(node, schema)))
-  return new Slice(Fragment.fromArray(children), slice.openStart, slice.openEnd)
-}
-
 function explicitBlockClipboardSlice(state: EditorState): Slice | null {
   const selectedBlocks =
     multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
@@ -199,6 +172,10 @@ export function pasteHandlerPlugin(schema: Schema) {
   return new Plugin({
     key: pasteHandlerKey,
     props: {
+      transformPastedHTML(html) {
+        return normalizeExternalClipboardHtml(html)
+      },
+
       clipboardTextParser(text, _context, plain) {
         pasteWasExplicitlyPlainText = plain
         return createPlainTextPasteSlice(text, schema)
@@ -206,7 +183,7 @@ export function pasteHandlerPlugin(schema: Schema) {
 
       transformPasted(slice, _view, plain) {
         if (!plain) pasteWasExplicitlyPlainText = false
-        return plain ? slice : normalizePastedTables(slice, schema)
+        return plain ? slice : normalizeExternalRichSlice(slice, schema)
       },
 
       handlePaste(view, event, slice) {

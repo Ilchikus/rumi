@@ -1,4 +1,5 @@
-import { Slice } from "prosemirror-model"
+// @vitest-environment jsdom
+import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model"
 import { EditorState, NodeSelection, TextSelection, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
@@ -26,6 +27,26 @@ function stateWithSelection(markdown: string, from: number, to = from): EditorSt
   const doc = parseMarkdown(markdown, schema)
   const state = EditorState.create({ doc })
   return state.apply(state.tr.setSelection(TextSelection.create(doc, from, to)))
+}
+
+function parseExternalRichHtml(html: string): Slice {
+  const plugin = pasteHandlerPlugin(schema)
+  const state = stateWithSelection("", 1)
+  const view = { state } as unknown as EditorView
+  const normalizedHtml = plugin.props.transformPastedHTML?.call(
+    plugin,
+    html,
+    view
+  ) ?? html
+  const container = document.createElement("div")
+  container.innerHTML = normalizedHtml
+  const parsed = ProseMirrorDOMParser.fromSchema(schema).parseSlice(container)
+  return plugin.props.transformPasted?.call(plugin, parsed, view, false) ?? parsed
+}
+
+function pasteSliceIntoBlankDocument(slice: Slice) {
+  const state = stateWithSelection("", 1)
+  return state.apply(state.tr.replaceSelection(slice)).doc
 }
 
 describe("live editor URL paste", () => {
@@ -242,6 +263,125 @@ describe("live editor rich paste", () => {
 
     expect(plugin.props.handlePaste?.call(plugin, view, event, transformed)).toBe(true)
     expect(state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+  })
+})
+
+describe("live editor external rich paste normalization", () => {
+  it("turns semantic and Google Docs-style lists into ordered flat list blocks with indentation", () => {
+    const slice = parseExternalRichHtml([
+      '<ul class="lst-kix_demo-0"><li class="li-bullet-0">Memory</li>',
+      '<li class="li-bullet-0">Mini PC chassis</li></ul>',
+      '<ul class="lst-kix_demo-1"><li class="li-bullet-1">SODIMM</li>',
+      '<li class="li-bullet-1">DDR5</li></ul>',
+      '<ol><li aria-level="1">Install memory</li>',
+      '<li aria-level="2">Install storage</li></ol>',
+      '<ul><li><input type="checkbox" checked>Choose a CPU</li></ul>'
+    ].join(""))
+    const pastedDoc = pasteSliceIntoBlankDocument(slice)
+
+    expect(pastedDoc.content.content.map(node => ({
+      type: node.type.name,
+      indent: node.attrs.indent,
+      checked: node.attrs.checked,
+      text: node.textContent
+    }))).toEqual([
+      { type: "bullet_item", indent: 0, checked: undefined, text: "Memory" },
+      { type: "bullet_item", indent: 0, checked: undefined, text: "Mini PC chassis" },
+      { type: "bullet_item", indent: 1, checked: undefined, text: "SODIMM" },
+      { type: "bullet_item", indent: 1, checked: undefined, text: "DDR5" },
+      { type: "numbered_item", indent: 0, checked: undefined, text: "Install memory" },
+      { type: "numbered_item", indent: 1, checked: undefined, text: "Install storage" },
+      { type: "task_item", indent: 0, checked: true, text: "Choose a CPU" }
+    ])
+  })
+
+  it("keeps block-wrapped Google Docs table content inside one rectangular table", () => {
+    const slice = parseExternalRichHtml([
+      "<table><tbody>",
+      "<tr>",
+      "<td><p><strong>Model</strong></p></td>",
+      "<td><p>CPU</p></td>",
+      "</tr>",
+      "<tr>",
+      "<td><p>Beelink EQ12</p></td>",
+      "<td><p>Intel N100</p><p>efficient</p></td>",
+      "</tr>",
+      "</tbody></table>"
+    ].join(""))
+    const pastedDoc = pasteSliceIntoBlankDocument(slice)
+    const tables = pastedDoc.content.content.filter(node => node.type === schema.nodes.table)
+    const table = tables[0]
+
+    expect(tables).toHaveLength(1)
+    expect(pastedDoc.content.content.filter(node => node.type !== schema.nodes.table)
+      .every(node => node.type === schema.nodes.paragraph && node.content.size === 0)).toBe(true)
+    expect(table?.type).toBe(schema.nodes.table)
+    expect(table?.childCount).toBe(2)
+    expect(table?.child(0).childCount).toBe(2)
+    expect(table?.child(1).childCount).toBe(2)
+    expect(table?.child(0).child(0).type).toBe(schema.nodes.table_header)
+    expect(table?.child(0).child(0).firstChild?.marks.map(mark => mark.type.name))
+      .toContain("bold")
+    expect(table?.child(1).child(1).content.content.map(node => node.type.name)).toEqual([
+      "text",
+      "hard_break",
+      "text"
+    ])
+    expect(table?.child(1).child(1).textContent).toBe("Intel N100efficient")
+  })
+
+  it("recovers recognizable Mermaid and database runs while retaining ordinary code", () => {
+    const slice = parseExternalRichHtml([
+      "<p>flowchart LR</p>",
+      "<p>&nbsp;&nbsp;Client[Client] --&gt; Server[Server]</p>",
+      "<p>source: Tasks</p>",
+      "<p>filter: status = doing</p>",
+      "<p>sort: updated desc</p>",
+      "<h2>Code block</h2>",
+      '<pre><code class="language-javascript">const ready = true</code></pre>',
+      "<hr>",
+      "<p>source: Tasks</p>"
+    ].join(""))
+    const nodes = pasteSliceIntoBlankDocument(slice).content.content
+
+    expect(nodes.map(node => node.type.name)).toEqual([
+      "mermaid",
+      "database_embed",
+      "heading",
+      "code_block",
+      "horizontal_rule",
+      "database_embed"
+    ])
+    expect(nodes[0]?.attrs.code).toBe([
+      "flowchart LR",
+      "  Client[Client] --> Server[Server]"
+    ].join("\n"))
+    expect(nodes[1]?.attrs).toMatchObject({
+      source: "Tasks",
+      filter: "status = doing",
+      sort: "updated desc"
+    })
+    expect(nodes[3]?.attrs.language).toBe("javascript")
+    expect(nodes[3]?.textContent).toBe("const ready = true")
+    expect(nodes[5]?.attrs.source).toBe("Tasks")
+  })
+
+  it("recovers semantic blocks from unlabeled preformatted text without guessing ordinary code", () => {
+    const slice = parseExternalRichHtml([
+      "<pre><code>graph TD\n  A --&gt; B</code></pre>",
+      "<pre><code>source: Tasks\nview: table</code></pre>",
+      "<pre><code>const ready = true</code></pre>"
+    ].join(""))
+    const nodes = pasteSliceIntoBlankDocument(slice).content.content
+
+    expect(nodes.map(node => node.type.name)).toEqual([
+      "mermaid",
+      "database_embed",
+      "code_block"
+    ])
+    expect(nodes[0]?.attrs.code).toBe("graph TD\n  A --> B")
+    expect(nodes[1]?.attrs).toMatchObject({ source: "Tasks", viewType: "table" })
+    expect(nodes[2]?.textContent).toBe("const ready = true")
   })
 })
 

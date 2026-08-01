@@ -383,6 +383,56 @@ describe("live editor external rich paste normalization", () => {
     expect(nodes[1]?.attrs).toMatchObject({ source: "Tasks", viewType: "table" })
     expect(nodes[2]?.textContent).toBe("const ready = true")
   })
+
+  it("recovers a fully code-styled Google Docs paragraph run without guessing normal monospace text", () => {
+    const codeStyle = [
+      "font-family:'Roboto Mono',monospace",
+      "background-color:rgb(241,243,244)",
+      "white-space:pre-wrap"
+    ].join(";")
+    const slice = parseExternalRichHtml([
+      '<b id="docs-internal-guid-12345678-1234-1234-1234-1234567890ab" style="font-weight:normal">',
+      `<p><span style="${codeStyle}">const candidate = {</span></p><br>`,
+      `<p><span style="${codeStyle}">&nbsp;&nbsp;ready: true</span></p><br>`,
+      `<p><span style="${codeStyle}">}</span></p><br>`,
+      '<p><span style="font-family:Roboto Mono">ordinary monospace prose</span></p>',
+      "</b>"
+    ].join(""))
+    const nodes = pasteSliceIntoBlankDocument(slice).content.content
+      .filter(node => node.type !== schema.nodes.paragraph || node.content.size > 0)
+
+    expect(nodes.map(node => node.type.name)).toEqual(["code_block", "paragraph"])
+    expect(nodes[0]?.attrs.language).toBeNull()
+    expect(nodes[0]?.textContent).toBe([
+      "const candidate = {",
+      "  ready: true",
+      "}"
+    ].join("\n"))
+    expect(nodes[1]?.textContent).toBe("ordinary monospace prose")
+  })
+
+  it("removes Google Docs' default link underline while retaining explicit non-link underline", () => {
+    const slice = parseExternalRichHtml([
+      '<b id="docs-internal-guid-12345678-1234-1234-1234-1234567890ab" style="font-weight:normal">',
+      "<p>Open",
+      '<a href="https://example.com" style="text-decoration:none">',
+      '<span style="color:#1155cc;text-decoration:underline"> </span></a>',
+      '<a href="https://example.com" style="text-decoration:none">',
+      '<span style="color:#1155cc;text-decoration:underline">Example</span></a>',
+      "</p>",
+      '<p><span style="text-decoration:underline">Explicit underline</span></p>',
+      "</b>"
+    ].join(""))
+    const nodes = pasteSliceIntoBlankDocument(slice).content.content
+      .filter(node => node.type !== schema.nodes.paragraph || node.content.size > 0)
+    const linkParagraph = nodes[0]!
+    const linkText = linkParagraph.content.content.find(node => node.text === "Example")
+    const explicitText = nodes[1]?.firstChild
+
+    expect(linkParagraph.textContent).toBe("Open Example")
+    expect(linkText?.marks.map(mark => mark.type.name)).toEqual(["link"])
+    expect(explicitText?.marks.map(mark => mark.type.name)).toContain("underline")
+  })
 })
 
 describe("live editor copy", () => {

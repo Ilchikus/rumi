@@ -7,6 +7,19 @@ import {
 
 export const RUMI_SLICE_MIME = "application/x-rumi-prosemirror-slice+json"
 
+const PORTABLE_CODE_BLOCK_STYLE = [
+  "background-color:#f1f3f4",
+  "border-radius:4px",
+  'font-family:"Roboto Mono",monospace',
+  "white-space:pre-wrap"
+].join(";")
+
+const PORTABLE_CODE_INLINE_STYLE = [
+  "background-color:#f1f3f4",
+  'font-family:"Roboto Mono",monospace',
+  "white-space:pre-wrap"
+].join(";")
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -159,6 +172,12 @@ function serializeTableHtml(table: ProseMirrorNode): string {
   return `<table>${head}${body}</table>`
 }
 
+function serializeCodeHtml(value: string, language: string | null): string {
+  return `<pre${htmlAttribute("style", PORTABLE_CODE_BLOCK_STYLE)}>` +
+    `<code${htmlAttribute("class", language ? `language-${language}` : null)}` +
+    `${htmlAttribute("style", PORTABLE_CODE_INLINE_STYLE)}>${escapeHtml(value)}</code></pre>`
+}
+
 function serializeBlockHtml(node: ProseMirrorNode): string {
   switch (node.type.name) {
     case "paragraph":
@@ -170,13 +189,13 @@ function serializeBlockHtml(node: ProseMirrorNode): string {
     case "blockquote":
       return `<blockquote>${serializeFragmentHtml(node.content)}</blockquote>`
     case "code_block":
-      return `<pre><code${htmlAttribute("class", node.attrs.language ? `language-${node.attrs.language}` : null)}>${escapeHtml(node.textContent)}</code></pre>`
+      return serializeCodeHtml(node.textContent, node.attrs.language ?? null)
     case "table":
       return serializeTableHtml(node)
     case "horizontal_rule":
       return "<hr>"
     case "mermaid":
-      return `<pre><code class="language-mermaid">${escapeHtml(String(node.attrs.code ?? ""))}</code></pre>`
+      return serializeCodeHtml(String(node.attrs.code ?? ""), "mermaid")
     case "database_embed": {
       const lines = [
         node.attrs.source ? `source: ${node.attrs.source}` : "",
@@ -184,7 +203,7 @@ function serializeBlockHtml(node: ProseMirrorNode): string {
         node.attrs.filter ? `filter: ${node.attrs.filter}` : "",
         node.attrs.sort ? `sort: ${node.attrs.sort}` : ""
       ].filter(Boolean).join("\n")
-      return `<pre><code class="language-db">${escapeHtml(lines)}</code></pre>`
+      return serializeCodeHtml(lines, "db")
     }
     case "file_embed": {
       const src = String(node.attrs.src ?? "")

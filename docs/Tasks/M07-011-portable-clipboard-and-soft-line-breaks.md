@@ -44,8 +44,8 @@ Clipboard behavior depends on the paste intent:
 | Google Sheets or another rich source with normal paste | Use supported clipboard HTML; a sheet range becomes a table and common inline formatting remains semantic. |
 | Any source with paste-as-plain-text | Ignore clipboard HTML, insert the plain-text flavor literally without interpreting Markdown punctuation, preserve single line breaks as soft breaks, and preserve blank lines as paragraph boundaries. |
 | Rumi with normal paste | Prefer Rumi's exact structural clipboard flavor, then supported rich HTML, then plain text. |
-| Rumi copied into Google Docs, Slack, or another rich target | Provide portable semantic HTML for common blocks and marks. |
-| Google Docs or another rich editor copied back into Rumi | Normalize semantic lists and block-wrapped table cells into Rumi's schema before parsing. Recover Mermaid and database embeds when their textual grammars remain recognizable after the intermediary strips Rumi metadata. |
+| Rumi copied into Google Docs, Slack, or another rich target | Provide portable semantic HTML for common blocks and marks. Code remains semantic `<pre><code>` and carries an explicit neutral code presentation for rich editors that otherwise flatten the element. |
+| Google Docs or another rich editor copied back into Rumi | Normalize semantic lists and block-wrapped table cells into Rumi's schema before parsing. Recover Mermaid and database embeds when their textual grammars remain recognizable after the intermediary strips Rumi metadata. Recover a flattened Google Docs code run only when every line retains both the portable code font and background; treat Docs' visual link underline as part of the link rather than a separate underline mark. |
 | Rumi copied into a plain-text target | Provide readable text with line, paragraph, list, task, table, code, and embed boundaries intact. |
 
 Normal browser copy therefore supplies both `text/html` and `text/plain`; rich destinations choose
@@ -70,6 +70,10 @@ flavor for exact Rumi-to-Rumi round trips.
 - Normalize external semantic lists into Rumi's flat list blocks with their available indentation,
   and flatten paragraph wrappers inside table cells without moving cell content outside the table.
 - Promote recognizable Mermaid and database configuration text runs back to their semantic blocks.
+- Give portable code HTML an explicit neutral monospace presentation and recover Google Docs runs
+  carrying that complete presentation without classifying ordinary monospace paragraphs as code.
+- Remove Google Docs' default visual underline from pasted link descendants while retaining the link
+  itself and explicit underline outside links.
 - When one multiline paragraph is converted to a bullet, numbered, or task list, create one list
   item per visible line while preserving the marks on each line.
 - Keep code-block paste literal.
@@ -81,7 +85,8 @@ flavor for exact Rumi-to-Rumi round trips.
 - Preserving spreadsheet formulas, merged-cell geometry, or proprietary Google Sheets styling.
 - Exact recovery of task checked state, code language, Mermaid mode, database fields, or other
   metadata that an intermediary removes from both HTML and text.
-- Guessing that arbitrary styled or monospaced paragraphs are code when no semantic `<pre>` survives.
+- Guessing that arbitrary styled or monospaced paragraphs are code when neither semantic `<pre>` nor
+  the complete Google Docs code-presentation signature survives.
 - Replacing Markdown as the canonical editor boundary.
 - Changing runtime or API save contracts.
 - Redesigning asynchronous asset-upload placement; that remains a separate clipboard follow-up.
@@ -112,6 +117,10 @@ editor, with Markdown serialization and web clipboard integration at the existin
       inline marks and line boundaries.
 - [x] External rich paste: recognizable Mermaid and database text is promoted while ordinary
       semantic code remains code.
+- [x] External rich paste: a complete Google Docs code-presentation run becomes one code block,
+      while ordinary monospace prose remains prose.
+- [x] External rich paste: Docs' default link decoration does not become an explicit underline mark,
+      while non-link underline remains semantic.
 - [ ] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
       shortcuts in a real browser.
 - [x] Full typecheck, test, and production build.
@@ -140,6 +149,14 @@ editor, with Markdown serialization and web clipboard integration at the existin
   marks, and visible boundaries between multiple cell paragraphs.
 - Treat Mermaid starters and database `source`/`view`/`filter`/`sort` runs as recovery signatures,
   including unlabeled preformatted blocks. Do not infer arbitrary styled paragraphs as code.
+- Google Docs supports native code-block building blocks on eligible Workspace tiers, but normal
+  external HTML paste does not expose a documented portable building-block type. Keep `<pre><code>`
+  semantic for other targets and add explicit neutral code font/background styling. On Docs paste
+  back, require both signals across the complete run before reconstructing code; language remains
+  unavailable when Docs removes it.
+- Google Docs represents its ordinary link appearance as an underline style inside the anchor.
+  Strip that redundant style only for Docs-origin HTML so Markdown does not gain an explicit
+  underline mark merely from traversing Docs.
 
 ## Done When
 
@@ -152,13 +169,15 @@ editor, with Markdown serialization and web clipboard integration at the existin
   `NodeSelection` block.
 - Google Docs round-trips keep supported list and table structure, and restore Mermaid/database
   blocks whenever their surviving text is unambiguous.
+- Google Docs round-trips keep code as one block when its complete portable presentation survives,
+  and default links return as links without an added underline mark.
 - Exact Rumi-to-Rumi copy/paste does not lose supported block types or attributes.
 - Required automated checks pass and the browser clipboard smoke cases are recorded.
 
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 429 tests)
+- `corepack pnpm test` (56 files, 431 tests)
 - `corepack pnpm build`
 - Release candidate version: `@rumi-md/server@0.1.12`.
 - `corepack pnpm check:server-package` built, packed, clean-installed, and exercised the `0.1.12`

@@ -21,10 +21,147 @@ const BLOCK_WRAPPER_TAGS = new Set([
 
 const MERMAID_START = /^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|xychart-beta|sankey-beta|block-beta|architecture-beta|packet-beta|kanban)\b/u
 const DATABASE_LINE = /^(source|view|filter|sort):\s*(.*)$/u
+const GOOGLE_DOCS_ID = /^docs-internal-guid-/u
+const CODE_FONT = /(?:roboto mono|source code pro|courier|consolas|menlo|monaco|monospace)/iu
+const CODE_BACKGROUNDS = new Set([
+  "#f1f3f4",
+  "rgb(241,243,244)",
+  "#f8f9fa",
+  "rgb(248,249,250)"
+])
 
 interface FlattenState {
   hasContent: boolean
   lastWasBreak: boolean
+}
+
+function removeUnderlineStyle(element: HTMLElement) {
+  for (const property of ["text-decoration", "text-decoration-line"]) {
+    const value = element.style.getPropertyValue(property)
+    if (!/\bunderline\b/iu.test(value)) continue
+    const retained = /\bline-through\b/iu.test(value) ? "line-through" : ""
+    if (retained) element.style.setProperty(property, retained)
+    else element.style.removeProperty(property)
+  }
+}
+
+function normalizeGoogleDocsLinks(root: HTMLElement) {
+  root.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => {
+    removeUnderlineStyle(anchor)
+    anchor.querySelectorAll<HTMLElement>("*").forEach(removeUnderlineStyle)
+    anchor.querySelectorAll<HTMLElement>("u").forEach((underline) => {
+      underline.replaceWith(...Array.from(underline.childNodes))
+    })
+
+    if (!(anchor.textContent ?? "").trim()) {
+      anchor.replaceWith(...Array.from(anchor.childNodes))
+    }
+  })
+}
+
+function cssColorKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/gu, "")
+}
+
+function hasCodeFont(element: HTMLElement, boundary: HTMLElement): boolean {
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    if (CODE_FONT.test(current.style.fontFamily)) return true
+    if (current === boundary) break
+  }
+  return false
+}
+
+function hasCodeBackground(element: HTMLElement, boundary: HTMLElement): boolean {
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    if (CODE_BACKGROUNDS.has(cssColorKey(current.style.backgroundColor))) return true
+    if (current === boundary) break
+  }
+  return false
+}
+
+function hasCompleteCodeStyle(element: HTMLElement, boundary: HTMLElement): boolean {
+  return hasCodeFont(element, boundary) && hasCodeBackground(element, boundary)
+}
+
+function isGoogleDocsCodeLine(element: HTMLElement, boundary: HTMLElement): boolean {
+  if (element.tagName !== "P" && element.tagName !== "DIV") return false
+  if (element.querySelector("p, div, h1, h2, h3, h4, h5, h6, ul, ol, table, pre, blockquote")) {
+    return false
+  }
+
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  const textParents: HTMLElement[] = []
+  for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+    if (!(text.nodeValue ?? "").replace(/\u00a0/gu, " ").trim()) continue
+    if (text.parentElement) textParents.push(text.parentElement)
+  }
+
+  if (textParents.length > 0) {
+    return textParents.every((parent) => hasCompleteCodeStyle(parent, boundary))
+  }
+
+  return hasCompleteCodeStyle(element, boundary) ||
+    Array.from(element.querySelectorAll<HTMLElement>("*")).some((child) => {
+      return hasCompleteCodeStyle(child, boundary)
+    })
+}
+
+function isGoogleDocsCodeSeparator(node: Node): boolean {
+  if (node.nodeType === Node.TEXT_NODE) return !(node.nodeValue ?? "").trim()
+  if (!(node instanceof HTMLElement)) return false
+  return node.tagName === "BR" || !(node.textContent ?? "").trim()
+}
+
+function codeLineText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? ""
+  if (!(node instanceof HTMLElement)) return ""
+  if (node.tagName === "BR") return "\n"
+  return Array.from(node.childNodes).map(codeLineText).join("")
+}
+
+function normalizeGoogleDocsCode(root: HTMLElement) {
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>("p, div"))
+
+  for (const first of candidates) {
+    if (!root.contains(first) || !isGoogleDocsCodeLine(first, root)) continue
+
+    const lines = [codeLineText(first).replace(/\n$/u, "")]
+    const consumed: Node[] = [first]
+    let cursor = first.nextSibling
+
+    while (cursor) {
+      const separators: Node[] = []
+      while (cursor && isGoogleDocsCodeSeparator(cursor)) {
+        separators.push(cursor)
+        cursor = cursor.nextSibling
+      }
+      if (!(cursor instanceof HTMLElement) || !isGoogleDocsCodeLine(cursor, root)) {
+        consumed.push(...separators)
+        break
+      }
+      consumed.push(...separators, cursor)
+      lines.push(codeLineText(cursor).replace(/\n$/u, ""))
+      cursor = cursor.nextSibling
+    }
+
+    const pre = first.ownerDocument.createElement("pre")
+    const code = first.ownerDocument.createElement("code")
+    code.textContent = lines.join("\n")
+      .replace(/\u00a0/gu, " ")
+      .replace(/[\u200b\u200c\u200d\ufeff]/gu, "")
+    pre.appendChild(code)
+    first.before(pre)
+    consumed.forEach((node) => node.parentNode?.removeChild(node))
+  }
+}
+
+function normalizeGoogleDocs(root: ParentNode) {
+  const docsRoots = Array.from(root.querySelectorAll<HTMLElement>("[id]"))
+    .filter((element) => GOOGLE_DOCS_ID.test(element.id))
+  docsRoots.forEach((docsRoot) => {
+    normalizeGoogleDocsLinks(docsRoot)
+    normalizeGoogleDocsCode(docsRoot)
+  })
 }
 
 function isListElement(node: Node): node is HTMLElement {
@@ -218,6 +355,7 @@ export function normalizeExternalClipboardHtml(html: string): string {
 
   const template = document.createElement("template")
   template.innerHTML = html
+  normalizeGoogleDocs(template.content)
   normalizeLists(template.content)
   normalizeTableCells(template.content)
   return template.innerHTML

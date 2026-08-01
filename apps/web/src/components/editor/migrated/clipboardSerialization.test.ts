@@ -46,7 +46,11 @@ describe("portable editor clipboard serialization", () => {
     expect(html).toContain('type="checkbox" checked')
     expect(html).toContain("<table>")
     expect(html).toContain("<th>Name</th>")
-    expect(html).toContain('<code class="language-ts">const ready = true</code>')
+    expect(html).toContain(
+      '<pre style="background-color:#f1f3f4;border-radius:4px;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
+      '<code class="language-ts" style="background-color:#f1f3f4;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
+      "const ready = true</code></pre>"
+    )
   })
 
   it("exports readable plain text with line and list semantics", () => {

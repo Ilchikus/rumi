@@ -4,6 +4,7 @@ import { EditorState, NodeSelection, TextSelection, type Transaction } from "pro
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
+import { setMigratedEditorPlatform } from "./platform"
 import { schema } from "./schema"
 import {
   RUMI_SLICE_MIME,
@@ -455,6 +456,20 @@ describe("live editor external rich paste normalization", () => {
     expect(nodes[2]?.textContent).toBe("const ready = true")
   })
 
+  it("does not classify ordinary graph prose as Mermaid", () => {
+    const slice = parseExternalRichHtml([
+      "<p>graph theory remains ordinary prose</p>",
+      "<p>The following paragraph stays separate.</p>"
+    ].join(""))
+    const nodes = pasteSliceIntoBlankDocument(slice).content.content
+
+    expect(nodes.map(node => node.type.name)).toEqual(["paragraph", "paragraph"])
+    expect(nodes.map(node => node.textContent)).toEqual([
+      "graph theory remains ordinary prose",
+      "The following paragraph stays separate."
+    ])
+  })
+
   it("recovers a fully code-styled Google Docs paragraph run without guessing normal monospace text", () => {
     const codeStyle = [
       "font-family:'Roboto Mono',monospace",
@@ -485,10 +500,10 @@ describe("live editor external rich paste normalization", () => {
   it("removes Google Docs' default link underline while retaining explicit non-link underline", () => {
     const slice = parseExternalRichHtml([
       '<b id="docs-internal-guid-12345678-1234-1234-1234-1234567890ab" style="font-weight:normal">',
-      "<p>Open",
+      "<p><span>Open</span><span>",
       '<a href="https://example.com" style="text-decoration:none">',
       '<span style="color:#1155cc;text-decoration:underline"> Example </span></a>',
-      "next",
+      "</span><span>next</span>",
       "</p>",
       '<p><span style="text-decoration:underline">Explicit underline</span></p>',
       "</b>"
@@ -609,6 +624,61 @@ describe("live editor copy", () => {
       (_, index) => state.doc.child(index).textContent
     )).toEqual(["", "Two"])
     expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
+  })
+})
+
+describe("live editor asset paste", () => {
+  it("keeps image clipboard files on the asynchronous asset-upload path", async () => {
+    let uploadedFile: File | null = null
+    let resolveDispatch!: () => void
+    const dispatched = new Promise<void>((resolve) => { resolveDispatch = resolve })
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      async uploadAsset(file) {
+        uploadedFile = file
+        return ".assets/pasted.png"
+      }
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      let state = stateWithSelection("", 1)
+      const view = {
+        get state() { return state },
+        dispatch(transaction: Transaction) {
+          state = state.apply(transaction)
+          resolveDispatch()
+        }
+      } as unknown as EditorView
+      const file = new File(["image"], "pasted.png", { type: "image/png" })
+      const event = {
+        clipboardData: {
+          files: [file],
+          getData() { return "" }
+        }
+      } as unknown as ClipboardEvent
+
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        view,
+        event,
+        createPlainTextPasteSlice("", schema)
+      )).toBe(true)
+      await dispatched
+      expect(uploadedFile).toBe(file)
+      expect(state.doc.firstChild?.type).toBe(schema.nodes.image)
+      expect(state.doc.firstChild?.attrs.src).toBe(".assets/pasted.png")
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
   })
 })
 

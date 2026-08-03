@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-07-29"
-updated: "2026-07-30"
+updated: "2026-08-03"
 ---
 # M07-010 Code Block And Toggleable Heading Interactions
 
@@ -272,7 +272,7 @@ Candidate files:
   one code block, with its language and suffix preserved.
 - [x] Editor transaction test: code paste preserves leading/trailing whitespace, blank lines,
   Markdown punctuation, URLs, and replacement selections.
-- [ ] Regression test: non-code URL, HTML/Markdown, and asset paste behavior remains unchanged.
+- [x] Regression test: non-code URL, HTML/Markdown, and asset paste behavior remains unchanged.
 - [x] Editor command test: Shift-Enter inside code inserts a literal newline and serializes to one
   fence; Shift-Enter in prose still creates a hard break.
 - [x] Block-menu interaction test: immediate printable input after handle selection reaches the
@@ -289,7 +289,7 @@ Candidate files:
   retained the text selection.
 - [x] Follow-up document-end tests: clicking below a final collapsed section uses the same divider
   escape, while expanded headings and existing final blank paragraphs retain normal behavior.
-- [ ] Follow-up real-browser smoke: repeat collapsed-heading Enter and bottom-padding click with a
+- [x] Follow-up real-browser smoke: repeat collapsed-heading Enter and bottom-padding click with a
   code-only final section, then confirm both ordinary expanded-heading paths remain unchanged.
 - [x] Update the editor interaction contract with the code-local input and horizontal-rule boundary
   behavior.
@@ -330,6 +330,8 @@ Follow-up implementation on 2026-07-30:
 - focused follow-up coverage passed: 2 files, 11 tests;
 - full repository verification passed: 55 test files, 400 tests, typecheck, production web build,
   and bundled server build.
+- final release review added explicit image-clipboard asset-path coverage, and user browser QA
+  confirmed the complete editor follow-up before the `0.1.12` release.
 
 ## QA Scenarios
 

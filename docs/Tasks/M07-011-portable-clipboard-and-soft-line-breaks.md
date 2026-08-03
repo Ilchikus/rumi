@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-01"
-updated: "2026-08-01"
+updated: "2026-08-03"
 ---
 # M07-011 Portable Clipboard And Soft Line Breaks
 
@@ -135,7 +135,7 @@ editor, with Markdown serialization and web clipboard integration at the existin
       all block selection state clears afterward.
 - [x] Paste transaction: a native node selection left at the last pasted block returns to an
       available text cursor.
-- [ ] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
+- [x] UI smoke: copy rich content to a rich target and paste Google Sheets content with both paste
       shortcuts in a real browser.
 - [x] Full typecheck, test, and production build.
 
@@ -162,7 +162,8 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - Flatten only block wrappers inside table cells; retain the table, row/cell attributes, inline
   marks, and visible boundaries between multiple cell paragraphs.
 - Treat Mermaid starters and database `source`/`view`/`filter`/`sort` runs as recovery signatures,
-  including unlabeled preformatted blocks. Do not infer arbitrary styled paragraphs as code.
+  including unlabeled preformatted blocks. Require a Mermaid direction for `graph` and `flowchart`
+  so ordinary graph prose remains prose, and do not infer arbitrary styled paragraphs as code.
 - Google Docs supports native code-block building blocks on eligible Workspace tiers, but normal
   external HTML paste does not expose a documented portable building-block type. Keep `<pre><code>`
   semantic for other targets and add explicit neutral code font/background styling. On Docs paste
@@ -171,7 +172,8 @@ editor, with Markdown serialization and web clipboard integration at the existin
 - Google Docs represents its ordinary link appearance as an underline style inside the anchor.
   Strip that redundant style only for Docs-origin HTML so Markdown does not gain an explicit
   underline mark merely from traversing Docs. Docs can also fold adjacent separator whitespace into
-  the anchor; detach that boundary whitespace before ProseMirror parses the link.
+  the anchor; detach that boundary whitespace before ProseMirror parses the link, using the nearest
+  block boundary so nested inline wrappers cannot remove the separator.
 - Do not use the native ProseMirror cursor as the replacement range while explicit block selection
   exists. Delete the complete selected position set from the end, replace its first block with the
   parsed slice, clear the plugin selection explicitly, and avoid leaving a `NodeSelection` on the
@@ -198,9 +200,10 @@ editor, with Markdown serialization and web clipboard integration at the existin
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 433 tests)
+- `corepack pnpm test` (56 files, 436 tests)
 - `corepack pnpm build`
 - Release candidate version: `@rumi-md/server@0.1.12`.
 - `corepack pnpm check:server-package` built, packed, clean-installed, and exercised the `0.1.12`
   release candidate.
-- Browser clipboard smoke remains before changing this task from `verify` to `done`.
+- User browser QA confirmed the Google Docs/Sheets round trips, link handling, line-break behavior,
+  complete selection copy/paste, and paste highlight cleanup before the `0.1.12` release.

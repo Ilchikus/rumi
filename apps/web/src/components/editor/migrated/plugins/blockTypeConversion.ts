@@ -38,12 +38,12 @@ function singleColumnTableRows(node: PmNode): Array<Fragment | null> | null {
   const rows: Array<Fragment | null> = []
   let isSingleColumn = true
   node.forEach((row) => {
-    if (row.childCount !== 1) {
+    const cell = row.firstChild
+    if (row.childCount !== 1 || Number(cell?.attrs.colspan ?? 1) !== 1) {
       isSingleColumn = false
       return
     }
 
-    const cell = row.firstChild
     rows.push(cell && cell.content.size > 0 ? cell.content : null)
   })
 

@@ -253,6 +253,33 @@ describe("selected-block handle menu trigger", () => {
     }
   )
 
+  it("does not treat a spanning table cell as a single-column table", () => {
+    const spanningHeader = schema.nodes.table_header!.create(
+      { colspan: 2 },
+      schema.text("Header")
+    )
+    const spanningCell = schema.nodes.table_cell!.create(
+      { colspan: 2 },
+      schema.text("Value")
+    )
+    const table = schema.nodes.table!.create(null, [
+      schema.nodes.table_row!.create(null, [spanningHeader]),
+      schema.nodes.table_row!.create(null, [spanningCell])
+    ])
+    const doc = schema.nodes.doc!.create(null, [table])
+    const state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    const option = BLOCK_TYPE_OPTIONS.find(candidate => candidate.type === "bullet_item")!
+    const transaction = createBlockTypeChangeTransaction(state, [0], option)
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.childCount).toBe(1)
+    expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.bullet_item)
+    expect(transaction!.doc.firstChild?.textContent).toBe("HeaderValue")
+  })
+
   it("replaces deleted selected blocks with one focused blank paragraph", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({

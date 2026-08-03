@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M03
 owner_layer: web
@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-01"
-updated: "2026-08-01"
+updated: "2026-08-03"
 ---
 # M03-005 Inline Create Name Spaces
 
@@ -40,7 +40,7 @@ web, using the existing workspace-name sanitizer and runtime commands.
 - [x] Sidebar input regression test proves a trailing typed space survives long enough to enter the
       next word.
 - [x] Existing runtime create/rename coverage remains green.
-- [ ] Manual UI smoke creates a page, folder, and database containing spaces.
+- [x] Manual UI smoke creates a page, folder, and database containing spaces.
 
 ## Implementation Notes
 
@@ -57,4 +57,4 @@ trims and validates the final value.
 ## Verification
 
 - Workspace-format, sidebar, and complete repository test suites pass.
-- Manual sidebar creation/rename smoke remains before changing this task from `verify` to `done`.
+- User browser QA confirmed sidebar creation and rename with spaces before the `0.1.12` release.

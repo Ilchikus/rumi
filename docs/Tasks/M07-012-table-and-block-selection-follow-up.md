@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -8,7 +8,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-01"
-updated: "2026-08-01"
+updated: "2026-08-03"
 ---
 # M07-012 Table And Block Selection Follow-up
 
@@ -54,6 +54,8 @@ the user explicitly asks for its handle menu.
 
 - [x] Editor transaction: every single-column table row becomes one list item for each list type.
 - [x] Editor transaction: inline marks and soft/hard breaks inside a table cell survive conversion.
+- [x] Editor transaction: a cell spanning multiple columns is not misclassified as a single-column
+      table.
 - [x] Selection model: a selected handle preserves the selection and an outside handle resets it.
 - [x] Source smoke: selection changes and marquee completion do not auto-open the context menu.
 - [x] Source smoke: the active editor does not register table controls.
@@ -61,7 +63,7 @@ the user explicitly asks for its handle menu.
       selection color in both active style layers.
 - [x] Regression: embedded database scroll ownership remains unchanged.
 - [x] Full typecheck, test, and production build.
-- [ ] Browser smoke: verify table selection, table-to-list conversion, page scrolling, marquee
+- [x] Browser smoke: verify table selection, table-to-list conversion, page scrolling, marquee
       selection, and inside/outside handle right-click behavior.
 
 ## Done When
@@ -76,8 +78,9 @@ the user explicitly asks for its handle menu.
 ## Verification
 
 - `corepack pnpm typecheck`
-- `corepack pnpm test` (56 files, 423 tests)
+- `corepack pnpm test` (56 files, 436 tests)
 - `corepack pnpm build`
 - `corepack pnpm check:server-package` verified the installable
   `@rumi-md/server@0.1.12` release candidate.
-- Browser interaction smoke remains before changing this task from `verify` to `done`.
+- User browser QA confirmed table flow/selection/conversion and explicit handle-menu behavior before
+  the `0.1.12` release.

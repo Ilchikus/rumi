@@ -19,7 +19,24 @@ const BLOCK_WRAPPER_TAGS = new Set([
   "SECTION"
 ])
 
-const MERMAID_START = /^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|xychart-beta|sankey-beta|block-beta|architecture-beta|packet-beta|kanban)\b/u
+const LINK_BOUNDARY_TAGS = new Set([
+  ...BLOCK_WRAPPER_TAGS,
+  "BLOCKQUOTE",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "LI",
+  "PRE",
+  "TD",
+  "TH"
+])
+
+const MERMAID_DIRECTION_START = /^(?:flowchart|graph)\s+(?:TB|TD|BT|RL|LR)(?:\s|;|$)/u
+const MERMAID_EXACT_START = /^(?:sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|mindmap|timeline|gitGraph|quadrantChart|xychart-beta|sankey-beta|block-beta|architecture-beta|packet-beta|kanban)\s*$/u
+const MERMAID_PIE_START = /^pie(?:\s+(?:title\b.*|showData(?:\s+title\b.*)?))?\s*$/u
 const DATABASE_LINE = /^(source|view|filter|sort):\s*(.*)$/u
 const GOOGLE_DOCS_ID = /^docs-internal-guid-/u
 const CODE_FONT = /(?:roboto mono|source code pro|courier|consolas|menlo|monaco|monospace)/iu
@@ -76,11 +93,22 @@ function boundaryWhitespace(anchor: HTMLAnchorElement) {
   }
 }
 
-function siblingText(anchor: HTMLAnchorElement, side: "before" | "after"): string {
-  const parent = anchor.parentNode
-  if (!parent) return ""
+function linkTextBoundary(anchor: HTMLAnchorElement): Node | null {
+  let boundary = anchor.parentElement
+  while (boundary && !LINK_BOUNDARY_TAGS.has(boundary.tagName)) {
+    if (!boundary.parentElement) break
+    boundary = boundary.parentElement
+  }
+  return boundary
+}
+
+function siblingText(
+  anchor: HTMLAnchorElement,
+  boundary: Node,
+  side: "before" | "after"
+): string {
   const range = anchor.ownerDocument.createRange()
-  range.selectNodeContents(parent)
+  range.selectNodeContents(boundary)
   if (side === "before") range.setEndBefore(anchor)
   else range.setStartAfter(anchor)
   return range.toString()
@@ -94,8 +122,9 @@ function normalizeGoogleDocsLinks(root: HTMLElement) {
       underline.replaceWith(...Array.from(underline.childNodes))
     })
 
-    const before = siblingText(anchor, "before")
-    const after = siblingText(anchor, "after")
+    const boundary = linkTextBoundary(anchor)
+    const before = boundary ? siblingText(anchor, boundary, "before") : ""
+    const after = boundary ? siblingText(anchor, boundary, "after") : ""
     const { leading, trailing } = boundaryWhitespace(anchor)
     if (leading && before.trim()) anchor.before(anchor.ownerDocument.createTextNode(leading))
     if (trailing && after.trim()) anchor.after(anchor.ownerDocument.createTextNode(trailing))
@@ -453,7 +482,10 @@ function externalText(node: ProseMirrorNode): string {
 function isMermaidStart(value: string): boolean {
   const lines = value.trimStart().split("\n")
   const firstSyntaxLine = lines.find((line) => !line.trimStart().startsWith("%%{")) ?? ""
-  return MERMAID_START.test(firstSyntaxLine.trimStart())
+  const starter = firstSyntaxLine.trimStart()
+  return MERMAID_DIRECTION_START.test(starter) ||
+    MERMAID_EXACT_START.test(starter) ||
+    MERMAID_PIE_START.test(starter)
 }
 
 function databaseAttrs(value: string): Record<string, unknown> | null {

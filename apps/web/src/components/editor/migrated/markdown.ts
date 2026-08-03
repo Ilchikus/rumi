@@ -424,7 +424,12 @@ function convertInlineContent(
       }
     }
 
-    const nodes = convertInline(child, schema, activeMarks)
+    const inlineNode = child.type === "text"
+      && result.at(-1)?.type.name === "hard_break"
+      && child.value.startsWith("\n")
+      ? { ...child, value: child.value.slice(1) }
+      : child
+    const nodes = convertInline(inlineNode, schema, activeMarks)
     result.push(...nodes)
   }
 
@@ -457,7 +462,7 @@ function parseCustomMarkTag(html: string): {
 function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<{ name: MarkName; attrs?: MarkAttrs }>): ProseMirrorNode[] {
   switch (node.type) {
     case "text":
-      return [createTextWithMarks(node.value, marks, schema)]
+      return createTextAndSoftBreaks(node.value, marks, schema)
 
     case "strong":
       return convertInlineContent(node.children, schema, [...marks, { name: "bold" }])
@@ -498,7 +503,7 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
     default:
       // For other inline types, try to get text content
       if ("value" in node && typeof node.value === "string") {
-        return [createTextWithMarks(node.value, marks, schema)]
+        return createTextAndSoftBreaks(node.value, marks, schema)
       }
       if ("children" in node && Array.isArray(node.children)) {
         return flatMap(node.children as MdastPhrasingContent[], (child) =>
@@ -532,6 +537,10 @@ function withoutMentionPrefix(nodes: ProseMirrorNode[], schema: Schema): ProseMi
 function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ name: MarkName; attrs?: MarkAttrs }> = []): ProseMirrorNode[] {
   const results: ProseMirrorNode[] = []
 
+  if (/^<br\s*\/?>$/i.test(html.trim()) && schema.nodes.hard_break) {
+    return [schema.nodes.hard_break.create()]
+  }
+
   // Parse <u>text</u>
   const underlineMatch = html.match(/<u>([^<]+)<\/u>/)
   if (underlineMatch) {
@@ -553,6 +562,24 @@ function parseInlineHtml(html: string, schema: Schema, existingMarks: Array<{ na
   }
 
   return results
+}
+
+function createTextAndSoftBreaks(
+  text: string,
+  marks: Array<{ name: MarkName; attrs?: MarkAttrs }>,
+  schema: Schema
+): ProseMirrorNode[] {
+  const parts = text.split("\n")
+  const nodes: ProseMirrorNode[] = []
+
+  parts.forEach((part, index) => {
+    if (part) nodes.push(createTextWithMarks(part, marks, schema))
+    if (index < parts.length - 1 && schema.nodes.soft_break) {
+      nodes.push(schema.nodes.soft_break.create())
+    }
+  })
+
+  return nodes
 }
 
 function createTextWithMarks(text: string, marks: Array<{ name: MarkName; attrs?: MarkAttrs }>, schema: Schema): ProseMirrorNode {
@@ -768,7 +795,7 @@ function serializeTable(node: ProseMirrorNode, lines: string[], indent: string):
   node.forEach((row) => {
     const cells: string[] = []
     row.forEach((cell, _, columnIndex) => {
-      cells.push(serializeInline(cell).replace(/\|/g, "\\|"))
+      cells.push(serializeInline(cell))
       if (rows.length === 0) alignments[columnIndex] = cell.attrs.alignment || null
     })
     rows.push(cells)
@@ -840,8 +867,11 @@ function serializeInline(parent: ProseMirrorNode): string {
 
   parent.forEach((node) => {
     if (node.type.name === "text") {
-      let text = node.text || ""
       const marks = node.marks
+      const isInlineCode = marks.some((mark) => mark.type.name === "code")
+      let text = isInlineCode
+        ? node.text || ""
+        : escapeMarkdownText(node.text || "", result.length === 0 || result.endsWith("\n"))
 
       // Apply marks - order matters for nesting
       for (const mark of marks) {
@@ -873,12 +903,47 @@ function serializeInline(parent: ProseMirrorNode): string {
       }
 
       result += text
+    } else if (node.type.name === "soft_break") {
+      result += "\n"
     } else if (node.type.name === "hard_break") {
       result += "  \n"
     }
   })
 
   return result
+}
+
+function escapeMarkdownText(text: string, startsAtLineStart: boolean): string {
+  return text.split("\n").map((sourceLine, index) => {
+    const atLineStart = index > 0 || startsAtLineStart
+    let line = sourceLine.replace(/\\/g, "\\\\")
+
+    if (atLineStart) {
+      const leadingWhitespace = line.match(/^[\t ]+/u)?.[0] ?? ""
+      if (leadingWhitespace) {
+        const encodedWhitespace = leadingWhitespace
+          .replace(/\t/g, "&#9;")
+          .replace(/ /g, "&#32;")
+        line = encodedWhitespace + line.slice(leadingWhitespace.length)
+      } else {
+        line = line
+          .replace(/^(#{1,6})(?=[\t ]|$)/u, "\\$1")
+          .replace(/^([>+-])(?=[\t ]|$)/u, "\\$1")
+          .replace(/^(\d+)([.)])(?=[\t ]|$)/u, "$1\\$2")
+          .replace(/^(-{3,}|_{3,})(?=[\t ]*$)/u, "\\$1")
+      }
+    }
+
+    return line
+      .replace(/\*/g, "\\*")
+      .replace(/_/g, "\\_")
+      .replace(/~/g, "\\~")
+      .replace(/`/g, "\\`")
+      .replace(/\[/g, "\\[")
+      .replace(/</g, "\\<")
+      .replace(/\|/g, "\\|")
+      .replace(/==/g, "\\=\\=")
+  }).join("\n")
 }
 
 function serializeLinkDestination(href: string): string {

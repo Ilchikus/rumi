@@ -502,7 +502,7 @@
 
   .rumi-prosemirror .tableWrapper {
     margin-top: 1rem;
-    overflow-x: auto;
+    overflow: visible;
   }
 
   .rumi-prosemirror table {
@@ -532,6 +532,6 @@
     position: absolute;
     inset: 0;
     content: "";
-    background: hsl(var(--foreground) / 0.06);
+    background: hsl(213, 94%, 95%);
   }
 }

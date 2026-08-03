@@ -45,6 +45,7 @@ describe("workspace format", () => {
 
   it("sanitizes portable workspace names", () => {
     expect(sanitizeWorkspaceName("test/page").sanitized).toBe("test⧸page");
+    expect(sanitizeWorkspaceName(" Project notes ").sanitized).toBe(" Project notes ");
     expect(sanitizeWorkspaceName("My--Page").sanitized).toBe("My--Page");
     expect(sanitizeWorkspaceName("dash-name_under_score").sanitized).toBe("dash-name_under_score");
     expect(sanitizeWorkspaceName("bad:name?.md")).toMatchObject({
@@ -52,6 +53,7 @@ describe("workspace format", () => {
       replacedUnsafeChars: true
     });
     expect(cleanWorkspaceName(" test/page ")).toBe("test⧸page");
+    expect(cleanWorkspaceName(" Project notes ")).toBe("Project notes");
     expect(() => cleanWorkspaceName("   ")).toThrow(/required/);
     expect(() => cleanWorkspaceName("..")).toThrow(/reserved/);
   });

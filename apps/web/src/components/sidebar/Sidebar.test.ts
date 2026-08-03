@@ -28,6 +28,15 @@ describe("sidebar create-menu shortcuts", () => {
     expect(editableTitleSource).toContain("selectTextContents(editableTitle)");
     expect(editableTitleSource).toContain("range.selectNodeContents(root)");
   });
+
+  it("keeps inline create and rename input spaces during typing", () => {
+    expect(sidebarSource.match(
+      /onChange=\{\(event\) => setName\(sanitizeWorkspaceName\(event\.target\.value\)\.sanitized\)\}/g
+    )).toHaveLength(2);
+    expect(sidebarSource).toContain(
+      "const finalName = sanitizeWorkspaceName(name).sanitized.trim();"
+    );
+  });
 });
 
 describe("sidebar settings entry", () => {

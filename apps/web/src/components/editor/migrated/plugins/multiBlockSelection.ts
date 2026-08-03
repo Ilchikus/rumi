@@ -38,7 +38,7 @@ function textRowSeparators(node: import("prosemirror-model").Node): TextRowSepar
   const separators: TextRowSeparator[] = []
 
   node.forEach((child, offset) => {
-    if (child.type.name === "hard_break") {
+    if (child.type.name === "soft_break" || child.type.name === "hard_break") {
       separators.push({ from: offset, to: offset + child.nodeSize })
       return
     }

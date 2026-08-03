@@ -25,7 +25,6 @@ import { atMentionPlugin, FileItem } from "./plugins/atMention"
 import { blockDragHandlePlugin } from "./plugins/blockDragHandle"
 import { multiBlockSelectionPlugin } from "./plugins/multiBlockSelection"
 import { tableEditing, columnResizing } from "prosemirror-tables"
-import { tableControlsPlugin } from "./plugins/tableControls"
 import { codeBlockNodeView } from "./plugins/codeBlockView"
 import { codeHighlightPlugin } from "./plugins/codeHighlight"
 import { fileNodeView } from "./plugins/fileNodeView"
@@ -34,6 +33,7 @@ import { mermaidNodeView } from "./plugins/mermaidNodeView"
 import { databaseEmbedNodeView } from "./plugins/databaseEmbedNodeView"
 import { pasteHandlerPlugin } from "./plugins/pasteHandler"
 import { collapsibleHeadingsPlugin, headingNodeView } from "./plugins/collapsibleHeadings"
+import { createDocumentEndClickTransaction } from "./documentEnd"
 import {
   inlineReplacementsPlugin,
   setInlineReplacementsEnabled
@@ -179,7 +179,6 @@ function ProseMirrorEditor(
         atMentionPlugin(schema, getFiles),
         columnResizing(),
         tableEditing(),
-        tableControlsPlugin(),
         codeHighlightPlugin(),
       ]
     })
@@ -368,31 +367,10 @@ function ProseMirrorEditor(
     // Only handle clicks directly on the padding div, not bubbled from editor
     if (e.target !== e.currentTarget) return
 
-    const { doc } = view.state
-    const lastNode = doc.lastChild
-    const lastNodePos = doc.content.size - (lastNode?.nodeSize || 0)
-
-    // Check if last node is an empty paragraph
-    const isLastNodeEmptyParagraph = lastNode &&
-      lastNode.type.name === "paragraph" &&
-      lastNode.content.size === 0
-
-    if (isLastNodeEmptyParagraph) {
-      // Focus the existing empty paragraph
-      const tr = view.state.tr.setSelection(
-        TextSelection.create(doc, lastNodePos + 1)
-      )
-      view.dispatch(tr)
-      view.focus()
-    } else {
-      // Create new paragraph at the end and focus it
-      const newParagraph = schema.nodes.paragraph.create()
-      const insertPos = doc.content.size
-      let tr = view.state.tr.insert(insertPos, newParagraph)
-      tr = tr.setSelection(TextSelection.create(tr.doc, insertPos + 1))
-      view.dispatch(tr)
-      view.focus()
-    }
+    const transaction = createDocumentEndClickTransaction(view.state)
+    if (!transaction) return
+    view.dispatch(transaction)
+    view.focus()
   }, [readOnly])
 
   return (

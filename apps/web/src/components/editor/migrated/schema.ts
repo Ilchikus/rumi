@@ -345,6 +345,20 @@ const nodes: { [key: string]: NodeSpec } = {
     group: "inline"
   },
 
+  soft_break: {
+    inline: true,
+    group: "inline",
+    selectable: false,
+    linebreakReplacement: true,
+    leafText() {
+      return "\n"
+    },
+    parseDOM: [{ tag: 'br[data-rumi-soft-break="true"]' }],
+    toDOM() {
+      return ["br", { "data-rumi-soft-break": "true" }]
+    }
+  },
+
   hard_break: {
     inline: true,
     group: "inline",

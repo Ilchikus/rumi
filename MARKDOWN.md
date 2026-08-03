@@ -9,6 +9,24 @@ selection, and collapsed headings, is not written to them.
 
 Strikethrough uses the GFM double-tilde form: `~~struck through~~`.
 
+## Paragraphs and line breaks
+
+Rumi follows Obsidian's convenient non-strict line-break presentation. A single LF remains part of
+the same paragraph and is displayed as a visible line break. A blank line separates paragraphs:
+
+```markdown
+first paragraph
+second line
+
+new paragraph
+```
+
+Rumi writes ordinary multiline paragraphs with a single LF and does not require invisible trailing
+spaces. It also reads and preserves explicit Markdown hard breaks written with two trailing spaces,
+a trailing backslash, or an HTML `<br>`. Strict CommonMark renderers may display an ordinary single
+LF as a space; explicit hard-break syntax remains available when that cross-renderer presentation is
+required.
+
 ## Rumi extensions
 
 ### Highlight

@@ -273,10 +273,8 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  max-height: min(60vh, 36rem);
   margin: 0 0 0.75em 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 
 /* Database views are full-width editor blocks. Their shared table frame owns
@@ -321,6 +319,17 @@
 }
 
 .prosemirror-editor .ProseMirror .selectedCell {
+  background: hsl(213, 94%, 95%);
+}
+
+.prosemirror-editor .ProseMirror .selectedCell::after {
+  background: hsl(213, 94%, 95%);
+}
+
+.prosemirror-editor .ProseMirror > .tableWrapper.ProseMirror-selectednode > table th,
+.prosemirror-editor .ProseMirror > .tableWrapper.ProseMirror-selectednode > table td,
+.prosemirror-editor .ProseMirror > .tableWrapper.multi-block-selected > table th,
+.prosemirror-editor .ProseMirror > .tableWrapper.multi-block-selected > table td {
   background: hsl(213, 94%, 95%);
 }
 

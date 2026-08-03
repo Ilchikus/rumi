@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const editorStyles = readFileSync(new URL("./migrated/editor.css", import.meta.url), "utf8");
+const sharedStyles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 const mentionPlugin = readFileSync(
   new URL("./migrated/plugins/atMention.ts", import.meta.url),
   "utf8"
@@ -32,17 +33,60 @@ const migratedEditor = readFileSync(
 );
 
 describe("editor layout contracts", () => {
-  it("keeps oversized tables inside a two-axis scrolling content-width wrapper", () => {
+  it("keeps Markdown tables in normal page scroll flow", () => {
     const wrapperRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror > .tableWrapper"
     );
+    const sharedWrapperRule = cssRule(
+      sharedStyles,
+      ".rumi-prosemirror .tableWrapper"
+    );
 
     expect(wrapperRule).toContain("width: 100%;");
     expect(wrapperRule).toContain("max-width: 100%;");
-    expect(wrapperRule).toContain("max-height: min(60vh, 36rem);");
-    expect(wrapperRule).toContain("overflow: auto;");
-    expect(wrapperRule).toContain("overscroll-behavior: contain;");
+    expect(wrapperRule).toContain("overflow: visible;");
+    expect(wrapperRule).not.toContain("max-height:");
+    expect(wrapperRule).not.toContain("overscroll-behavior:");
+    expect(sharedWrapperRule).toContain("overflow: visible;");
+  });
+
+  it("uses the standard blue block highlight for table selection", () => {
+    const cellRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .selectedCell"
+    );
+    const cellOverlayRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .selectedCell::after"
+    );
+    const sharedCellOverlayRule = cssRule(
+      sharedStyles,
+      ".rumi-prosemirror .selectedCell::after"
+    );
+
+    expect(cellRule).toContain("background: hsl(213, 94%, 95%);");
+    expect(cellOverlayRule).toContain("background: hsl(213, 94%, 95%);");
+    expect(sharedCellOverlayRule).toContain("background: hsl(213, 94%, 95%);");
+    expect(editorStyles).toContain(
+      ".tableWrapper.ProseMirror-selectednode > table th"
+    );
+    expect(editorStyles).toContain(
+      ".tableWrapper.multi-block-selected > table th"
+    );
+  });
+
+  it("keeps selection quiet and table controls inactive until explicit gestures", () => {
+    const areaSelectionEnd = blockDragHandle.slice(
+      blockDragHandle.indexOf("private onAreaSelectEnd"),
+      blockDragHandle.indexOf("private onWrapperClick")
+    );
+
+    expect(blockDragHandle).not.toContain("shouldOpenBlockContextMenuForSelection");
+    expect(areaSelectionEnd).not.toContain("openContextMenuForSelectedBlocks");
+    expect(migratedEditor).not.toContain("tableControlsPlugin");
+    expect(migratedEditor).toContain("columnResizing()");
+    expect(migratedEditor).toContain("tableEditing()");
   });
 
   it("constrains embedded database views to editor width before their table scrolls", () => {

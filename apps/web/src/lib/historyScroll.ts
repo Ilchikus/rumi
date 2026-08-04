@@ -6,6 +6,30 @@ interface EditorScrollCanvas {
   scrollTop: number;
 }
 
+export function pageScrollKey(path: string): string {
+  return `page:${path}`;
+}
+
+export function rememberSessionScrollTop(
+  positions: Map<string, number>,
+  key: string | null,
+  scrollTop: number
+): void {
+  if (!key) return;
+  positions.set(key, normalizeScrollTop(scrollTop));
+}
+
+export function resolveNavigationScrollTop(
+  positions: ReadonlyMap<string, number>,
+  key: string | null,
+  historyEntryScrollTop?: number
+): number {
+  if (historyEntryScrollTop !== undefined) {
+    return normalizeScrollTop(historyEntryScrollTop);
+  }
+  return key ? normalizeScrollTop(positions.get(key)) : 0;
+}
+
 export function mergeEditorScrollState(
   state: unknown,
   scrollTop: number

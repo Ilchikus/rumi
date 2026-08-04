@@ -38,7 +38,7 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("setEmojiSuggestions(checked)");
   });
 
-  it("uses a switch for misspellings, Sky checkboxes for formats, and saves blank as unlimited", () => {
+  it("uses a switch for misspellings, Sky checkboxes for formats, and auto-saves blank as unlimited", () => {
     expect(viewSource).toContain('type="checkbox"');
     expect(viewSource).toContain("accent-sky-600");
     expect(viewSource).toContain('trimmedSize === "" ? null');
@@ -50,15 +50,19 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("onSave({");
     expect(viewSource).toContain("}, startupPageMode)");
     expect(viewSource).toContain("<Check");
-    expect(viewSource).toContain("<FloppyDisk");
-    expect(viewSource).toContain("{saved ? (");
+    expect(viewSource).not.toContain("<FloppyDisk");
+    expect(viewSource).not.toContain('type="submit"');
+    expect(viewSource).not.toContain("{saved ? (");
     expect(viewSource).not.toContain("Saving…");
     expect(viewSource).not.toContain("Save settings");
-    expect(viewSource).toContain("}, 1000)");
+    expect(viewSource).not.toMatch(/>\s*Save\s*</);
+    expect(viewSource).toContain("changeRevision");
+    expect(viewSource).toContain("markChanged");
+    expect(viewSource).toContain("void onSave({");
     expect(appSource).not.toContain('toast.success("Settings saved")');
   });
 
-  it("persists without replacing or disabling the live settings form", () => {
+  it("serializes auto-save requests without replacing or disabling the live settings form", () => {
     expect(appSource.match(/setWorkspaceSettingsResult\(result\)/g)).toHaveLength(1);
     expect(appSource).toContain(
       "setHighlightMisspellings(result.settings.editor.highlightMisspellings)"
@@ -72,7 +76,8 @@ describe("workspace settings page", () => {
     expect(appSource).toContain(
       "setInlineToolbar(result.settings.editor.inlineToolbar)"
     );
-    expect(appSource).toContain("settingsSaveInFlightRef.current");
+    expect(appSource).toContain("settingsSaveQueueRef.current.then");
+    expect(appSource).not.toContain("settingsSaveInFlightRef.current");
     expect(viewSource).not.toContain("saving:");
     expect(viewSource).not.toContain("disabled={saving}");
   });

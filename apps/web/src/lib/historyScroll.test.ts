@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   mergeEditorScrollState,
+  pageScrollKey,
   readEditorScrollTop,
+  rememberSessionScrollTop,
+  resolveNavigationScrollTop,
   restoreEditorScroll
 } from "./historyScroll";
 
@@ -54,10 +57,34 @@ describe("editor history scroll state", () => {
     expect(frames).toHaveLength(0);
   });
 
+  it("restores the latest position when an already visited page is opened again", () => {
+    const positions = new Map<string, number>();
+    const firstPage = pageScrollKey("/Notes/First.md");
+    const secondPage = pageScrollKey("/Notes/Second.md");
+
+    rememberSessionScrollTop(positions, firstPage, 864.6);
+
+    expect(resolveNavigationScrollTop(positions, firstPage)).toBe(865);
+    expect(resolveNavigationScrollTop(positions, secondPage)).toBe(0);
+  });
+
+  it("prefers an exact browser history entry position over a page's latest position", () => {
+    const pageKey = pageScrollKey("/Notes/First.md");
+    const positions = new Map([[pageKey, 865]]);
+
+    expect(resolveNavigationScrollTop(positions, pageKey, 312)).toBe(312);
+    expect(resolveNavigationScrollTop(positions, pageKey, 0)).toBe(0);
+  });
+
   it("wires scroll state to native history without persistent browser storage", () => {
     expect(appSource).toContain('window.history.scrollRestoration = "manual"');
     expect(appSource).toContain("readEditorScrollTop(event.state)");
     expect(appSource).toContain("mergeEditorScrollState(window.history.state, target.scrollTop)");
+    expect(appSource).toContain(
+      "sessionScrollPositionsRef = useRef<Map<string, number>>(new Map())"
+    );
+    expect(appSource).toContain("rememberSessionScrollTop(");
+    expect(appSource).toContain("resolveNavigationScrollTop(");
     expect(appSource).toContain("restoreEditorScroll(");
     expect(appSource).not.toContain("sessionStorage");
     expect(appSource).not.toMatch(/localStorage[^\n]+scroll/i);

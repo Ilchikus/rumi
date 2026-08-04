@@ -88,6 +88,10 @@ Meaningful product changes ship through a reviewed pull request. Keep the branch
 `main`, run the relevant checks, complete QA and code review, and merge only when GitHub reports the
 pull request clean and mergeable.
 
+When the user says they want to test a change before merge, automated checks, agent-run browser QA,
+and a clean pull request are not merge approval. Push the testable branch or pull request, report
+what is ready, and wait for the user's explicit QA approval before merging.
+
 When a change affects the public `@rumi-md/server` distribution:
 
 - Choose and include the next package version in the pull request.

@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
@@ -73,7 +82,10 @@ import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import {
   mergeEditorScrollState,
+  pageScrollKey,
   readEditorScrollTop,
+  rememberSessionScrollTop,
+  resolveNavigationScrollTop,
   restoreEditorScroll
 } from "./lib/historyScroll";
 import {
@@ -231,7 +243,7 @@ export function App(): ReactElement {
   const pageTitleUndoInFlightRef = useRef(false);
   const pageTitleEditRequestIdRef = useRef(0);
   const deferredReferenceRepairRef = useRef<RumiEvent | null>(null);
-  const settingsSaveInFlightRef = useRef(false);
+  const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingHistoryActionRef = useRef<"push" | "replace">("replace");
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
@@ -241,6 +253,8 @@ export function App(): ReactElement {
   const startupSnapshotPendingValidationRef = useRef(Boolean(startupSnapshot));
   const pendingScrollRestoreRef = useRef<number | null>(0);
   const historyEntryRevisionRef = useRef(0);
+  const sessionScrollPositionsRef = useRef<Map<string, number>>(new Map());
+  const activeScrollKeyRef = useRef<string | null>(null);
   const pageVisitHistoryRef = useRef<string[]>([]);
   const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
   const shortcutLabel = useMemo(() => shortcutLabels(shortcutPlatform), [shortcutPlatform]);
@@ -256,6 +270,24 @@ export function App(): ReactElement {
       : pageTitleFromPath(page.path, page.kind)
     : null;
   const editorDocuments = useMemo(() => collectEditorDocuments(tree), [tree]);
+  const renderedScrollKey = settingsOpen
+    ? "system:settings"
+    : activeTrashPage
+      ? `trash:${activeTrashPage.item.id}`
+      : trashOpen
+        ? "system:trash"
+        : page
+          ? pageScrollKey(page.path)
+          : null;
+  const destinationScrollKey = settingsOpen
+    ? "system:settings"
+    : activeTrashPage
+      ? `trash:${activeTrashPage.item.id}`
+      : trashOpen
+        ? "system:trash"
+        : selection?.openPath
+          ? pageScrollKey(selection.openPath)
+          : null;
 
   useEffect(() => {
     document.title = activeTrashPage
@@ -396,6 +428,10 @@ export function App(): ReactElement {
     selectionRef.current = selection;
   }, [selection]);
 
+  useLayoutEffect(() => {
+    activeScrollKeyRef.current = renderedScrollKey;
+  }, [renderedScrollKey]);
+
   useEffect(() => {
     const previousScrollRestoration = window.history.scrollRestoration;
     window.history.scrollRestoration = "manual";
@@ -417,6 +453,12 @@ export function App(): ReactElement {
       if (!(target instanceof HTMLElement) || !target.matches("[data-rumi-editor-canvas]")) {
         return;
       }
+      const scrollKey = activeScrollKeyRef.current;
+      rememberSessionScrollTop(
+        sessionScrollPositionsRef.current,
+        scrollKey,
+        target.scrollTop
+      );
       const entryRevision = historyEntryRevisionRef.current;
       if (frame !== null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -911,7 +953,7 @@ export function App(): ReactElement {
     async (
       node: WorkspaceNode,
       historyAction: "push" | "replace" = "push",
-      scrollTop = 0
+      historyEntryScrollTop?: number
     ) => {
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
@@ -924,7 +966,11 @@ export function App(): ReactElement {
       }
       const nextSelection = { nodePath: node.path, openPath, kind: node.kind };
       pendingHistoryActionRef.current = historyAction;
-      pendingScrollRestoreRef.current = scrollTop;
+      pendingScrollRestoreRef.current = resolveNavigationScrollTop(
+        sessionScrollPositionsRef.current,
+        openPath ? pageScrollKey(openPath) : null,
+        historyEntryScrollTop
+      );
       selectionRef.current = nextSelection;
       setSelection(nextSelection);
       saveStateRef.current = "idle";
@@ -1250,7 +1296,14 @@ export function App(): ReactElement {
     const action = pendingHistoryActionRef.current;
     historyEntryRevisionRef.current += 1;
     const canvas = document.querySelector<HTMLElement>("[data-rumi-editor-canvas]");
-    const replacementScrollTop = pendingScrollRestoreRef.current ?? canvas?.scrollTop ?? 0;
+    const replacementScrollTop = pendingScrollRestoreRef.current
+      ?? (action === "replace"
+        ? canvas?.scrollTop
+        : resolveNavigationScrollTop(
+            sessionScrollPositionsRef.current,
+            destinationScrollKey
+          ))
+      ?? 0;
     if (action === "push") {
       window.history.replaceState(
         mergeEditorScrollState(window.history.state, canvas?.scrollTop ?? 0),
@@ -1261,15 +1314,23 @@ export function App(): ReactElement {
     window.history[action === "push" ? "pushState" : "replaceState"](
       mergeEditorScrollState(
         action === "push" ? null : window.history.state,
-        action === "push" ? 0 : replacementScrollTop
+        replacementScrollTop
       ),
       "",
       nextUrl
     );
-    pendingScrollRestoreRef.current = action === "push" ? 0 : replacementScrollTop;
+    pendingScrollRestoreRef.current = replacementScrollTop;
     setScrollRestoreRevision((revision) => revision + 1);
     pendingHistoryActionRef.current = "replace";
-  }, [activeTrashPage, routeSyncReady, selection, settingsOpen, trashOpen, tree]);
+  }, [
+    activeTrashPage,
+    destinationScrollKey,
+    routeSyncReady,
+    selection,
+    settingsOpen,
+    trashOpen,
+    tree
+  ]);
 
   useEffect(() => {
     const scrollTop = pendingScrollRestoreRef.current;
@@ -1603,29 +1664,29 @@ export function App(): ReactElement {
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
   }, [isNarrow, loadWorkspaceSettings]);
 
-  const saveWorkspaceSettings = useCallback(async (
+  const saveWorkspaceSettings = useCallback((
     settings: WorkspaceSettings,
     nextStartupPageMode: StartupPageMode
   ): Promise<boolean> => {
-    if (settingsSaveInFlightRef.current) return false;
-    settingsSaveInFlightRef.current = true;
-    try {
-      const result = await api.updateWorkspaceSettings(settings);
-      setHighlightMisspellings(result.settings.editor.highlightMisspellings);
-      setInlineReplacements(result.settings.editor.inlineReplacements);
-      setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-      setInlineToolbar(result.settings.editor.inlineToolbar);
-      setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
-      writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
-      setStartupPageMode(nextStartupPageMode);
-      setSettingsLoadState("idle");
-      return true;
-    } catch (error) {
-      setMessage(errorMessage(error));
-      return false;
-    } finally {
-      settingsSaveInFlightRef.current = false;
-    }
+    const queuedSave = settingsSaveQueueRef.current.then(async (): Promise<boolean> => {
+      try {
+        const result = await api.updateWorkspaceSettings(settings);
+        setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+        setInlineReplacements(result.settings.editor.inlineReplacements);
+        setEmojiSuggestions(result.settings.editor.emojiSuggestions);
+        setInlineToolbar(result.settings.editor.inlineToolbar);
+        setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
+        writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
+        setStartupPageMode(nextStartupPageMode);
+        setSettingsLoadState("idle");
+        return true;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    });
+    settingsSaveQueueRef.current = queuedSave.then(() => undefined);
+    return queuedSave;
   }, [api, setMessage, workspaceRootPath]);
 
   const restoreTrashItem = useCallback(async (

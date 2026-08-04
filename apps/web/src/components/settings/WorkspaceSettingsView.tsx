@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
-import { FloppyDisk } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import type {
   InlineToolbarMode,
   WorkspaceSettings,
@@ -62,13 +61,11 @@ export function WorkspaceSettingsView({
   const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(savedStartupPageMode);
   const [formError, setFormError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [changeRevision, setChangeRevision] = useState(0);
   const [animateMisspellings, setAnimateMisspellings] = useState(false);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchAnimationFrameRef = useRef<number | null>(null);
 
   useEffect(() => () => {
-    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     if (switchAnimationFrameRef.current !== null) {
       cancelAnimationFrame(switchAnimationFrameRef.current);
     }
@@ -91,6 +88,7 @@ export function WorkspaceSettingsView({
     setEmojiSuggestions(result.settings.editor.emojiSuggestions);
     setInlineToolbar(result.settings.editor.inlineToolbar);
     setFormError("");
+    setChangeRevision(0);
     switchAnimationFrameRef.current = requestAnimationFrame(() => {
       switchAnimationFrameRef.current = null;
       setAnimateMisspellings(true);
@@ -103,16 +101,13 @@ export function WorkspaceSettingsView({
 
   const supportedFileTypes = result?.constraints.uploads.supportedFileTypes ?? [];
 
-  const clearSavedState = () => {
-    if (savedTimerRef.current) {
-      clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = null;
-    }
-    setSaved(false);
+  const markChanged = () => {
+    setFormError("");
+    setChangeRevision((revision) => revision + 1);
   };
 
   const toggleFileType = (extension: string) => {
-    clearSavedState();
+    markChanged();
     setAllowedFileTypes((current) => (
       current.includes(extension)
         ? current.filter((item) => item !== extension)
@@ -120,9 +115,8 @@ export function WorkspaceSettingsView({
     ));
   };
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!result) return;
+  useEffect(() => {
+    if (!result || changeRevision === 0) return;
 
     const trimmedSize = maxFileSizeInput.trim();
     const maxFileSizeMb = trimmedSize === "" ? null : Number(trimmedSize);
@@ -135,8 +129,7 @@ export function WorkspaceSettingsView({
     }
 
     setFormError("");
-    clearSavedState();
-    const didSave = await onSave({
+    void onSave({
       uploads: {
         maxFileSizeMb,
         allowedFileTypes
@@ -148,14 +141,18 @@ export function WorkspaceSettingsView({
         inlineToolbar
       }
     }, startupPageMode);
-    if (!didSave) return;
-
-    setSaved(true);
-    savedTimerRef.current = setTimeout(() => {
-      savedTimerRef.current = null;
-      setSaved(false);
-    }, 1000);
-  };
+  }, [
+    allowedFileTypes,
+    changeRevision,
+    emojiSuggestions,
+    highlightMisspellings,
+    inlineReplacements,
+    inlineToolbar,
+    maxFileSizeInput,
+    onSave,
+    result,
+    startupPageMode
+  ]);
 
   return (
     <EditorPageLayout title="Settings">
@@ -169,7 +166,7 @@ export function WorkspaceSettingsView({
           </Button>
         </div>
       ) : (
-        <form className="space-y-10" onSubmit={submit}>
+        <div className="space-y-10">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
               <label htmlFor="highlight-misspellings" className="text-sm font-medium">
@@ -181,7 +178,7 @@ export function WorkspaceSettingsView({
                 checked={highlightMisspellings}
                 aria-label="Highlight misspelled words"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setHighlightMisspellings(checked);
                 }}
               />
@@ -202,7 +199,7 @@ export function WorkspaceSettingsView({
                 checked={inlineReplacements}
                 aria-label="Enable inline replacements"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setInlineReplacements(checked);
                 }}
               />
@@ -223,7 +220,7 @@ export function WorkspaceSettingsView({
                 checked={emojiSuggestions}
                 aria-label="Enable emoji suggestions"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setEmojiSuggestions(checked);
                 }}
               />
@@ -255,7 +252,7 @@ export function WorkspaceSettingsView({
                     <DropdownMenuItem
                       key={option.value}
                       onSelect={() => {
-                        clearSavedState();
+                        markChanged();
                         setInlineToolbar(option.value);
                       }}
                     >
@@ -293,7 +290,7 @@ export function WorkspaceSettingsView({
                     <DropdownMenuItem
                       key={option.value}
                       onSelect={() => {
-                        clearSavedState();
+                        markChanged();
                         setStartupPageMode(option.value);
                       }}
                     >
@@ -325,7 +322,7 @@ export function WorkspaceSettingsView({
                   value={maxFileSizeInput}
                   className="w-28 text-right tabular-nums"
                   onChange={(event) => {
-                    clearSavedState();
+                    markChanged();
                     setMaxFileSizeInput(event.currentTarget.value);
                   }}
                 />
@@ -363,23 +360,7 @@ export function WorkspaceSettingsView({
           {formError ? (
             <p role="alert" className="text-sm text-destructive">{formError}</p>
           ) : null}
-
-          <div className="flex justify-end">
-            <Button type="submit" className="min-w-24">
-              {saved ? (
-                <>
-                  <Check size={15} weight="bold" />
-                  Saved
-                </>
-              ) : (
-                <>
-                  <FloppyDisk size={15} />
-                  Save
-                </>
-              )}
-            </Button>
-          </div>
-        </form>
+        </div>
       )}
     </EditorPageLayout>
   );

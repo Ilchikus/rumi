@@ -69,4 +69,4 @@ Verified on 2026-08-04:
 - `corepack pnpm typecheck` passed
 - the full suite passed: 61 test files and 473 tests
 - the production web and bundled `@rumi-md/server` builds passed
-- release candidate version: `@rumi-md/server@0.1.13`
+- released in `@rumi-md/server@0.1.13` and verified on Personal, ClickOut, and Sandbox

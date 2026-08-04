@@ -95,4 +95,6 @@ Verified on 2026-08-04:
 - `corepack pnpm typecheck` passed
 - the full suite passed: 61 test files and 473 tests
 - the production web and bundled `@rumi-md/server` builds passed
-- release candidate version: `@rumi-md/server@0.1.13`
+- `@rumi-md/server@0.1.13` was published with the npm `latest` tag
+- Personal, ClickOut, and Sandbox were upgraded to `0.1.13`; all services, public pages, auth-session
+  endpoints, and the public Sandbox workspace endpoint passed post-restart health checks

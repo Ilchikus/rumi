@@ -5,6 +5,7 @@ import {
   type Transaction
 } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
+import { history } from "prosemirror-history"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
@@ -18,6 +19,7 @@ import {
   createDuplicateBlocksTransaction,
   createMoveBlocksTransaction,
   duplicateBlocks,
+  extendBlockSelection,
   multiBlockSelectionKey,
   multiBlockSelectionPlugin,
   selectAllBlocksInStages
@@ -27,9 +29,14 @@ import {
   inactiveBlockSelectionPlugin,
   transactionLeavesEditorInactive
 } from "./inactiveBlockSelection"
+import { StructuralCaretSelection } from "./structuralCaretSelection"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META
 } from "./plugins/blockContextMenuModel"
+import {
+  selectionToolbarPlugin,
+  selectionToolbarPluginKey
+} from "./plugins/selectionToolbar"
 import { schema } from "./schema"
 
 function blockPositions(state: EditorState): number[] {
@@ -87,6 +94,106 @@ describe("live editor keyboard block movement", () => {
 
     expect(createMoveBlocksTransaction(first, "up")).toBeNull()
     expect(createMoveBlocksTransaction(last, "down")).toBeNull()
+  })
+})
+
+describe("live editor keyboard block selection", () => {
+  function selectedText(state: EditorState): string[] {
+    return (multiBlockSelectionKey.getState(state)?.selectedBlocks ?? [])
+      .map((pos) => state.doc.nodeAt(pos)?.textContent ?? "")
+  }
+
+  it("adds one adjacent block with Shift-Arrow and preserves the selection", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n\nFour\n", schema)
+    const positions = blockPositions(EditorState.create({ doc }))
+    let state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [positions[1]],
+      anchorBlock: positions[1]
+    }))
+
+    expect(extendBlockSelection("down")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["Two", "Three"])
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+    expect(state.doc.nodeAt(state.selection.from)?.textContent).toBe("Three")
+
+    expect(extendBlockSelection("up")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two", "Three"])
+  })
+
+  it("extends a block selection to the document edge with Shift-Cmd-Arrow", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n\nFour\n", schema)
+    const plugin = multiBlockSelectionPlugin(schema)
+    const initial = EditorState.create({ doc })
+    const positions = blockPositions(initial)
+    let state = EditorState.create({ doc, plugins: [plugin] })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [positions[1]],
+      anchorBlock: positions[1]
+    }))
+    let prevented = false
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+
+    expect(plugin.props.handleKeyDown?.call(plugin, view, {
+      key: "ArrowDown",
+      shiftKey: true,
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() { prevented = true }
+    } as KeyboardEvent)).toBe(true)
+    expect(prevented).toBe(true)
+    expect(selectedText(state)).toEqual(["Two", "Three", "Four"])
+
+    expect(plugin.props.handleKeyDown?.call(plugin, view, {
+      key: "ArrowUp",
+      shiftKey: true,
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {}
+    } as KeyboardEvent)).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two", "Three", "Four"])
+  })
+
+  it("leaves inline Shift-Arrow behavior to ProseMirror", () => {
+    const plugin = multiBlockSelectionPlugin(schema)
+    const doc = parseMarkdown("One\n\nTwo\n", schema)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 3),
+      plugins: [plugin]
+    })
+    const view = { state } as EditorView
+
+    expect(plugin.props.handleKeyDown?.call(plugin, view, {
+      key: "ArrowDown",
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false
+    } as KeyboardEvent)).toBe(false)
+    expect(plugin.props.handleKeyDown?.call(plugin, view, {
+      key: "ArrowUp",
+      shiftKey: true,
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false
+    } as KeyboardEvent)).toBe(false)
   })
 })
 
@@ -204,6 +311,143 @@ describe("live editor staged Select All", () => {
   })
 })
 
+describe("live editor shared history and structural insertion shortcuts", () => {
+  function keyboardEvent(
+    key: string,
+    modifiers: Partial<KeyboardEvent> = {}
+  ): KeyboardEvent {
+    return {
+      key,
+      keyCode: key === "Enter" ? 13 : 0,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault() {},
+      stopPropagation() {},
+      ...modifiers
+    } as KeyboardEvent
+  }
+
+  function applyKey(
+    keymapPlugin: ReturnType<typeof buildKeymap>,
+    view: EditorView,
+    event: KeyboardEvent
+  ): boolean {
+    return keymapPlugin.props.handleKeyDown?.call(
+      keymapPlugin,
+      view,
+      event
+    ) ?? false
+  }
+
+  it("routes Cmd/Ctrl-Z and redo through the same ProseMirror history", () => {
+    const keymapPlugin = buildKeymap(schema)
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("One"))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 4),
+      plugins: [history(), keymapPlugin]
+    })
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+
+    view.dispatch(state.tr.insertText("!"))
+    expect(state.doc.textContent).toBe("One!")
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("z", { ctrlKey: true })
+    )).toBe(true)
+    expect(state.doc.textContent).toBe("One")
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("z", { ctrlKey: true, shiftKey: true })
+    )).toBe(true)
+    expect(state.doc.textContent).toBe("One!")
+  })
+
+  it("reserves Cmd/Ctrl-K for global search and opens links with Shift added", () => {
+    const keymapPlugin = buildKeymap(schema)
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("Link me"))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 8),
+      plugins: [selectionToolbarPlugin(schema), keymapPlugin]
+    })
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("k", { ctrlKey: true })
+    )).toBe(false)
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("k", { ctrlKey: true, shiftKey: true })
+    )).toBe(true)
+    expect(selectionToolbarPluginKey.getState(state)).toMatchObject({
+      linkEditorRequestRevision: 1
+    })
+  })
+
+  it.each([
+    ["after", false, ["One", "Two", ""]],
+    ["before", true, ["One", "", "Two"]]
+  ] as const)(
+    "adds a paragraph %s the current block with the toolbar-equivalent shortcut",
+    (_direction, shiftKey, expectedBlocks) => {
+      const keymapPlugin = buildKeymap(schema)
+      const first = schema.nodes.paragraph!.create(null, schema.text("One"))
+      const second = schema.nodes.paragraph!.create(null, schema.text("Two"))
+      const doc = schema.nodes.doc!.create(null, [first, second])
+      let state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, first.nodeSize + 1),
+        plugins: [keymapPlugin]
+      })
+      const view = {
+        get state() {
+          return state
+        },
+        dispatch(transaction: Transaction) {
+          state = state.apply(transaction)
+        }
+      } as unknown as EditorView
+
+      expect(applyKey(
+        keymapPlugin,
+        view,
+        keyboardEvent("Enter", { ctrlKey: true, shiftKey })
+      )).toBe(true)
+      expect(Array.from(
+        { length: state.doc.childCount },
+        (_, index) => state.doc.child(index).textContent
+      )).toEqual(expectedBlocks)
+      expect(state.selection.$from.parent.textContent).toBe("")
+    }
+  )
+})
+
 describe("live editor blank block deletion", () => {
   it("removes an empty paragraph and moves into the remaining content", () => {
     const empty = schema.nodes.paragraph!.create()
@@ -284,10 +528,9 @@ describe("live editor blank block deletion", () => {
 
   it.each([
     ["database_embed", { source: "Projects" }],
-    ["file_embed", { src: "spec.pdf" }],
     ["horizontal_rule", null]
   ])(
-    "removes a blank paragraph after %s without leaving it visibly active",
+    "removes a blank paragraph after %s and preserves a trailing structural caret",
     (typeName, attrs) => {
       const boundary = schema.nodes[typeName]!.create(attrs)
       const empty = schema.nodes.paragraph!.create()
@@ -303,12 +546,13 @@ describe("live editor blank block deletion", () => {
         deactivatesSelection = transactionLeavesEditorInactive(transaction)
         state = state.apply(transaction)
       })).toBe(true)
-      expect(deactivatesSelection).toBe(true)
+      expect(deactivatesSelection).toBe(false)
       expect(state.doc.childCount).toBe(1)
       expect(state.doc.firstChild).toBe(boundary)
-      expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
-      expect(state.selection).toBeInstanceOf(NodeSelection)
-      expect(state.selection.from).toBe(0)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+      expect(state.selection).toBeInstanceOf(StructuralCaretSelection)
+      expect((state.selection as StructuralCaretSelection).side).toBe("after")
+      expect(state.selection.from).toBe(boundary.nodeSize)
 
       const paragraphPos = state.doc.content.size
       let activateTransaction = state.tr.insert(
@@ -322,6 +566,53 @@ describe("live editor blank block deletion", () => {
       expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
     }
   )
+
+  it("removes a blank paragraph after Mermaid and keeps its code caret active", () => {
+    const code = "graph TD; A-->B"
+    const boundary = schema.nodes.mermaid!.create(
+      { mode: "split" },
+      schema.text(code)
+    )
+    const empty = schema.nodes.paragraph!.create()
+    const doc = schema.nodes.doc!.create(null, [boundary, empty])
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, boundary.nodeSize + 1),
+      plugins: [inactiveBlockSelectionPlugin()]
+    })
+
+    expect(removeEmptyParagraphBlock(schema)(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild).toBe(boundary)
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+    expect(state.selection).toBeInstanceOf(TextSelection)
+    expect(state.selection.$from.parent).toBe(boundary)
+    expect(state.selection.$from.parentOffset).toBe(code.length)
+  })
+
+  it("keeps the file embed caretless when removing its trailing blank paragraph", () => {
+    const boundary = schema.nodes.file_embed!.create({ src: "spec.pdf" })
+    const empty = schema.nodes.paragraph!.create()
+    const doc = schema.nodes.doc!.create(null, [boundary, empty])
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, boundary.nodeSize + 1),
+      plugins: [inactiveBlockSelectionPlugin()]
+    })
+    let deactivatesSelection = false
+
+    expect(removeEmptyParagraphBlock(schema)(state, (transaction) => {
+      deactivatesSelection = transactionLeavesEditorInactive(transaction)
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(deactivatesSelection).toBe(true)
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild).toBe(boundary)
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+  })
 
   it.each(["bullet_item", "numbered_item", "task_item"])(
     "exits an empty %s into a blank paragraph in the same position",

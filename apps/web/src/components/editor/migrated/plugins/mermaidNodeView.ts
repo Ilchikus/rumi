@@ -1,15 +1,22 @@
-// @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Node as PmNode } from "prosemirror-model"
 import { EditorView, NodeView } from "prosemirror-view"
-import mermaid from "mermaid"
 
-// Initialize mermaid with default config
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "default",
-  securityLevel: "loose",
-  fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
-})
+type MermaidApi = typeof import("mermaid")["default"]
+
+let mermaidPromise: Promise<MermaidApi> | null = null
+
+function loadMermaid(): Promise<MermaidApi> {
+  mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "default",
+      securityLevel: "strict",
+      fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
+    })
+    return mermaid
+  })
+  return mermaidPromise
+}
 
 const VIEW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"></path></svg>`
 const EDIT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path></svg>`
@@ -21,16 +28,17 @@ let mermaidIdCounter = 0
 
 class MermaidNodeView implements NodeView {
   dom: HTMLElement
+  contentDOM: HTMLElement
   private node: PmNode
   private view: EditorView
   private getPos: () => number | undefined
   private mode: MermaidMode
   private previewContainer: HTMLElement
   private editorContainer: HTMLElement
-  private textarea: HTMLTextAreaElement
   private toolbar: HTMLElement
   private errorEl: HTMLElement
   private mermaidId: string
+  private renderRevision = 0
 
   constructor(node: PmNode, view: EditorView, getPos: () => number | undefined) {
     this.node = node
@@ -56,14 +64,11 @@ class MermaidNodeView implements NodeView {
     this.editorContainer = document.createElement("div")
     this.editorContainer.className = "mermaid-editor"
 
-    this.textarea = document.createElement("textarea")
-    this.textarea.className = "mermaid-textarea"
-    this.textarea.value = node.attrs.code || ""
-    this.textarea.placeholder = "Enter Mermaid diagram code..."
-    this.textarea.spellcheck = false
-    this.textarea.addEventListener("input", this.onCodeChange)
-    this.textarea.addEventListener("keydown", this.onKeyDown)
-    this.editorContainer.appendChild(this.textarea)
+    this.contentDOM = document.createElement("code")
+    this.contentDOM.className = "mermaid-textarea"
+    this.contentDOM.dataset.placeholder = "Enter Mermaid diagram code..."
+    this.contentDOM.spellcheck = false
+    this.editorContainer.appendChild(this.contentDOM)
 
     // Preview container (right side in split, full in view mode)
     this.previewContainer = document.createElement("div")
@@ -154,36 +159,9 @@ class MermaidNodeView implements NodeView {
     }
   }
 
-  private onCodeChange = () => {
-    const code = this.textarea.value
-    const pos = this.getPos()
-    if (pos !== undefined) {
-      const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
-        ...this.node.attrs,
-        code
-      })
-      this.view.dispatch(tr)
-    }
-    this.node = this.view.state.doc.nodeAt(pos!) || this.node
-    this.renderDiagram()
-  }
-
-  private onKeyDown = (e: KeyboardEvent) => {
-    // Prevent ProseMirror from handling certain keys
-    if (e.key === "Tab") {
-      e.preventDefault()
-      const start = this.textarea.selectionStart
-      const end = this.textarea.selectionEnd
-      const value = this.textarea.value
-      this.textarea.value = value.substring(0, start) + "  " + value.substring(end)
-      this.textarea.selectionStart = this.textarea.selectionEnd = start + 2
-      this.onCodeChange()
-    }
-    e.stopPropagation()
-  }
-
   private async renderDiagram() {
-    const code = this.node.attrs.code
+    const renderRevision = ++this.renderRevision
+    const code = this.node.textContent
     if (!code) {
       this.previewContainer.innerHTML = ""
       this.errorEl.style.display = "none"
@@ -206,10 +184,18 @@ class MermaidNodeView implements NodeView {
       diagramContainer.className = "mermaid-diagram"
       this.previewContainer.appendChild(diagramContainer)
 
-      // Render the diagram
-      const { svg } = await mermaid.render(this.mermaidId, code)
+      // Mermaid is large, so defer loading it until a diagram actually needs
+      // rendering. A newer update may supersede this one while it loads.
+      const mermaid = await loadMermaid()
+      if (renderRevision !== this.renderRevision) return
+      const { svg } = await mermaid.render(
+        `${this.mermaidId}-${renderRevision}`,
+        code
+      )
+      if (renderRevision !== this.renderRevision) return
       diagramContainer.innerHTML = svg
     } catch (error) {
+      if (renderRevision !== this.renderRevision) return
       this.errorEl.textContent = `Error: ${error instanceof Error ? error.message : "Invalid diagram"}`
       this.errorEl.style.display = "block"
     }
@@ -219,7 +205,7 @@ class MermaidNodeView implements NodeView {
     if (node.type !== this.node.type) return false
 
     const modeChanged = node.attrs.mode !== this.node.attrs.mode
-    const codeChanged = node.attrs.code !== this.node.attrs.code
+    const codeChanged = node.textContent !== this.node.textContent
 
     this.node = node
 
@@ -228,36 +214,31 @@ class MermaidNodeView implements NodeView {
       this.updateMode()
     }
 
-    if (codeChanged) {
-      if (this.textarea.value !== node.attrs.code) {
-        this.textarea.value = node.attrs.code || ""
-      }
-      this.renderDiagram()
-    }
+    if (codeChanged) this.renderDiagram()
 
     return true
   }
 
   stopEvent(event: Event): boolean {
-    // Let the textarea and buttons handle their own events
+    // Let toolbar controls handle their own events. Mermaid source remains
+    // ordinary ProseMirror content, just like a code block.
     const target = event.target as HTMLElement
-    if (this.toolbar.contains(target) || this.textarea.contains(target)) {
-      return true
-    }
-    return false
+    return this.toolbar.contains(target)
   }
 
-  ignoreMutation(mutation: MutationRecord): boolean {
+  ignoreMutation(
+    mutation: Parameters<NonNullable<NodeView["ignoreMutation"]>>[0]
+  ): boolean {
     if (this.toolbar.contains(mutation.target) ||
-        this.previewContainer.contains(mutation.target) ||
-        this.textarea.contains(mutation.target)) {
+        this.previewContainer.contains(mutation.target)) {
       return true
     }
     return false
   }
 
   destroy() {
-    // Cleanup if needed
+    // Ignore any Mermaid render that settles after this view is gone.
+    this.renderRevision += 1
   }
 }
 

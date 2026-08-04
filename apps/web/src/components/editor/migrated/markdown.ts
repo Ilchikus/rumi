@@ -372,10 +372,11 @@ function convertTable(node: Table, schema: Schema): ProseMirrorNode | null {
 function convertCodeBlock(node: Code, schema: Schema): ProseMirrorNode | null {
   // Check if it's a mermaid diagram
   if (node.lang === "mermaid" && schema.nodes.mermaid) {
-    return schema.nodes.mermaid.create({
-      code: node.value || "",
-      mode: "split"
-    })
+    const code = node.value || ""
+    return schema.nodes.mermaid.create(
+      { mode: "split" },
+      code ? schema.text(code) : null
+    )
   }
 
   // Check if it's a database embed
@@ -730,7 +731,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "mermaid":
       lines.push(indent + "```mermaid")
-      const code = node.attrs.code || ""
+      const code = node.textContent
       code.split("\n").forEach((line: string) => {
         lines.push(indent + line)
       })

@@ -3,9 +3,12 @@ import { Plugin, PluginKey, TextSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { Schema, Mark } from "prosemirror-model"
 import { openEditorHref } from "../platform"
+import { isExternalLinkHref, normalizeLinkHref } from "../linkHref"
 
 export const linkPluginKey = new PluginKey("link")
 const NATIVE_CONTEXT_LINK_CLASS = "rumi-native-context-link"
+const COMMAND_LINK_MODE_CLASS = "rumi-command-link-mode"
+const nativeContextSelectionTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
 
 // URL detection regex
 const URL_REGEX = /^(https?:\/\/|www\.)[^\s]+$/i
@@ -43,24 +46,39 @@ export function linkPlugin(schema: Schema) {
           // the native browser link menu opens.
           temporarilyDisableLinkSelection(view)
           return false
+        },
+        selectstart(view, event) {
+          const link = closestLink(event.target)
+          const editorContainer = view.dom.closest(".prosemirror-editor") ?? view.dom
+          if (!link || !editorContainer.classList.contains(NATIVE_CONTEXT_LINK_CLASS)) {
+            return false
+          }
+
+          event.preventDefault()
+          return true
         }
       },
 
       handleClick(view, pos, event) {
         const link = closestLink(event.target)
+        if (!link || event.button !== 0 || isNativeContextMenuGesture(event)) return false
 
-        if (link) {
-          event.preventDefault()
-          const href = link.getAttribute("href")
-          if (href) {
-            // Open link in default browser
-            const url = href.startsWith("www.") ? "https://" + href : href
-            openEditorHref(url)
-          }
+        event.preventDefault()
+        const href = normalizeLinkHref(link.getAttribute("href") ?? "")
+        const intent = linkClickIntent(link, event)
+
+        if (intent === "caret") {
+          view.dispatch(
+            view.state.tr
+              .setSelection(TextSelection.near(view.state.doc.resolve(pos)))
+              .setMeta("addToHistory", false)
+          )
+          view.focus()
           return true
         }
 
-        return false
+        if (href) openEditorHref(href, intent === "new-tab" ? "new" : "current")
+        return true
       },
 
       handlePaste(view, event, slice) {
@@ -99,6 +117,21 @@ export function linkPlugin(schema: Schema) {
       let isTooltipVisible = false
       let isMouseOverLink = false
       let isMouseOverTooltip = false
+      const editorContainer = editorView.dom.closest(".prosemirror-editor") ?? editorView.dom
+
+      const setCommandLinkMode = (active: boolean) => {
+        editorContainer.classList.toggle(COMMAND_LINK_MODE_CLASS, active)
+      }
+      const handleModifierKeyDown = (event: KeyboardEvent) => {
+        if (event.metaKey || event.key === "Meta") setCommandLinkMode(true)
+      }
+      const handleModifierKeyUp = (event: KeyboardEvent) => {
+        if (!event.metaKey || event.key === "Meta") setCommandLinkMode(false)
+      }
+      const handleModifierMouseMove = (event: MouseEvent) => {
+        setCommandLinkMode(event.metaKey)
+      }
+      const clearCommandLinkMode = () => setCommandLinkMode(false)
 
       // Create tooltip container
       const tooltip = document.createElement("div")
@@ -227,6 +260,7 @@ export function linkPlugin(schema: Schema) {
 
       // Mouse events on editor for link hover
       const handleMouseOver = (e: MouseEvent) => {
+        setCommandLinkMode(e.metaKey)
         const target = e.target as HTMLElement
         const link = target.closest("a") as HTMLElement | null
 
@@ -298,14 +332,23 @@ export function linkPlugin(schema: Schema) {
       const editorDom = editorView.dom
       editorDom.addEventListener("mouseover", handleMouseOver)
       editorDom.addEventListener("mouseout", handleMouseOut)
+      editorDom.addEventListener("mousemove", handleModifierMouseMove)
+      document.addEventListener("keydown", handleModifierKeyDown, true)
+      document.addEventListener("keyup", handleModifierKeyUp, true)
+      window.addEventListener("blur", clearCommandLinkMode)
       document.addEventListener("mousedown", handleClickOutside)
 
       return {
         destroy() {
           clearTimers()
           tooltip.remove()
+          clearCommandLinkMode()
           editorDom.removeEventListener("mouseover", handleMouseOver)
           editorDom.removeEventListener("mouseout", handleMouseOut)
+          editorDom.removeEventListener("mousemove", handleModifierMouseMove)
+          document.removeEventListener("keydown", handleModifierKeyDown, true)
+          document.removeEventListener("keyup", handleModifierKeyUp, true)
+          window.removeEventListener("blur", clearCommandLinkMode)
           document.removeEventListener("mousedown", handleClickOutside)
         }
       }
@@ -314,8 +357,14 @@ export function linkPlugin(schema: Schema) {
 }
 
 function closestLink(target: EventTarget | null): Element | null {
-  const candidate = target as { closest?: (selector: string) => Element | null } | null
-  return typeof candidate?.closest === "function" ? candidate.closest("a") : null
+  const candidate = target as {
+    closest?: (selector: string) => Element | null
+    parentElement?: { closest?: (selector: string) => Element | null } | null
+  } | null
+  if (typeof candidate?.closest === "function") return candidate.closest("a")
+  return typeof candidate?.parentElement?.closest === "function"
+    ? candidate.parentElement.closest("a")
+    : null
 }
 
 function isNativeContextMenuGesture(event: MouseEvent): boolean {
@@ -324,8 +373,37 @@ function isNativeContextMenuGesture(event: MouseEvent): boolean {
 
 function temporarilyDisableLinkSelection(view: EditorView): void {
   const editorContainer = view.dom.closest(".prosemirror-editor") ?? view.dom
+  const existingTimer = nativeContextSelectionTimers.get(editorContainer)
+  if (existingTimer) clearTimeout(existingTimer)
   editorContainer.classList.add(NATIVE_CONTEXT_LINK_CLASS)
-  globalThis.setTimeout(() => editorContainer.classList.remove(NATIVE_CONTEXT_LINK_CLASS), 0)
+  nativeContextSelectionTimers.set(editorContainer, globalThis.setTimeout(() => {
+    editorContainer.classList.remove(NATIVE_CONTEXT_LINK_CLASS)
+    nativeContextSelectionTimers.delete(editorContainer)
+  }, 250))
+}
+
+export type LinkClickIntent = "caret" | "current-tab" | "new-tab"
+
+export function linkClickIntent(link: Element, event: MouseEvent): LinkClickIntent {
+  if (event.metaKey) return "new-tab"
+  return isExternalLinkIconClick(link, event) ? "current-tab" : "caret"
+}
+
+export function isExternalLinkIconClick(link: Element, event: MouseEvent): boolean {
+  const href = link.getAttribute("href") ?? ""
+  if (!isExternalLinkHref(href)) return false
+
+  const rects = typeof link.getClientRects === "function"
+    ? Array.from(link.getClientRects())
+    : []
+  const rect = rects.at(-1) ?? link.getBoundingClientRect()
+  const fontSize = Number.parseFloat(globalThis.getComputedStyle?.(link).fontSize ?? "16") || 16
+  const iconHitWidth = fontSize * 1.1
+
+  return event.clientX >= rect.right - iconHitWidth &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
 }
 
 function showEditPopover(view: EditorView, linkData: { href: string; from: number; to: number }, schema: Schema) {

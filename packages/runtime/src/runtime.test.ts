@@ -151,7 +151,8 @@ describe("WorkspaceRuntime", () => {
         editor: {
           highlightMisspellings: false,
           inlineReplacements: true,
-          emojiSuggestions: true
+          emojiSuggestions: true,
+          inlineToolbar: "floating"
         }
       },
       constraints: {
@@ -170,14 +171,16 @@ describe("WorkspaceRuntime", () => {
       editor: {
         highlightMisspellings: true,
         inlineReplacements: false,
-        emojiSuggestions: false
+        emojiSuggestions: false,
+        inlineToolbar: "top"
       }
     });
 
     expect(updated.settings.editor).toEqual({
       highlightMisspellings: true,
       inlineReplacements: false,
-      emojiSuggestions: false
+      emojiSuggestions: false,
+      inlineToolbar: "top"
     });
     expect(runtime.assetPolicy).toEqual({
       maxFileSizeBytes: 2 * 1024 * 1024,
@@ -205,7 +208,8 @@ describe("WorkspaceRuntime", () => {
       editor: {
         highlightMisspellings: false,
         inlineReplacements: true,
-        emojiSuggestions: true
+        emojiSuggestions: true,
+        inlineToolbar: "floating"
       }
     });
     await expect(runtime.saveAsset("disabled.png", png)).rejects.toThrow(
@@ -220,7 +224,8 @@ describe("WorkspaceRuntime", () => {
       editor: {
         highlightMisspellings: false,
         inlineReplacements: true,
-        emojiSuggestions: true
+        emojiSuggestions: true,
+        inlineToolbar: "floating"
       }
     });
     expect(runtime.assetPolicy).toMatchObject({
@@ -239,7 +244,8 @@ describe("WorkspaceRuntime", () => {
       editor: {
         highlightMisspellings: false,
         inlineReplacements: true,
-        emojiSuggestions: true
+        emojiSuggestions: true,
+        inlineToolbar: "floating"
       }
     });
     await expect(runtime.saveAsset("disabled-by-format.png", png)).rejects.toThrow(
@@ -260,7 +266,8 @@ describe("WorkspaceRuntime", () => {
       editor: {
         highlightMisspellings: false,
         inlineReplacements: true,
-        emojiSuggestions: true
+        emojiSuggestions: true,
+        inlineToolbar: "floating"
       }
     });
 

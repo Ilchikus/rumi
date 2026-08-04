@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "../markdown"
 import { schema } from "../schema"
 import { taskListPlugin } from "./taskList"
+import {
+  multiBlockSelectionKey,
+  multiBlockSelectionPlugin
+} from "./multiBlockSelection"
 
 describe("task checkbox interaction", () => {
   it("persists the actual checked value for the first document block", () => {
@@ -100,6 +104,63 @@ describe("task checkbox interaction", () => {
     )).toBe(true)
     expect(checkbox.checked).toBe(false)
     expect(dispatchCount).toBe(0)
+  })
+
+  it("sets every selected task to the checked state of the toggled task", () => {
+    const taskPlugin = taskListPlugin(schema)
+    const first = schema.nodes.task_item!.create(
+      { indent: 0, checked: false },
+      schema.text("First task")
+    )
+    const middle = schema.nodes.paragraph!.create(null, schema.text("Not a task"))
+    const last = schema.nodes.task_item!.create(
+      { indent: 0, checked: false },
+      schema.text("Last task")
+    )
+    const lastPos = first.nodeSize + middle.nodeSize
+    let state = EditorState.create({
+      doc: schema.nodes.doc!.create(null, [first, middle, last]),
+      plugins: [multiBlockSelectionPlugin(schema), taskPlugin]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [0, first.nodeSize, lastPos],
+      anchorBlock: 0
+    }))
+    const taskElement = {}
+    const view = {
+      get state() {
+        return state
+      },
+      dom: {
+        contains: (element: unknown) => element === taskElement,
+        querySelectorAll: () => []
+      },
+      editable: true,
+      posAtDOM: () => lastPos + 1,
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    const checkbox = {
+      tagName: "INPUT",
+      checked: true,
+      getAttribute: (name: string) => name === "type" ? "checkbox" : null,
+      closest: (selector: string) => selector === ".task-item" ? taskElement : null
+    }
+
+    expect(taskPlugin.props.handleDOMEvents?.change?.call(
+      taskPlugin,
+      view,
+      { target: checkbox } as unknown as Event
+    )).toBe(true)
+    expect(state.doc.child(0).attrs.checked).toBe(true)
+    expect(state.doc.child(1).type).toBe(schema.nodes.paragraph)
+    expect(state.doc.child(2).attrs.checked).toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([
+      0,
+      first.nodeSize,
+      lastPos
+    ])
   })
 
   it("disables task inputs when the editor becomes read-only", () => {

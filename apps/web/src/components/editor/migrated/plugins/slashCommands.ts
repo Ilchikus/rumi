@@ -251,7 +251,10 @@ export function createCommands(schema: Schema): SlashCommand[] {
     A[Start] --> B{Decision}
     B -->|Yes| C[Result 1]
     B -->|No| D[Result 2]`
-        const mermaid = schema.nodes.mermaid.create({ code: defaultCode, mode: "split" })
+        const mermaid = schema.nodes.mermaid.create(
+          { mode: "split" },
+          schema.text(defaultCode)
+        )
         const tr = state.tr.replaceWith($from.before(), $from.after(), mermaid)
         dispatch(tr)
         view.focus()

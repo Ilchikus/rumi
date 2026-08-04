@@ -3,7 +3,6 @@ import { keymap } from "prosemirror-keymap"
 import { Schema } from "prosemirror-model"
 import { Command, NodeSelection, TextSelection } from "prosemirror-state"
 import {
-  toggleMark,
   setBlockType,
   chainCommands,
   exitCode,
@@ -13,19 +12,25 @@ import {
   splitBlock,
   wrapIn
 } from "prosemirror-commands"
-import { undo, redo } from "prosemirror-history"
 import { goToNextCell } from "prosemirror-tables"
+import {
+  redoEditorChange,
+  undoEditorChange
+} from "./editorHistory"
 import {
   duplicateBlocks,
   moveBlocks,
   multiBlockSelectionKey,
   selectAllBlocksInStages
 } from "./plugins/multiBlockSelection"
+import { toggleInlineMark } from "./plugins/inlineFormatting"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
   type BlockContextMenuIntent
 } from "./plugins/blockContextMenuModel"
 import { createCaretlessBlankBlockDeletionTransaction } from "./inactiveBlockSelection"
+import { insertAdjacentParagraphCommand } from "./plugins/topToolbarActions"
+import { openSelectionToolbarLinkEditor } from "./plugins/selectionToolbar"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
 
@@ -115,6 +120,7 @@ export function resetEmptyFormattedBlock(schema: Schema): Command {
   const resettableTypes = new Set([
     schema.nodes.heading,
     schema.nodes.code_block,
+    schema.nodes.mermaid,
     schema.nodes.bullet_item,
     schema.nodes.numbered_item,
     schema.nodes.task_item,
@@ -211,8 +217,8 @@ export function insertLiteralNewlineInCode(schema: Schema): Command {
     const { selection } = state
     if (
       !(selection instanceof TextSelection) ||
-      selection.$from.parent.type !== schema.nodes.code_block ||
-      selection.$to.parent.type !== schema.nodes.code_block ||
+      !selection.$from.parent.type.spec.code ||
+      !selection.$to.parent.type.spec.code ||
       selection.$from.parent !== selection.$to.parent
     ) {
       return false
@@ -263,34 +269,38 @@ function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
   // History
-  keys["Mod-z"] = undo
-  keys["Shift-Mod-z"] = redo
-  if (!mac) keys["Mod-y"] = redo
+  keys["Mod-z"] = undoEditorChange
+  keys["Shift-Mod-z"] = redoEditorChange
+  if (!mac) keys["Mod-y"] = redoEditorChange
 
   // Marks
   if (schema.marks.bold) {
-    keys["Mod-b"] = toggleMark(schema.marks.bold)
-    keys["Mod-B"] = toggleMark(schema.marks.bold)
+    keys["Mod-b"] = toggleInlineMark(schema.marks.bold)
+    keys["Mod-B"] = toggleInlineMark(schema.marks.bold)
   }
   if (schema.marks.italic) {
-    keys["Mod-i"] = toggleMark(schema.marks.italic)
-    keys["Mod-I"] = toggleMark(schema.marks.italic)
+    keys["Mod-i"] = toggleInlineMark(schema.marks.italic)
+    keys["Mod-I"] = toggleInlineMark(schema.marks.italic)
   }
   if (schema.marks.underline) {
-    keys["Mod-u"] = toggleMark(schema.marks.underline)
-    keys["Mod-U"] = toggleMark(schema.marks.underline)
+    keys["Mod-u"] = toggleInlineMark(schema.marks.underline)
+    keys["Mod-U"] = toggleInlineMark(schema.marks.underline)
   }
   if (schema.marks.strikethrough) {
-    keys["Mod-Shift-s"] = toggleMark(schema.marks.strikethrough)
-    keys["Mod-Shift-S"] = toggleMark(schema.marks.strikethrough)
+    keys["Mod-Shift-s"] = toggleInlineMark(schema.marks.strikethrough)
+    keys["Mod-Shift-S"] = toggleInlineMark(schema.marks.strikethrough)
   }
   if (schema.marks.code) {
-    keys["Mod-e"] = toggleMark(schema.marks.code)
-    keys["Mod-E"] = toggleMark(schema.marks.code)
+    keys["Mod-e"] = toggleInlineMark(schema.marks.code)
+    keys["Mod-E"] = toggleInlineMark(schema.marks.code)
   }
   if (schema.marks.highlight) {
-    keys["Mod-Shift-h"] = toggleMark(schema.marks.highlight)
-    keys["Mod-Shift-H"] = toggleMark(schema.marks.highlight)
+    keys["Mod-Shift-h"] = toggleInlineMark(schema.marks.highlight)
+    keys["Mod-Shift-H"] = toggleInlineMark(schema.marks.highlight)
+  }
+  if (schema.marks.link) {
+    keys["Mod-Shift-k"] = openSelectionToolbarLinkEditor
+    keys["Mod-Shift-K"] = openSelectionToolbarLinkEditor
   }
 
   // Block types
@@ -387,7 +397,7 @@ function buildKeymap(schema: Schema) {
   // Insert tab in code block
   const insertTabInCode: Command = (state, dispatch) => {
     const { $from } = state.selection
-    if ($from.parent.type !== schema.nodes.code_block) return false
+    if (!$from.parent.type.spec.code) return false
 
     if (dispatch) {
       dispatch(state.tr.insertText("\t").scrollIntoView())
@@ -419,10 +429,13 @@ function buildKeymap(schema: Schema) {
     )
   }
 
-  // Code block - exit with Mod-Enter
-  if (schema.nodes.code_block) {
-    keys["Mod-Enter"] = exitCode
-  }
+  // Structural insertion. In code, Mod-Enter retains its established exit
+  // behavior, which is the same semantic result as adding a block afterward.
+  const addAfter = insertAdjacentParagraphCommand("after")
+  keys["Shift-Mod-Enter"] = insertAdjacentParagraphCommand("before")
+  keys["Mod-Enter"] = schema.nodes.code_block
+    ? chainCommands(exitCode, addAfter)
+    : addAfter
 
   return keymap(keys)
 }

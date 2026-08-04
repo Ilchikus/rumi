@@ -195,7 +195,7 @@ function serializeBlockHtml(node: ProseMirrorNode): string {
     case "horizontal_rule":
       return "<hr>"
     case "mermaid":
-      return serializeCodeHtml(String(node.attrs.code ?? ""), "mermaid")
+      return serializeCodeHtml(node.textContent, "mermaid")
     case "database_embed": {
       const lines = [
         node.attrs.source ? `source: ${node.attrs.source}` : "",
@@ -286,7 +286,7 @@ function serializeBlockText(node: ProseMirrorNode): string {
     case "horizontal_rule":
       return "---"
     case "mermaid":
-      return String(node.attrs.code ?? "")
+      return node.textContent
     case "database_embed":
       return [
         node.attrs.source ? `source: ${node.attrs.source}` : "",

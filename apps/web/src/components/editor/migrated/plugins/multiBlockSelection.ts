@@ -14,6 +14,12 @@ import {
   createCaretlessBlankBlockDeletionTransaction,
   transactionLeavesEditorInactive
 } from "../inactiveBlockSelection"
+import {
+  StructuralCaretSelection,
+  structuralCaretAtBlock,
+  structuralCaretContext,
+  setSelectionBeforeNextSpecialBlock
+} from "../structuralCaretSelection"
 
 export interface MultiBlockSelectionState {
   selectedBlocks: number[]
@@ -94,6 +100,12 @@ function topLevelBlocks(state: EditorState): TopLevelBlock[] {
 }
 
 function currentTopLevelBlockPos(state: EditorState): number | null {
+  if (state.selection instanceof StructuralCaretSelection) {
+    return structuralCaretContext(
+      state.selection.$head,
+      state.selection.side
+    )?.nodePos ?? null
+  }
   const { $from } = state.selection
   if ($from.depth > 0) return $from.before(1)
   return state.doc.nodeAt(state.selection.from) ? state.selection.from : null
@@ -186,6 +198,12 @@ export function createMoveBlocksTransaction(
         Math.min(maxTextPos, movedPositions[0] + (state.selection.head - currentPos))
       )
       transaction.setSelection(TextSelection.create(transaction.doc, mappedAnchor, mappedHead))
+    } else if (state.selection instanceof StructuralCaretSelection) {
+      transaction.setSelection(structuralCaretAtBlock(
+        transaction.doc,
+        movedPositions[0],
+        state.selection.side
+      ))
     } else {
       transaction.setSelection(NodeSelection.create(transaction.doc, movedPositions[0]))
     }
@@ -281,12 +299,70 @@ export function clearMultiBlockSelection(view: EditorView) {
   view.dispatch(tr)
 }
 
+export function extendBlockSelection(
+  direction: "up" | "down",
+  toDocumentBoundary = false
+): Command {
+  return (state, dispatch) => {
+    const pluginState = multiBlockSelectionKey.getState(state)
+    const selected = [...new Set(pluginState?.selectedBlocks ?? [])]
+      .filter((pos) => state.doc.nodeAt(pos) !== null)
+      .sort((left, right) => left - right)
+    if (selected.length === 0) return false
+
+    const positions: number[] = []
+    state.doc.forEach((_node, pos) => positions.push(pos))
+    const edge = direction === "down" ? selected.at(-1)! : selected[0]!
+    const edgeIndex = positions.indexOf(edge)
+    if (edgeIndex < 0) return false
+
+    const added = direction === "down"
+      ? positions.slice(
+          edgeIndex + 1,
+          toDocumentBoundary ? positions.length : edgeIndex + 2
+        )
+      : positions.slice(
+          toDocumentBoundary ? 0 : Math.max(0, edgeIndex - 1),
+          edgeIndex
+        )
+    if (added.length === 0) return true
+
+    if (dispatch) {
+      const selectedBlocks = [...new Set([...selected, ...added])]
+        .sort((left, right) => left - right)
+      const activePos = direction === "down"
+        ? selectedBlocks.at(-1)!
+        : selectedBlocks[0]!
+      dispatch(
+        state.tr
+          .setSelection(NodeSelection.create(state.doc, activePos))
+          .setMeta(multiBlockSelectionKey, {
+            selectedBlocks,
+            anchorBlock: pluginState?.anchorBlock ?? selected[0] ?? null
+          })
+          .setMeta("multiBlockKeep", true)
+          .scrollIntoView()
+      )
+    }
+    return true
+  }
+}
+
 export function createDeleteSelectedBlocksTransaction(
   state: EditorState
 ): Transaction | null {
   const pluginState = multiBlockSelectionKey.getState(state)
-  const selectedBlocks = pluginState?.selectedBlocks ?? []
-  const validPositions = [...new Set(selectedBlocks)]
+  return createDeleteBlocksTransaction(
+    state,
+    pluginState?.selectedBlocks ?? []
+  )
+}
+
+export function createDeleteBlocksTransaction(
+  state: EditorState,
+  blockPositions: readonly number[]
+): Transaction | null {
+  const validPositions = [...new Set(blockPositions)]
     .filter((pos) => state.doc.nodeAt(pos) !== null)
     .sort((left, right) => left - right)
   if (validPositions.length === 0) return null
@@ -303,30 +379,21 @@ export function createDeleteSelectedBlocksTransaction(
     }
   }
 
-  const blankBlockPos = validPositions[0]
   let transaction = state.tr
 
-  // Remove from the end to keep source positions stable. Replace the first
-  // selected block with one editable paragraph so deletion leaves a cursor at
-  // the selection's location rather than mapping onto a neighboring block.
+  // Remove from the end to keep source positions stable. ProseMirror maps the
+  // existing selection to the nearest surviving position and inserts the
+  // schema's default paragraph only when deletion empties the whole document.
   for (const pos of [...validPositions].reverse()) {
     const mappedPos = transaction.mapping.map(pos)
     const node = transaction.doc.nodeAt(mappedPos)
     if (!node) continue
 
-    transaction = pos === blankBlockPos
-      ? transaction.replaceWith(
-          mappedPos,
-          mappedPos + node.nodeSize,
-          state.schema.nodes.paragraph.create()
-        )
-      : transaction.delete(mappedPos, mappedPos + node.nodeSize)
+    transaction = transaction.delete(mappedPos, mappedPos + node.nodeSize)
   }
 
-  const mappedBlankBlockPos = transaction.mapping.map(blankBlockPos)
-  transaction.setSelection(
-    TextSelection.create(transaction.doc, mappedBlankBlockPos + 1)
-  )
+  if (!transaction.docChanged) return null
+  setSelectionBeforeNextSpecialBlock(transaction, validPositions[0])
   transaction.setMeta(multiBlockSelectionKey, {
     selectedBlocks: [],
     anchorBlock: null
@@ -458,6 +525,19 @@ export function multiBlockSelectionPlugin(_schema: Schema) {
       handleKeyDown(view: EditorView, event: KeyboardEvent) {
         const pluginState = multiBlockSelectionKey.getState(view.state)
         if (!pluginState || !pluginState.selectedBlocks || pluginState.selectedBlocks.length === 0) return false
+
+        if (
+          event.shiftKey &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          (event.key === "ArrowUp" || event.key === "ArrowDown")
+        ) {
+          event.preventDefault()
+          return extendBlockSelection(
+            event.key === "ArrowDown" ? "down" : "up",
+            event.metaKey
+          )(view.state, view.dispatch)
+        }
 
         if (event.key === "Backspace" || event.key === "Delete") {
           event.preventDefault()

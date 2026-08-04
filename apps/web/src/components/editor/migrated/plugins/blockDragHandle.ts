@@ -46,6 +46,48 @@ const HOVER_ZONE = 64
 const HANDLE_OFFSET = 28
 const ADD_BUTTON_OFFSET = 52
 const AREA_SELECT_DRAG_THRESHOLD = 3
+export const AREA_SELECT_SCROLL_ZONE = 100
+const AREA_SELECT_MAX_SCROLL_SPEED = 24
+
+export interface AreaSelectionAnchor {
+  x: number
+  y: number
+  scrollLeft: number
+  scrollTop: number
+}
+
+export function areaSelectionBounds(
+  anchor: AreaSelectionAnchor,
+  pointer: { x: number; y: number },
+  scroll: { left: number; top: number }
+) {
+  const anchoredX = anchor.x - (scroll.left - anchor.scrollLeft)
+  const anchoredY = anchor.y - (scroll.top - anchor.scrollTop)
+  return {
+    left: Math.min(anchoredX, pointer.x),
+    top: Math.min(anchoredY, pointer.y),
+    width: Math.abs(pointer.x - anchoredX),
+    height: Math.abs(pointer.y - anchoredY)
+  }
+}
+
+export function areaSelectionScrollVelocity(
+  pointerY: number,
+  viewportTop: number,
+  viewportBottom: number,
+  zone = AREA_SELECT_SCROLL_ZONE,
+  maxSpeed = AREA_SELECT_MAX_SCROLL_SPEED
+): number {
+  if (pointerY < viewportTop + zone) {
+    const intensity = Math.min(1, (viewportTop + zone - pointerY) / zone)
+    return -maxSpeed * intensity
+  }
+  if (pointerY > viewportBottom - zone) {
+    const intensity = Math.min(1, (pointerY - (viewportBottom - zone)) / zone)
+    return maxSpeed * intensity
+  }
+  return 0
+}
 
 interface HandledBlock {
   pos: number
@@ -105,7 +147,10 @@ class BlockDragHandleView {
   // Area selection state
   private selectionRect: HTMLElement | null = null
   private isAreaSelecting: boolean = false
-  private areaSelectStart: { x: number; y: number } | null = null
+  private areaSelectStart: AreaSelectionAnchor | null = null
+  private areaSelectPointer: { x: number; y: number } | null = null
+  private areaAutoScrollFrame: number | null = null
+  private areaAutoScrollVelocity = 0
   private areaHighlightedBlocks: Set<number> = new Set()
   private suppressWrapperClick: boolean = false
   private preserveSelectionThroughHandleClick: boolean = false
@@ -263,6 +308,8 @@ class BlockDragHandleView {
 
     if (this.scrollParent) {
       this.scrollParent.addEventListener("scroll", this.onScroll, { passive: true })
+    } else {
+      window.addEventListener("scroll", this.onScroll, { passive: true })
     }
   }
 
@@ -587,6 +634,8 @@ class BlockDragHandleView {
     if (this.handle.contains(e.target as Node) || this.addButton.contains(e.target as Node)) {
       return
     }
+    const target = e.target instanceof Element ? e.target : null
+    if (target?.closest("[data-rumi-preserve-block-selection]")) return
     // Don't clear multi-block selection when clicking inside the context menu
     // (e.g. clicking a type-change option must see the full selectedBlocks list)
     if (this.contextMenu && this.contextMenu.contains(e.target as Node)) return
@@ -680,6 +729,9 @@ class BlockDragHandleView {
   }
 
   private onScroll = () => {
+    if (this.isAreaSelecting && this.areaSelectPointer) {
+      this.renderAreaSelection(this.areaSelectPointer)
+    }
     if (this.hoveredBlock !== null && this.draggedBlock === null) {
       // The handle lives in the editor wrapper, so the browser scrolls it with
       // its block. Refresh only viewport visibility and hover geometry here;
@@ -725,6 +777,23 @@ class BlockDragHandleView {
     const canvas = this.view.dom.closest("[data-rumi-editor-canvas]")
     this.areaSelectionSurface = canvas instanceof HTMLElement ? canvas : this.getEditorWrapper()
     return this.areaSelectionSurface
+  }
+
+  private getAreaScrollOffset() {
+    return this.scrollParent
+      ? { left: this.scrollParent.scrollLeft, top: this.scrollParent.scrollTop }
+      : { left: window.scrollX, top: window.scrollY }
+  }
+
+  private getAreaSelectionViewport() {
+    if (!this.scrollParent) {
+      return { top: 0, bottom: window.innerHeight }
+    }
+    const rect = this.scrollParent.getBoundingClientRect()
+    return {
+      top: Math.max(0, rect.top),
+      bottom: Math.min(window.innerHeight, rect.bottom)
+    }
   }
 
   private isEditorBlockTarget(target: EventTarget | null): boolean {
@@ -790,7 +859,14 @@ class BlockDragHandleView {
     e.stopPropagation()
 
     this.isAreaSelecting = true
-    this.areaSelectStart = { x: e.clientX, y: e.clientY }
+    const scroll = this.getAreaScrollOffset()
+    this.areaSelectStart = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: scroll.left,
+      scrollTop: scroll.top
+    }
+    this.areaSelectPointer = { x: e.clientX, y: e.clientY }
     this.areaHighlightedBlocks.clear()
     this.suppressWrapperClick = false
 
@@ -813,16 +889,18 @@ class BlockDragHandleView {
       return
     }
 
-    const startX = this.areaSelectStart.x
-    const startY = this.areaSelectStart.y
-    const currentX = e.clientX
-    const currentY = e.clientY
+    this.areaSelectPointer = { x: e.clientX, y: e.clientY }
+    this.renderAreaSelection(this.areaSelectPointer)
+    this.updateAreaAutoScroll(e.clientY)
+  }
 
-    // Calculate rectangle bounds
-    const left = Math.min(startX, currentX)
-    const top = Math.min(startY, currentY)
-    const width = Math.abs(currentX - startX)
-    const height = Math.abs(currentY - startY)
+  private renderAreaSelection(pointer: { x: number; y: number }) {
+    if (!this.areaSelectStart || !this.selectionRect) return
+    const { left, top, width, height } = areaSelectionBounds(
+      this.areaSelectStart,
+      pointer,
+      this.getAreaScrollOffset()
+    )
 
     if (width >= AREA_SELECT_DRAG_THRESHOLD || height >= AREA_SELECT_DRAG_THRESHOLD) {
       this.suppressWrapperClick = true
@@ -836,6 +914,51 @@ class BlockDragHandleView {
 
     // Find blocks that intersect with selection rectangle
     this.updateAreaHighlightedBlocks({ left, top, width, height })
+  }
+
+  private updateAreaAutoScroll(pointerY: number) {
+    const viewport = this.getAreaSelectionViewport()
+    this.areaAutoScrollVelocity = areaSelectionScrollVelocity(
+      pointerY,
+      viewport.top,
+      viewport.bottom
+    )
+    if (this.areaAutoScrollVelocity === 0) {
+      this.stopAreaAutoScroll()
+      return
+    }
+    if (this.areaAutoScrollFrame === null) {
+      this.areaAutoScrollFrame = requestAnimationFrame(this.runAreaAutoScroll)
+    }
+  }
+
+  private runAreaAutoScroll = () => {
+    this.areaAutoScrollFrame = null
+    if (
+      !this.isAreaSelecting ||
+      !this.areaSelectPointer ||
+      this.areaAutoScrollVelocity === 0
+    ) return
+
+    const before = this.getAreaScrollOffset()
+    if (this.scrollParent) {
+      this.scrollParent.scrollTop += this.areaAutoScrollVelocity
+    } else {
+      window.scrollTo(window.scrollX, window.scrollY + this.areaAutoScrollVelocity)
+    }
+    const after = this.getAreaScrollOffset()
+    if (after.top === before.top && after.left === before.left) return
+
+    this.renderAreaSelection(this.areaSelectPointer)
+    this.areaAutoScrollFrame = requestAnimationFrame(this.runAreaAutoScroll)
+  }
+
+  private stopAreaAutoScroll() {
+    this.areaAutoScrollVelocity = 0
+    if (this.areaAutoScrollFrame !== null) {
+      cancelAnimationFrame(this.areaAutoScrollFrame)
+      this.areaAutoScrollFrame = null
+    }
   }
 
   private updateAreaHighlightedBlocks(selectRect: { left: number; top: number; width: number; height: number }) {
@@ -886,7 +1009,7 @@ class BlockDragHandleView {
       // Update plugin state to trigger decorations (this makes highlighting survive ProseMirror re-renders)
       const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
         selectedBlocks: newPositions,
-        anchorBlock: newPositions[0] || null
+        anchorBlock: newPositions[0] ?? null
       })
       tr.setMeta("multiBlockKeep", true)
       tr.setMeta("areaSelecting", true) // Flag to indicate we're in area selection mode
@@ -900,6 +1023,7 @@ class BlockDragHandleView {
     // Always clean up listeners first, even if not area selecting
     document.removeEventListener("mousemove", this.onAreaSelectMove)
     document.removeEventListener("mouseup", this.onAreaSelectEnd)
+    this.stopAreaAutoScroll()
 
     if (!this.isAreaSelecting) return
 
@@ -912,6 +1036,7 @@ class BlockDragHandleView {
     // Reset state BEFORE any dispatch to prevent re-entry issues
     this.isAreaSelecting = false
     this.areaSelectStart = null
+    this.areaSelectPointer = null
     const hadBlocks = this.areaHighlightedBlocks.size > 0
     this.areaHighlightedBlocks.clear()
 
@@ -1434,8 +1559,8 @@ class BlockDragHandleView {
   // ── Action dispatch ──
 
   private executeAction(action: BlockMenuActionId, block: HandledBlock) {
-    // Delete the explicit selection, including a single selected block, so the
-    // automatic menu cannot leave a NodeSelection mapped onto a neighboring block.
+    // Delete the explicit selection, including a single selected block, through
+    // the shared whole-block deletion and caretless-next-block behavior.
     const pluginState = multiBlockSelectionKey.getState(this.view.state)
     if (pluginState && pluginState.selectedBlocks.length > 0 && action === "delete") {
       deleteSelectedBlocks(this.view)
@@ -2044,6 +2169,7 @@ class BlockDragHandleView {
       this.selectionRect.remove()
       this.selectionRect = null
     }
+    this.stopAreaAutoScroll()
     document.removeEventListener("mousemove", this.onDocMouseMove)
     document.removeEventListener("mousedown", this.onDocMouseDown)
     document.removeEventListener("click", this.onDocClick)
@@ -2060,6 +2186,8 @@ class BlockDragHandleView {
     document.removeEventListener("mouseup", this.onHandleSelectionMouseUp)
     if (this.scrollParent) {
       this.scrollParent.removeEventListener("scroll", this.onScroll)
+    } else {
+      window.removeEventListener("scroll", this.onScroll)
     }
     document.removeEventListener("dragover", this.onDragOver)
     document.removeEventListener("drop", this.onDrop)

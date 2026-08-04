@@ -14,7 +14,7 @@ export interface MigratedEditorPlatform {
   workspaceKey: string;
   documentKey: string;
   documents: readonly MigratedEditorDocument[];
-  openDocument?: ((path: string) => void) | undefined;
+  openDocument?: ((path: string, target?: "current" | "new") => void) | undefined;
   uploadAsset?: ((file: File) => Promise<string>) | undefined;
   onMessage?: ((message: string) => void) | undefined;
 }
@@ -48,13 +48,20 @@ export function workspaceAssetUrl(src: string): string {
   return `/api/asset?${new URLSearchParams({ path: trimmed }).toString()}`;
 }
 
-export function openEditorHref(href: string): void {
+export function openEditorHref(
+  href: string,
+  target: "current" | "new" = "new"
+): void {
   const trimmed = href.trim();
   if (!trimmed) return;
   if (/^https?:\/\//iu.test(trimmed)) {
-    window.open(trimmed, "_blank", "noopener,noreferrer");
+    window.open(
+      trimmed,
+      target === "new" ? "_blank" : "_self",
+      target === "new" ? "noopener,noreferrer" : undefined
+    );
   } else {
-    currentPlatform.openDocument?.(trimmed);
+    currentPlatform.openDocument?.(trimmed, target);
   }
 }
 

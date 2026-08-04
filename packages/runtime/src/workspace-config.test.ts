@@ -53,8 +53,15 @@ describe("workspace upload configuration", () => {
       editor: {
         highlightMisspellings: false,
         inlineReplacements: true,
-        emojiSuggestions: true
+        emojiSuggestions: true,
+        inlineToolbar: "floating"
       }
+    });
+
+    const legacyToolbarRoot = await tempWorkspace();
+    await writeConfig(legacyToolbarRoot, { editor: { inlineToolbar: "sticky" } });
+    await expect(loadWorkspaceSettings(legacyToolbarRoot)).resolves.toMatchObject({
+      editor: { inlineToolbar: "top" }
     });
 
     const disabledRoot = await tempWorkspace();
@@ -93,7 +100,8 @@ describe("workspace upload configuration", () => {
       editor: {
         highlightMisspellings: true,
         inlineReplacements: false,
-        emojiSuggestions: false
+        emojiSuggestions: false,
+        inlineToolbar: "top"
       }
     });
     const persisted = JSON.parse(
@@ -108,7 +116,8 @@ describe("workspace upload configuration", () => {
       editor: {
         highlightMisspellings: true,
         inlineReplacements: false,
-        emojiSuggestions: false
+        emojiSuggestions: false,
+        inlineToolbar: "top"
       }
     });
     expect(persisted).toEqual({
@@ -152,6 +161,10 @@ describe("workspace upload configuration", () => {
       {
         source: JSON.stringify({ editor: { emojiSuggestions: 1 } }),
         message: /editor\.emojiSuggestions must be a boolean/u
+      },
+      {
+        source: JSON.stringify({ editor: { inlineToolbar: "sometimes" } }),
+        message: /editor\.inlineToolbar must be floating, top, or none/u
       },
       {
         source: JSON.stringify({ editor: { spellcheck: false } }),

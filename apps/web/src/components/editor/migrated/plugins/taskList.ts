@@ -1,6 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Plugin, PluginKey } from "prosemirror-state"
 import { Schema } from "prosemirror-model"
+import { multiBlockSelectionKey } from "./multiBlockSelection"
 
 export const taskListPluginKey = new PluginKey("taskList")
 
@@ -27,12 +28,24 @@ export function taskListPlugin(schema: Schema) {
             target.checked = Boolean(node.attrs.checked)
             return true
           }
-          if (node.attrs.checked === target.checked) return true
+          const selectedBlocks = multiBlockSelectionKey.getState(view.state)?.selectedBlocks ?? []
+          const taskPositions = selectedBlocks.includes(nodePos)
+            ? selectedBlocks.filter((pos) => view.state.doc.nodeAt(pos)?.type === schema.nodes.task_item)
+            : [nodePos]
+          if (taskPositions.every((pos) => view.state.doc.nodeAt(pos)?.attrs.checked === target.checked)) {
+            return true
+          }
 
-          const tr = view.state.tr.setNodeMarkup(nodePos, undefined, {
-            ...node.attrs,
-            checked: target.checked
-          })
+          let tr = view.state.tr
+          for (const pos of taskPositions) {
+            const selectedTask = tr.doc.nodeAt(pos)
+            if (!selectedTask || selectedTask.attrs.checked === target.checked) continue
+            tr = tr.setNodeMarkup(pos, undefined, {
+              ...selectedTask.attrs,
+              checked: target.checked
+            })
+          }
+          if (taskPositions.length > 1) tr.setMeta("multiBlockKeep", true)
           view.dispatch(tr)
 
           return true

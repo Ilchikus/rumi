@@ -6,17 +6,17 @@ import {
   type Transaction
 } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
+import {
+  structuralCaretAtBlock,
+  supportsStructuralCaret
+} from "./structuralCaretSelection"
 
 export const INACTIVE_BLOCK_SELECTION_CLASS = "rumi-inactive-block-selection"
 export const inactiveBlockSelectionKey = new PluginKey<boolean>(
   "inactiveBlockSelection"
 )
 
-const CARETLESS_BOUNDARY_BLOCKS = new Set([
-  "database_embed",
-  "file_embed",
-  "horizontal_rule"
-])
+const INACTIVE_BOUNDARY_BLOCKS = new Set(["file_embed"])
 
 export function createCaretlessBlankBlockDeletionTransaction(
   state: EditorState,
@@ -30,14 +30,20 @@ export function createCaretlessBlankBlockDeletionTransaction(
   ) return null
 
   const previousNode = state.doc.resolve(blockPos).nodeBefore
-  if (!previousNode || !CARETLESS_BOUNDARY_BLOCKS.has(previousNode.type.name)) {
-    return null
-  }
+  if (!previousNode) return null
 
   const previousPos = blockPos - previousNode.nodeSize
   const transaction = state.tr.delete(blockPos, blockPos + block.nodeSize)
-  transaction.setSelection(NodeSelection.create(transaction.doc, previousPos))
-  transaction.setMeta(inactiveBlockSelectionKey, true)
+  if (supportsStructuralCaret(previousNode)) {
+    transaction.setSelection(
+      structuralCaretAtBlock(transaction.doc, previousPos, "after")
+    )
+  } else if (INACTIVE_BOUNDARY_BLOCKS.has(previousNode.type.name)) {
+    transaction.setSelection(NodeSelection.create(transaction.doc, previousPos))
+    transaction.setMeta(inactiveBlockSelectionKey, true)
+  } else {
+    return null
+  }
   return transaction.scrollIntoView()
 }
 
@@ -96,7 +102,7 @@ export function inactiveBlockSelectionPlugin() {
       }
     },
 
-    view(view) {
+    view() {
       return {
         update(currentView, previousState) {
           const wasInactive =

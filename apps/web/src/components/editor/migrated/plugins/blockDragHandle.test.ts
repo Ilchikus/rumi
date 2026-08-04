@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest"
 import { parseMarkdown } from "../markdown"
 import { schema } from "../schema"
 import {
+  AREA_SELECT_SCROLL_ZONE,
+  areaSelectionBounds,
+  areaSelectionScrollVelocity,
   blockDragHandleKey,
   blockDragHandlePlugin
 } from "./blockDragHandle"
@@ -30,12 +33,34 @@ import {
   multiBlockSelectionPlugin,
   selectAllBlocksInStages
 } from "./multiBlockSelection"
+import { StructuralCaretSelection } from "../structuralCaretSelection"
 
 function selectedBlocks(state: EditorState): number[] {
   return multiBlockSelectionKey.getState(state)?.selectedBlocks ?? []
 }
 
 describe("selected-block handle menu trigger", () => {
+  it("keeps the marquee anchor attached to its document position while scrolling", () => {
+    expect(areaSelectionBounds(
+      { x: 200, y: 300, scrollLeft: 0, scrollTop: 0 },
+      { x: 500, y: 700 },
+      { left: 0, top: 200 }
+    )).toEqual({
+      left: 200,
+      top: 100,
+      width: 300,
+      height: 600
+    })
+  })
+
+  it("auto-scrolls proportionally inside the viewport's 100px edge zones", () => {
+    expect(AREA_SELECT_SCROLL_ZONE).toBe(100)
+    expect(areaSelectionScrollVelocity(50, 0, 1000)).toBe(-12)
+    expect(areaSelectionScrollVelocity(500, 0, 1000)).toBe(0)
+    expect(areaSelectionScrollVelocity(950, 0, 1000)).toBe(12)
+    expect(areaSelectionScrollVelocity(1100, 0, 1000)).toBe(24)
+  })
+
   it("preserves selection when the context-clicked handle belongs to it", () => {
     expect(blockSelectionForHandleContextMenu([0, 5, 10], 5)).toEqual([0, 5, 10])
   })
@@ -280,7 +305,7 @@ describe("selected-block handle menu trigger", () => {
     expect(transaction!.doc.firstChild?.textContent).toBe("HeaderValue")
   })
 
-  it("replaces deleted selected blocks with one focused blank paragraph", () => {
+  it("fully removes deleted selected blocks and focuses a surviving block", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({
       doc,
@@ -296,19 +321,17 @@ describe("selected-block handle menu trigger", () => {
     expect(Array.from(
       { length: state.doc.childCount },
       (_, index) => state.doc.child(index).textContent
-    )).toEqual(["One", "", "Three"])
+    )).toEqual(["One", "Three"])
     expect(selectedBlocks(state)).toEqual([])
     expect(state.selection).toBeInstanceOf(TextSelection)
-    expect(state.selection.$from.parent.type).toBe(schema.nodes.paragraph)
-    expect(state.selection.$from.parent.content.size).toBe(0)
+    expect(state.selection.$from.parent.textContent).toBe("Three")
   })
 
   it.each([
     ["database_embed", { source: "Projects" }],
-    ["file_embed", { src: "spec.pdf" }],
     ["horizontal_rule", null]
   ])(
-    "fully removes a selected blank paragraph after %s and deactivates the editor",
+    "fully removes a selected blank paragraph after %s and keeps a trailing structural caret",
     (typeName, attrs) => {
       const boundary = schema.nodes[typeName]!.create(attrs)
       const empty = schema.nodes.paragraph!.create()
@@ -329,17 +352,117 @@ describe("selected-block handle menu trigger", () => {
 
       const transaction = createDeleteSelectedBlocksTransaction(state)
       expect(transaction).not.toBeNull()
-      expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+      expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
       state = state.apply(transaction!)
 
       expect(state.doc.childCount).toBe(1)
       expect(state.doc.firstChild).toBe(boundary)
       expect(selectedBlocks(state)).toEqual([])
-      expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
-      expect(state.selection).toBeInstanceOf(NodeSelection)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+      expect(state.selection).toBeInstanceOf(StructuralCaretSelection)
+      expect((state.selection as StructuralCaretSelection).side).toBe("after")
+      expect(state.selection.from).toBe(boundary.nodeSize)
+    }
+  )
+
+  it("fully removes a selected blank paragraph after a file embed and deactivates the editor", () => {
+    const boundary = schema.nodes.file_embed!.create({ src: "spec.pdf" })
+    const empty = schema.nodes.paragraph!.create()
+    const doc = schema.nodes.doc!.create(null, [boundary, empty])
+    const emptyPos = boundary.nodeSize
+    let state = EditorState.create({
+      doc,
+      selection: NodeSelection.create(doc, emptyPos),
+      plugins: [inactiveBlockSelectionPlugin(), multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [emptyPos],
+      anchorBlock: emptyPos
+    }))
+
+    const transaction = createDeleteSelectedBlocksTransaction(state)
+    expect(transaction).not.toBeNull()
+    expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+    state = state.apply(transaction!)
+
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild).toBe(boundary)
+    expect(selectedBlocks(state)).toEqual([])
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+    expect(state.selection).toBeInstanceOf(NodeSelection)
+  })
+
+  it.each([
+    ["database_embed", { source: "Projects" }],
+    ["horizontal_rule", null]
+  ])(
+    "places a leading structural caret when deletion reveals a following %s",
+    (typeName, attrs) => {
+      const removed = schema.nodes.paragraph!.create(null, schema.text("Remove"))
+      const caretlessNext = schema.nodes[typeName]!.create(attrs)
+      const after = schema.nodes.paragraph!.create(null, schema.text("After"))
+      const doc = schema.nodes.doc!.create(null, [removed, caretlessNext, after])
+      let state = EditorState.create({
+        doc,
+        selection: NodeSelection.create(doc, 0),
+        plugins: [
+          inactiveBlockSelectionPlugin(),
+          multiBlockSelectionPlugin(schema)
+        ]
+      })
+      state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+        selectedBlocks: [0],
+        anchorBlock: 0
+      }))
+
+      const transaction = createDeleteSelectedBlocksTransaction(state)
+      expect(transaction).not.toBeNull()
+      expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
+      state = state.apply(transaction!)
+
+      expect(state.doc.childCount).toBe(2)
+      expect(state.doc.firstChild).toBe(caretlessNext)
+      expect(selectedBlocks(state)).toEqual([])
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+      expect(state.selection).toBeInstanceOf(StructuralCaretSelection)
+      expect((state.selection as StructuralCaretSelection).side).toBe("before")
       expect(state.selection.from).toBe(0)
     }
   )
+
+  it("places the text caret in Mermaid when deletion reveals it", () => {
+    const removed = schema.nodes.paragraph!.create(null, schema.text("Remove"))
+    const mermaid = schema.nodes.mermaid!.create(
+      { mode: "split" },
+      schema.text("graph TD; A-->B")
+    )
+    const after = schema.nodes.paragraph!.create(null, schema.text("After"))
+    const doc = schema.nodes.doc!.create(null, [removed, mermaid, after])
+    let state = EditorState.create({
+      doc,
+      selection: NodeSelection.create(doc, 0),
+      plugins: [
+        inactiveBlockSelectionPlugin(),
+        multiBlockSelectionPlugin(schema)
+      ]
+    })
+    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [0],
+      anchorBlock: 0
+    }))
+
+    const transaction = createDeleteSelectedBlocksTransaction(state)
+    expect(transaction).not.toBeNull()
+    expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
+    state = state.apply(transaction!)
+
+    expect(state.doc.firstChild).toBe(mermaid)
+    expect(selectedBlocks(state)).toEqual([])
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+    expect(state.selection).toBeInstanceOf(TextSelection)
+    expect(state.selection.$from.parent).toBe(mermaid)
+    expect(state.selection.$from.parentOffset).toBe(0)
+  })
 
   it("focuses search immediately for keyboard selection but preserves handle drag timing", () => {
     expect(shouldFocusBlockMenuSearchSynchronously(true, false)).toBe(true)

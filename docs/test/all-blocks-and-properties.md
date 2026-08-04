@@ -10,7 +10,7 @@ This page exercises every property shape and content-block syntax currently expo
 
 ## Inline content
 
-An internal document link points to the [inner](test%20folder/inner/inner.index.md) folder
+An internal document link points to the [inner](test/inner/inner.index.md) folder
 
 This line ends with a hard break.  
 This text remains in the same paragraph after the break.
@@ -105,6 +105,9 @@ sort: updated desc
 ## Image block
 
 
+---
+
+
 ## File block
 
 
@@ -126,3 +129,6 @@ Content after the divider verifies that normal editing continues after an atomic
 ```db
 source: Tasks
 ```
+
+
+---

@@ -106,7 +106,8 @@ import {
   snapshotMatchesWorkspace,
   writeStartupPageMode,
   writeWorkspaceStartupSnapshot,
-  type StartupPageMode
+  type StartupPageMode,
+  type WorkspaceStartupSnapshot
 } from "./lib/workspaceStartup";
 
 const RumiBlockEditor = lazy(async () => {
@@ -172,9 +173,26 @@ export function App(): ReactElement {
   const initialStartupPageMode = startupSnapshot
     ? readStartupPageMode(window.localStorage, startupSnapshot.workspace.rootPath)
     : "last-visited";
+  const startupSnapshotPathname = startupSnapshot
+    ? workspaceUrlForNode(
+        {
+          path: startupSnapshot.selection.nodePath,
+          kind: startupSnapshot.selection.kind
+        },
+        startupSnapshot.tree
+      )
+    : "";
   const hydrateStartupPage = Boolean(
     startupSnapshot
-    && canHydrateStartupPage(window.location.pathname, initialStartupPageMode)
+    && canHydrateStartupPage(
+      window.location.pathname,
+      initialStartupPageMode,
+      startupSnapshotPathname,
+      startupSnapshot.selection.kind === "workspace"
+        && startupSnapshot.selection.nodePath === ""
+        && startupSnapshot.tree.path === ""
+        && startupSnapshot.tree.companionPath === startupSnapshot.selection.openPath
+    )
   );
   const setMessage = useCallback((message: string) => {
     if (message) toast.error(message);
@@ -251,6 +269,7 @@ export function App(): ReactElement {
   const restoredWorkspaceRef = useRef<string | null>(null);
   const hydratedWorkspaceRootRef = useRef(startupSnapshot?.workspace.rootPath ?? null);
   const startupSnapshotPendingValidationRef = useRef(Boolean(startupSnapshot));
+  const startupSnapshotRef = useRef(startupSnapshot);
   const pendingScrollRestoreRef = useRef<number | null>(0);
   const historyEntryRevisionRef = useRef(0);
   const sessionScrollPositionsRef = useRef<Map<string, number>>(new Map());
@@ -313,6 +332,7 @@ export function App(): ReactElement {
         && hydratedWorkspaceRoot !== workspace.rootPath
       ) {
         clearWorkspaceStartupSnapshot(window.localStorage);
+        startupSnapshotRef.current = null;
         openRequestIdRef.current += 1;
         restoredWorkspaceRef.current = null;
         selectionRef.current = null;
@@ -336,6 +356,7 @@ export function App(): ReactElement {
         if (cachedSelectionIsStale && !hasUnsavedPageChanges(saveStateRef.current)) {
           clearLastOpenedPage(window.localStorage, workspace.rootPath);
           clearWorkspaceStartupSnapshot(window.localStorage);
+          startupSnapshotRef.current = null;
           openRequestIdRef.current += 1;
           restoredWorkspaceRef.current = null;
           selectionRef.current = null;
@@ -1057,6 +1078,7 @@ export function App(): ReactElement {
     setActiveTrashPage(null);
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
     clearWorkspaceStartupSnapshot(window.localStorage);
+    startupSnapshotRef.current = null;
   }, [openNode, trashOpen, tree, workspaceRootPath]);
 
   const openDocumentLink = useCallback((
@@ -1364,31 +1386,91 @@ export function App(): ReactElement {
   }, [page, selection, workspaceRootPath]);
 
   useEffect(() => {
-    if (
-      !workspaceRootPath
-      || !tree
-      || !page
-      || !selection
-      || !selection.openPath
-      || selection.openPath !== page.path
-      || (saveState !== "idle" && saveState !== "saved")
-    ) {
+    if (!workspaceRootPath || !tree) return;
+
+    const persistSnapshot = (
+      snapshotSelection: SidebarSelection,
+      snapshotPage: PageDocument
+    ): void => {
+      if (!snapshotSelection.openPath || snapshotSelection.openPath !== snapshotPage.path) return;
+      const nextSnapshot: WorkspaceStartupSnapshot = {
+        schemaVersion: 1,
+        cachedAt: Date.now(),
+        workspace: { rootPath: workspaceRootPath, name: workspaceName },
+        tree,
+        selection: {
+          nodePath: snapshotSelection.nodePath,
+          openPath: snapshotSelection.openPath,
+          kind: snapshotSelection.kind
+        },
+        page: snapshotPage
+      };
+      startupSnapshotRef.current = writeWorkspaceStartupSnapshot(
+        window.localStorage,
+        nextSnapshot
+      )
+        ? nextSnapshot
+        : null;
+    };
+
+    const currentPageIsStable = Boolean(
+      page
+      && selection?.openPath
+      && selection.openPath === page.path
+      && (saveState === "idle" || saveState === "saved")
+    );
+
+    if (startupPageMode === "last-visited") {
+      if (currentPageIsStable && page && selection) persistSnapshot(selection, page);
       return;
     }
 
-    writeWorkspaceStartupSnapshot(window.localStorage, {
-      schemaVersion: 1,
-      cachedAt: Date.now(),
-      workspace: { rootPath: workspaceRootPath, name: workspaceName },
-      tree,
-      selection: {
-        nodePath: selection.nodePath,
-        openPath: selection.openPath,
-        kind: selection.kind
+    const homeOpenPath = openPathForNode(tree);
+    if (!homeOpenPath) return;
+    const homeSelection: SidebarSelection = {
+      nodePath: tree.path,
+      openPath: homeOpenPath,
+      kind: "workspace"
+    };
+
+    if (page?.path === homeOpenPath && selection?.nodePath === tree.path) {
+      if (currentPageIsStable) persistSnapshot(homeSelection, page);
+      return;
+    }
+
+    const cachedSnapshot = startupSnapshotRef.current;
+    if (
+      cachedSnapshot
+      && snapshotMatchesWorkspace(cachedSnapshot, workspaceRootPath)
+      && cachedSnapshot.selection.kind === "workspace"
+      && cachedSnapshot.selection.nodePath === tree.path
+      && cachedSnapshot.selection.openPath === homeOpenPath
+      && cachedSnapshot.page.path === homeOpenPath
+    ) {
+      persistSnapshot(homeSelection, cachedSnapshot.page);
+      return;
+    }
+
+    let active = true;
+    void loadPage(homeOpenPath).then(
+      (homePage) => {
+        if (active) persistSnapshot(homeSelection, homePage);
       },
-      page
-    });
-  }, [page, saveState, selection, tree, workspaceName, workspaceRootPath]);
+      () => undefined
+    );
+    return () => {
+      active = false;
+    };
+  }, [
+    loadPage,
+    page,
+    saveState,
+    selection,
+    startupPageMode,
+    tree,
+    workspaceName,
+    workspaceRootPath
+  ]);
 
   const requestPageTitleSelection = useCallback((path: string) => {
     pageTitleEditRequestIdRef.current += 1;

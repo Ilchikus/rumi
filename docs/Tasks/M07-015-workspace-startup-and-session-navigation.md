@@ -31,6 +31,9 @@ the position the user left during the current browser session.
   serializing requests so a slower response cannot overwrite a newer choice.
 - Persist a bounded, versioned startup snapshot containing workspace identity, tree, last selection,
   and the last successfully loaded or saved page.
+- Keep the cached page aligned with the configured cold-start target: the workspace root for Home,
+  or the latest visited page for Last visited. Reuse that cached page when reopening its matching
+  explicit URL as well as when entering through `/`.
 - Hydrate the authenticated application from the startup snapshot, then revalidate workspace, tree,
   settings, trash, and page data without allowing stale cache data to overwrite a newer page or an
   unsaved draft.
@@ -76,6 +79,8 @@ seed the first render and first page request, not create a second long-lived cli
 - Ordinary in-app navigation back to a previously visited page restores that page's latest position
   from memory during the same session.
 - Cached tree/page content appears immediately when valid and reconciles to fresh server data.
+- Home and the matching last-visited URL both hydrate their configured cached page after
+  authentication instead of waiting for the page request.
 - Property creation is quiet until the properties area is active without becoming inaccessible.
 - Focused tests, full checks, package release checks, and manual browser QA pass.
 
@@ -111,3 +116,15 @@ Follow-up verified on 2026-08-04:
 
 User QA remains open. Per the user's release gate, the follow-up pull request must remain unmerged
 until explicit user approval after testing.
+
+Cold-start cache follow-up verified on 2026-08-04:
+
+- focused startup persistence tests passed with 6 tests
+- `corepack pnpm check` passed with 65 test files and 485 tests, typecheck, the production web
+  build, and the bundled server build
+- `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.14`
+- with authentication delayed by 500 ms and workspace/page responses delayed by 1500 ms, a cold
+  matching explicit page rendered from cache at about 1016 ms instead of about 2522 ms
+- after choosing Home and navigating elsewhere, the snapshot kept the workspace root; a cold `/`
+  rendered the cached sidebar and Home page at about 1000 ms while the API response remained held
+- browser QA used a disposable Chrome profile and made no persistent workspace or sandbox changes

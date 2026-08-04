@@ -51,18 +51,27 @@ describe("workspace startup persistence", () => {
     expect(readStartupPageMode(storage, "/workspace/other")).toBe("last-visited");
   });
 
-  it("hydrates cached page content only for a last-visited cold start at root", () => {
-    expect(canHydrateStartupPage("/", "last-visited")).toBe(true);
-    expect(canHydrateStartupPage("/", "home")).toBe(false);
-    expect(canHydrateStartupPage("/projects/roadmap", "last-visited")).toBe(false);
-    expect(canHydrateStartupPage("/settings", "last-visited")).toBe(false);
+  it("hydrates the configured cached page at root and its matching explicit URL", () => {
+    expect(canHydrateStartupPage("/", "last-visited", "/projects/roadmap", false)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", "/", true)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", "/projects/roadmap", false)).toBe(false);
+    expect(
+      canHydrateStartupPage("/projects/roadmap", "home", "/projects/roadmap", false)
+    ).toBe(true);
+    expect(
+      canHydrateStartupPage("/projects/other", "last-visited", "/projects/roadmap", false)
+    ).toBe(false);
+    expect(canHydrateStartupPage("/settings", "last-visited", "/projects/roadmap", false)).toBe(false);
   });
 
   it("hydrates behind the authenticated App boundary and revalidates server state", () => {
     expect(appSource).toContain("readWorkspaceStartupSnapshot(window.localStorage)");
+    expect(appSource).toContain("startupSnapshotRef");
+    expect(appSource).toContain('startupPageMode === "last-visited"');
+    expect(appSource).toContain("loadPage(homeOpenPath)");
     expect(appSource).toContain("Promise.all([api.getWorkspace(), api.getTree()])");
     expect(appSource).toContain("snapshotMatchesWorkspace");
-    expect(appSource).toContain('saveState !== "idle" && saveState !== "saved"');
+    expect(appSource).toContain('saveState === "idle" || saveState === "saved"');
   });
 });
 

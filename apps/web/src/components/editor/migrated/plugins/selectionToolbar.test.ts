@@ -34,6 +34,14 @@ describe("selection toolbar mode", () => {
       linkEditorRequestRevision: 0
     })
     state = state.apply(
+      state.tr.setMeta(selectionToolbarPluginKey, { mode: "bottom" })
+    )
+    expect(selectionToolbarPluginKey.getState(state)).toEqual({
+      mode: "bottom",
+      allowedUploadFileTypes: [],
+      linkEditorRequestRevision: 0
+    })
+    state = state.apply(
       state.tr.setMeta(selectionToolbarPluginKey, { mode: "none" })
     )
     expect(selectionToolbarPluginKey.getState(state)).toEqual({
@@ -43,7 +51,7 @@ describe("selection toolbar mode", () => {
     })
   })
 
-  it("renders expanded top controls above content and removes hidden mode from layout", () => {
+  it("renders expanded editor controls at either edge and removes hidden mode from layout", () => {
     const host = document.createElement("div")
     document.body.appendChild(host)
     const state = EditorState.create({
@@ -63,28 +71,28 @@ describe("selection toolbar mode", () => {
     expect(toolbar?.querySelector(".selection-toolbar-inline-group")).not.toBeNull()
     expect(toolbar?.querySelector(".selection-toolbar-delete-group")).not.toBeNull()
     expect(
-      Array.from(toolbar?.querySelectorAll<HTMLElement>("[data-top-action]") ?? [])
+      Array.from(toolbar?.querySelectorAll<HTMLElement>("[data-editor-toolbar-action]") ?? [])
         .slice(0, 4)
-        .map((button) => button.dataset.topAction)
+        .map((button) => button.dataset.editorToolbarAction)
     ).toEqual(["add-before", "add-after", "move-up", "move-down"])
-    expect(toolbar?.querySelector('[data-top-action="add-before"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="add-after"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="move-up"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="move-down"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="undo"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="redo"]')).not.toBeNull()
-    expect(toolbar?.querySelector('[data-top-action="delete-block"]')).not.toBeNull()
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="add-before"]')?.title)
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="add-before"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="add-after"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="move-up"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="move-down"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="undo"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="redo"]')).not.toBeNull()
+    expect(toolbar?.querySelector('[data-editor-toolbar-action="delete-block"]')).not.toBeNull()
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="add-before"]')?.title)
       .toBe("Add before (⇧⌘↵)")
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="add-after"]')?.title)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="add-after"]')?.title)
       .toBe("Add after (⌘↵)")
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="move-up"]')?.title)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="move-up"]')?.title)
       .toBe("Move up (⌃⇧↑)")
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="move-down"]')?.title)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="move-down"]')?.title)
       .toBe("Move down (⌃⇧↓)")
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="undo"]')?.title)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="undo"]')?.title)
       .toBe("Undo (⌘Z)")
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="redo"]')?.title)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="redo"]')?.title)
       .toBe("Redo (⇧⌘Z)")
     expect(toolbar?.querySelector<HTMLButtonElement>(".link-btn")?.title)
       .toBe("Link (⌘⇧K)")
@@ -100,8 +108,15 @@ describe("selection toolbar mode", () => {
       toolbar?.querySelectorAll(".selection-toolbar-group").item(4)
         .classList.contains("selection-toolbar-delete-group")
     ).toBe(true)
-    expect(toolbar?.querySelector<HTMLButtonElement>('[data-top-action="upload-media"]')?.disabled)
+    expect(toolbar?.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="upload-media"]')?.disabled)
       .toBe(false)
+
+    setSelectionToolbarPreferences(view, {
+      mode: "bottom",
+      allowedUploadFileTypes: [".png", ".pdf"]
+    })
+    expect(toolbar?.dataset.mode).toBe("bottom")
+    expect(toolbar?.style.display).toBe("flex")
 
     setSelectionToolbarPreferences(view, {
       mode: "none",
@@ -139,11 +154,11 @@ describe("selection toolbar mode", () => {
     expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
       .not.toBeNull()
 
-    toolbar.querySelector<HTMLButtonElement>('[data-top-action="undo"]')!.click()
+    toolbar.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="undo"]')!.click()
     expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
       .toBeUndefined()
 
-    toolbar.querySelector<HTMLButtonElement>('[data-top-action="redo"]')!.click()
+    toolbar.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="redo"]')!.click()
     expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
       .toBeDefined()
 
@@ -161,12 +176,12 @@ describe("selection toolbar mode", () => {
     expect(view.state.doc.firstChild?.type).toBe(schema.nodes.heading)
     expect(view.state.doc.firstChild?.attrs.level).toBe(1)
 
-    toolbar.querySelector<HTMLButtonElement>('[data-top-action="add-after"]')!.click()
+    toolbar.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="add-after"]')!.click()
     expect(view.state.doc.childCount).toBe(3)
     expect(view.state.doc.child(1).type).toBe(schema.nodes.paragraph)
     expect(view.state.doc.child(1).textContent).toBe("")
 
-    toolbar.querySelector<HTMLButtonElement>('[data-top-action="move-down"]')!.click()
+    toolbar.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="move-down"]')!.click()
     expect(view.state.doc.child(1).textContent).toBe("Two")
     expect(view.state.doc.child(2).textContent).toBe("")
 
@@ -174,7 +189,7 @@ describe("selection toolbar mode", () => {
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, secondBlockPos + 1))
     )
-    toolbar.querySelector<HTMLButtonElement>('[data-top-action="delete-block"]')!.click()
+    toolbar.querySelector<HTMLButtonElement>('[data-editor-toolbar-action="delete-block"]')!.click()
     expect(view.state.doc.childCount).toBe(2)
     expect(view.state.doc.child(1).textContent).toBe("")
 

@@ -818,10 +818,9 @@
   position: fixed;
 }
 
-.selection-toolbar[data-mode="top"] {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) {
   position: fixed;
   left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom));
   width: min(900px, calc(100vw - 32px));
   min-height: 42px;
   box-sizing: border-box;
@@ -839,17 +838,25 @@
   transform: translateX(-50%);
 }
 
+.selection-toolbar[data-mode="top"] {
+  top: calc(var(--rumi-editor-toolbar-top, 20px) + env(safe-area-inset-top));
+}
+
+.selection-toolbar[data-mode="bottom"] {
+  bottom: calc(20px + env(safe-area-inset-bottom));
+}
+
 @media (max-width: 900px) {
-  .selection-toolbar[data-mode="top"] {
+  .selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) {
     flex-wrap: wrap;
   }
 }
 
-.selection-toolbar-top-controls {
+.selection-toolbar-editor-controls {
   display: none;
 }
 
-.selection-toolbar[data-mode="top"] .selection-toolbar-top-controls {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-editor-controls {
   display: contents;
 }
 
@@ -873,22 +880,22 @@
   display: none;
 }
 
-.selection-toolbar[data-mode="top"] .selection-toolbar-inline-group,
-.selection-toolbar[data-mode="top"] .selection-toolbar-delete-group {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-inline-group,
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-delete-group {
   display: flex;
   flex: 0 0 auto;
 }
 
-.selection-toolbar[data-mode="top"] .selection-toolbar-history-group,
-.selection-toolbar[data-mode="top"] .selection-toolbar-block-group,
-.selection-toolbar[data-mode="top"] .selection-toolbar-inline-group,
-.selection-toolbar[data-mode="top"] .selection-toolbar-delete-group {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-history-group,
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-block-group,
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-inline-group,
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .selection-toolbar-delete-group {
   margin-left: 5px;
   padding-left: 6px;
   border-left: 1px solid hsl(var(--border));
 }
 
-.top-toolbar-button {
+.editor-toolbar-button {
   display: flex;
   width: 26px;
   height: 26px;
@@ -906,12 +913,12 @@
   transition: background-color 100ms ease, color 100ms ease, opacity 100ms ease;
 }
 
-.top-toolbar-button.active {
+.editor-toolbar-button.active {
   background: hsl(var(--accent));
   color: hsl(var(--accent-foreground));
 }
 
-.top-toolbar-button:disabled {
+.editor-toolbar-button:disabled {
   cursor: not-allowed;
   opacity: 0.35;
 }
@@ -924,34 +931,41 @@
   background: hsl(var(--border));
 }
 
-.selection-toolbar[data-mode="top"] .inline-toolbar-separator {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .inline-toolbar-separator {
   display: none;
 }
 
 .selection-toolbar[data-mode="top"] .link-input-popup {
+  top: 100% !important;
+  bottom: auto !important;
+  margin-top: 8px !important;
+  margin-bottom: 0;
+}
+
+.selection-toolbar[data-mode="bottom"] .link-input-popup {
   top: auto !important;
   bottom: 100%;
   margin-top: 0 !important;
   margin-bottom: 8px;
 }
 
-.selection-toolbar[data-mode="top"] .toolbar-button {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .toolbar-button {
   width: 26px !important;
   height: 26px !important;
   flex: 0 0 auto;
   border-radius: 5px !important;
 }
 
-.selection-toolbar[data-mode="top"] .toolbar-button:hover:not(:disabled) {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .toolbar-button:hover:not(:disabled) {
   background-color: hsl(var(--accent)) !important;
 }
 
-.selection-toolbar[data-mode="top"] .top-toolbar-delete-button:hover:not(:disabled) {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .editor-toolbar-delete-button:hover:not(:disabled) {
   background-color: #fff1f2 !important;
   color: #e11d48;
 }
 
-.selection-toolbar[data-mode="top"] .toolbar-button:focus-visible {
+.selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .toolbar-button:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 1px;
 }

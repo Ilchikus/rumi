@@ -223,38 +223,52 @@ describe("editor layout contracts", () => {
     expect(migratedEditor).toContain("setEmojiSuggestionsEnabled(view, emojiSuggestions)");
   });
 
-  it("supports floating, expanded top, and hidden inline toolbar modes", () => {
+  it("supports floating, expanded top and bottom, and hidden editor toolbar modes", () => {
     const floatingRule = cssRule(
       editorStyles,
       '.selection-toolbar[data-mode="floating"]'
+    );
+    const expandedRule = cssRule(
+      editorStyles,
+      '.selection-toolbar:is([data-mode="top"], [data-mode="bottom"])'
     );
     const topRule = cssRule(
       editorStyles,
       '.selection-toolbar[data-mode="top"]'
     );
+    const bottomRule = cssRule(
+      editorStyles,
+      '.selection-toolbar[data-mode="bottom"]'
+    );
 
     expect(floatingRule).toContain("position: fixed;");
-    expect(topRule).toContain("position: fixed;");
-    expect(topRule).toContain("bottom: calc(20px + env(safe-area-inset-bottom));");
-    expect(topRule).toContain("width: min(900px, calc(100vw - 32px));");
-    expect(topRule).toContain("transform: translateX(-50%);");
-    expect(topRule).toContain("justify-content: space-between;");
-    expect(topRule).toContain("flex-wrap: nowrap;");
-    expect(topRule).toContain("overflow: visible;");
-    expect(topRule).toContain("border: 1px solid hsl(var(--border));");
-    expect(topRule).toContain("border-radius: 8px;");
-    expect(topRule).toContain("box-shadow:");
+    expect(expandedRule).toContain("position: fixed;");
+    expect(expandedRule).toContain("width: min(900px, calc(100vw - 32px));");
+    expect(expandedRule).toContain("transform: translateX(-50%);");
+    expect(expandedRule).toContain("justify-content: space-between;");
+    expect(expandedRule).toContain("flex-wrap: nowrap;");
+    expect(expandedRule).toContain("overflow: visible;");
+    expect(expandedRule).toContain("border: 1px solid hsl(var(--border));");
+    expect(expandedRule).toContain("border-radius: 8px;");
+    expect(expandedRule).toContain("box-shadow:");
+    expect(topRule).toContain(
+      "top: calc(var(--rumi-editor-toolbar-top, 20px) + env(safe-area-inset-top));"
+    );
+    expect(topRule).not.toContain("bottom:");
+    expect(bottomRule).toContain("bottom: calc(20px + env(safe-area-inset-bottom));");
+    expect(bottomRule).not.toContain("top:");
     expect(editorStyles).toContain(".selection-toolbar-block-group,");
     expect(editorStyles).toContain(".selection-toolbar-inline-group {");
     expect(editorStyles).toContain(".selection-toolbar-history-group,");
     expect(editorStyles).toContain(".selection-toolbar-delete-group {");
-    expect(editorStyles).toContain(".top-toolbar-delete-button:hover:not(:disabled)");
+    expect(editorStyles).toContain(".editor-toolbar-delete-button:hover:not(:disabled)");
     expect(editorStyles).toContain("color: #e11d48;");
     expect(editorStyles).toContain("border-left: 1px solid hsl(var(--border));");
     expect(selectionToolbar).toContain('mode === "none"');
-    expect(selectionToolbar).toContain('mode === "top"');
+    expect(selectionToolbar).toContain("isExpandedEditorToolbarMode(mode)");
+    expect(selectionToolbar).toContain('closest<HTMLElement>("[data-rumi-editor-canvas]")');
     expect(selectionToolbar).toContain("selectedBlockInlineRanges(state)");
-    expect(selectionToolbar).toContain("TOP_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach");
+    expect(selectionToolbar).toContain("EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach");
     expect(selectionToolbar).toContain('["mermaid", "table", "horizontal_rule"]');
     expect(selectionToolbar).toContain('"Upload media"');
     expect(selectionToolbar).toContain('"Delete block"');

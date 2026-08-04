@@ -1,7 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
-import type { InlineToolbarMode } from "@rumi/contracts"
+import type { EditorToolbarMode } from "@rumi/contracts"
 import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh"
 import { cn } from "../../../lib/utils"
 import type { Node as ProseMirrorNode } from "prosemirror-model"
@@ -80,7 +80,7 @@ export interface RumiBlockEditorProps {
   highlightMisspellings?: boolean
   inlineReplacements?: boolean
   emojiSuggestions?: boolean
-  inlineToolbar?: InlineToolbarMode
+  editorToolbar?: EditorToolbarMode
   allowedUploadFileTypes?: readonly string[]
   readOnly?: boolean
   onDirty: () => void
@@ -101,7 +101,7 @@ function ProseMirrorEditor(
     highlightMisspellings = false,
     inlineReplacements = true,
     emojiSuggestions = true,
-    inlineToolbar = "floating",
+    editorToolbar = "floating",
     allowedUploadFileTypes = [],
     readOnly = false,
     onDirty
@@ -184,7 +184,7 @@ function ProseMirrorEditor(
         taskListPlugin(schema),
         blockDragHandlePlugin(schema),
         slashCommandsPlugin(schema),
-        selectionToolbarPlugin(schema, inlineToolbar, allowedUploadFileTypes),
+        selectionToolbarPlugin(schema, editorToolbar, allowedUploadFileTypes),
         linkPlugin(schema),
         atMentionPlugin(schema, getFiles),
         columnResizing(),
@@ -269,11 +269,11 @@ function ProseMirrorEditor(
     const view = viewRef.current
     if (view) {
       setSelectionToolbarPreferences(view, {
-        mode: inlineToolbar,
+        mode: editorToolbar,
         allowedUploadFileTypes
       })
     }
-  }, [allowedUploadFileTypes, inlineToolbar])
+  }, [allowedUploadFileTypes, editorToolbar])
 
   useImperativeHandle(ref, () => ({
     focus() {

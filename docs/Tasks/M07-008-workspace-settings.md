@@ -60,7 +60,8 @@ M07-009 without changing the settings contract. Asset request bodies stream to h
 storage so blank/unlimited does not imply unbounded server memory buffering; complete, signature-
 verified files are then published atomically. Inline replacement and emoji settings were added to
 the same normalized editor settings domain and update an open editor without remounting it. The
-floating/top/none inline-toolbar preference later joined that domain in M07-013.
+floating/top/bottom/none editor-toolbar preference later joined that domain in M07-013. Its
+compatible configuration key remains `editor.inlineToolbar`.
 
 ## Done When
 

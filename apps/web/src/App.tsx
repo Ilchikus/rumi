@@ -21,7 +21,7 @@ import {
 } from "@rumi/markdown";
 import { cleanWorkspaceName } from "@rumi/workspace-format";
 import type {
-  InlineToolbarMode,
+  EditorToolbarMode,
   DatabasePropertyOptionColor,
   DatabasePropertyType,
   PageDocument,
@@ -233,7 +233,7 @@ export function App(): ReactElement {
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
-  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>("floating");
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(initialStartupPageMode);
   const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>([]);
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
@@ -400,7 +400,7 @@ export function App(): ReactElement {
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
       setInlineReplacements(result.settings.editor.inlineReplacements);
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-      setInlineToolbar(result.settings.editor.inlineToolbar);
+      setEditorToolbar(result.settings.editor.inlineToolbar);
       setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
       setSettingsLoadState("idle");
     } catch (error) {
@@ -1756,7 +1756,7 @@ export function App(): ReactElement {
         setHighlightMisspellings(result.settings.editor.highlightMisspellings);
         setInlineReplacements(result.settings.editor.inlineReplacements);
         setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-        setInlineToolbar(result.settings.editor.inlineToolbar);
+        setEditorToolbar(result.settings.editor.inlineToolbar);
         setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
         writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
         setStartupPageMode(nextStartupPageMode);
@@ -2846,7 +2846,7 @@ export function App(): ReactElement {
                         highlightMisspellings={highlightMisspellings}
                         inlineReplacements={inlineReplacements}
                         emojiSuggestions={emojiSuggestions}
-                        inlineToolbar={inlineToolbar}
+                        editorToolbar={editorToolbar}
                         allowedUploadFileTypes={allowedUploadFileTypes}
                         readOnly
                         onDirty={() => undefined}
@@ -2936,7 +2936,7 @@ export function App(): ReactElement {
                     highlightMisspellings={highlightMisspellings}
                     inlineReplacements={inlineReplacements}
                     emojiSuggestions={emojiSuggestions}
-                    inlineToolbar={inlineToolbar}
+                    editorToolbar={editorToolbar}
                     allowedUploadFileTypes={allowedUploadFileTypes}
                     onDirty={() => markPageDirty("editor-autosave")}
                   />

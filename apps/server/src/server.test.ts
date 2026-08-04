@@ -175,7 +175,7 @@ describe("Rumi server API", () => {
           highlightMisspellings: true,
           inlineReplacements: false,
           emojiSuggestions: false,
-          inlineToolbar: "top"
+          inlineToolbar: "bottom"
         }
       }
     });
@@ -230,7 +230,7 @@ describe("Rumi server API", () => {
           highlightMisspellings: true,
           inlineReplacements: false,
           emojiSuggestions: false,
-          inlineToolbar: "top"
+          inlineToolbar: "bottom"
         }
       }
     });

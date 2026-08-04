@@ -8,7 +8,7 @@ import {
 } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { Schema, MarkType } from "prosemirror-model"
-import type { InlineToolbarMode } from "@rumi/contracts"
+import type { EditorToolbarMode } from "@rumi/contracts"
 import {
   redoEditorChange,
   undoEditorChange
@@ -34,7 +34,7 @@ import { moveBlocks } from "./multiBlockSelection"
 export const selectionToolbarPluginKey = new PluginKey("selectionToolbar")
 
 interface SelectionToolbarPreferences {
-  mode: InlineToolbarMode
+  mode: EditorToolbarMode
   allowedUploadFileTypes: readonly string[]
 }
 
@@ -51,7 +51,7 @@ const UNDO_SVG = phosphorSvg("M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16
 const REDO_SVG = phosphorSvg("M170.34,130.34,204.69,96H88a48,48,0,0,0,0,96h88a8,8,0,0,1,0,16H88A64,64,0,0,1,88,80H204.69L170.34,45.66a8,8,0,0,1,11.32-11.32l48,48a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32-11.32Z")
 const TRASH_SVG = phosphorSvg("M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z")
 
-const TOP_TOOLBAR_BLOCK_TYPE_OPTIONS = BLOCK_TYPE_OPTIONS.filter(
+const EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS = BLOCK_TYPE_OPTIONS.filter(
   ({ type }) => !["mermaid", "table", "horizontal_rule"].includes(type)
 )
 
@@ -98,7 +98,7 @@ function toggleToolbarMark(view: EditorView, markType: MarkType) {
 
 export function selectionToolbarPlugin(
   schema: Schema,
-  initialMode: InlineToolbarMode = "floating",
+  initialMode: EditorToolbarMode = "floating",
   initialAllowedUploadFileTypes: readonly string[] = []
 ) {
   const buttonDefs = [
@@ -134,27 +134,27 @@ export function selectionToolbarPlugin(
       container.setAttribute("aria-label", "Editor formatting")
       document.body.appendChild(container)
 
-      const topControls = document.createElement("div")
-      topControls.className = "selection-toolbar-top-controls"
-      container.appendChild(topControls)
+      const editorControls = document.createElement("div")
+      editorControls.className = "selection-toolbar-editor-controls"
+      container.appendChild(editorControls)
 
       const arrowGroup = createToolbarGroup(
         "selection-toolbar-arrow-group",
         "Block placement and movement"
       )
-      topControls.appendChild(arrowGroup)
+      editorControls.appendChild(arrowGroup)
 
       const historyGroup = createToolbarGroup(
         "selection-toolbar-history-group",
         "History"
       )
-      topControls.appendChild(historyGroup)
+      editorControls.appendChild(historyGroup)
 
       const blockGroup = createToolbarGroup(
         "selection-toolbar-block-group",
         "Block type and media"
       )
-      topControls.appendChild(blockGroup)
+      editorControls.appendChild(blockGroup)
 
       const inlineGroup = createToolbarGroup(
         "selection-toolbar-inline-group",
@@ -168,56 +168,56 @@ export function selectionToolbarPlugin(
       )
       container.appendChild(deleteGroup)
 
-      const addBeforeButton = createTopToolbarButton(
+      const addBeforeButton = createEditorToolbarButton(
         "Add before (⇧⌘↵)",
         ARROW_LINE_UP_SVG,
         () => insertAdjacentParagraph(editorView, "before")
       )
-      addBeforeButton.dataset.topAction = "add-before"
+      addBeforeButton.dataset.editorToolbarAction = "add-before"
       arrowGroup.appendChild(addBeforeButton)
 
-      const addAfterButton = createTopToolbarButton(
+      const addAfterButton = createEditorToolbarButton(
         "Add after (⌘↵)",
         ARROW_LINE_DOWN_SVG,
         () => insertAdjacentParagraph(editorView, "after")
       )
-      addAfterButton.dataset.topAction = "add-after"
+      addAfterButton.dataset.editorToolbarAction = "add-after"
       arrowGroup.appendChild(addAfterButton)
 
-      const moveUpButton = createTopToolbarButton(
+      const moveUpButton = createEditorToolbarButton(
         "Move up (⌃⇧↑)",
         ARROW_UP_SVG,
         () => moveToolbarBlocks(editorView, "up")
       )
-      moveUpButton.dataset.topAction = "move-up"
+      moveUpButton.dataset.editorToolbarAction = "move-up"
       arrowGroup.appendChild(moveUpButton)
 
-      const moveDownButton = createTopToolbarButton(
+      const moveDownButton = createEditorToolbarButton(
         "Move down (⌃⇧↓)",
         ARROW_DOWN_SVG,
         () => moveToolbarBlocks(editorView, "down")
       )
-      moveDownButton.dataset.topAction = "move-down"
+      moveDownButton.dataset.editorToolbarAction = "move-down"
       arrowGroup.appendChild(moveDownButton)
 
-      const undoButton = createTopToolbarButton(
+      const undoButton = createEditorToolbarButton(
         "Undo (⌘Z)",
         UNDO_SVG,
         () => runHistoryCommand(editorView, undoEditorChange)
       )
-      undoButton.dataset.topAction = "undo"
+      undoButton.dataset.editorToolbarAction = "undo"
       historyGroup.appendChild(undoButton)
 
-      const redoButton = createTopToolbarButton(
+      const redoButton = createEditorToolbarButton(
         "Redo (⇧⌘Z)",
         REDO_SVG,
         () => runHistoryCommand(editorView, redoEditorChange)
       )
-      redoButton.dataset.topAction = "redo"
+      redoButton.dataset.editorToolbarAction = "redo"
       historyGroup.appendChild(redoButton)
 
-      TOP_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach((option) => {
-        const button = createTopToolbarButton(
+      EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach((option) => {
+        const button = createEditorToolbarButton(
           `${option.label} (⌘/)`,
           option.icon,
           () => changeToolbarBlockType(editorView, option)
@@ -229,7 +229,7 @@ export function selectionToolbarPlugin(
         blockGroup.appendChild(button)
       })
 
-      const uploadButton = createTopToolbarButton(
+      const uploadButton = createEditorToolbarButton(
         "Upload media",
         UPLOAD_SVG,
         () => {
@@ -238,16 +238,16 @@ export function selectionToolbarPlugin(
           void chooseAndInsertToolbarMedia(editorView, allowedFileTypes)
         }
       )
-      uploadButton.dataset.topAction = "upload-media"
+      uploadButton.dataset.editorToolbarAction = "upload-media"
       blockGroup.appendChild(uploadButton)
 
-      const deleteButton = createTopToolbarButton(
+      const deleteButton = createEditorToolbarButton(
         "Delete block",
         TRASH_SVG,
         () => deleteToolbarBlocks(editorView)
       )
-      deleteButton.dataset.topAction = "delete-block"
-      deleteButton.classList.add("top-toolbar-delete-button")
+      deleteButton.dataset.editorToolbarAction = "delete-block"
+      deleteButton.classList.add("editor-toolbar-delete-button")
       deleteGroup.appendChild(deleteButton)
 
       // Create formatting buttons
@@ -457,22 +457,32 @@ export function selectionToolbarPlugin(
         inlineGroup.appendChild(linkContainer)
       }
 
-      let currentMode: InlineToolbarMode | null = null
+      let currentMode: EditorToolbarMode | null = null
       let handledLinkEditorRequestRevision = 0
       let destroyed = false
-      const topToolbarHost = editorView.dom.parentElement
+      const editorToolbarHost = editorView.dom.parentElement
+      const editorCanvas = editorView.dom.closest<HTMLElement>("[data-rumi-editor-canvas]")
 
-      function clearTopToolbarBounds() {
+      function clearEditorToolbarBounds() {
         container.style.removeProperty("width")
         container.style.removeProperty("transform")
+        container.style.removeProperty("--rumi-editor-toolbar-top")
       }
 
-      function syncTopToolbarBounds() {
-        if (currentMode !== "top") return
-        const rect = topToolbarHost?.getBoundingClientRect()
+      function syncEditorToolbarBounds() {
+        if (!currentMode || !isExpandedEditorToolbarMode(currentMode)) return
+        if (currentMode === "top") {
+          const canvasTop = editorCanvas?.getBoundingClientRect().top
+          if (canvasTop !== undefined && canvasTop >= 0) {
+            container.style.setProperty("--rumi-editor-toolbar-top", `${canvasTop + 20}px`)
+          }
+        } else {
+          container.style.removeProperty("--rumi-editor-toolbar-top")
+        }
+        const rect = editorToolbarHost?.getBoundingClientRect()
         if (!rect || rect.width <= 0) {
           container.style.removeProperty("left")
-          clearTopToolbarBounds()
+          clearEditorToolbarBounds()
           return
         }
 
@@ -486,7 +496,7 @@ export function selectionToolbarPlugin(
         container.style.transform = "none"
       }
 
-      function placeContainer(mode: InlineToolbarMode) {
+      function placeContainer(mode: EditorToolbarMode) {
         const correctlyPlaced = container.parentElement === document.body
         if (currentMode === mode && correctlyPlaced) return
         currentMode = mode
@@ -513,7 +523,7 @@ export function selectionToolbarPlugin(
         placeContainer(mode)
         container.toggleAttribute(
           "data-rumi-preserve-block-selection",
-          mode === "top"
+          isExpandedEditorToolbarMode(mode)
         )
 
         // Close the link popup on any update
@@ -534,7 +544,7 @@ export function selectionToolbarPlugin(
 
         container.style.display = "flex"
         if (mode === "floating") {
-          clearTopToolbarBounds()
+          clearEditorToolbarBounds()
           const selectedRects = blockRanges.flatMap((range) => {
             const dom = editorView.nodeDOM(range.from - 1)
             return dom instanceof HTMLElement ? [dom.getBoundingClientRect()] : []
@@ -557,7 +567,7 @@ export function selectionToolbarPlugin(
           container.style.top = `${Math.max(10, selectionTop - toolbarHeight - 8)}px`
         } else {
           container.style.removeProperty("top")
-          syncTopToolbarBounds()
+          syncEditorToolbarBounds()
         }
 
         if (
@@ -572,7 +582,7 @@ export function selectionToolbarPlugin(
           })
         }
 
-        if (mode === "top") {
+        if (isExpandedEditorToolbarMode(mode)) {
           addBeforeButton.disabled = false
           addAfterButton.disabled = false
           moveUpButton.disabled = !moveBlocks("up")(state)
@@ -583,11 +593,11 @@ export function selectionToolbarPlugin(
             preferences.allowedUploadFileTypes
           )
 
-          for (const option of TOP_TOOLBAR_BLOCK_TYPE_OPTIONS) {
+          for (const option of EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS) {
             const selector = option.type === "heading"
               ? `[data-block-type="heading"][data-block-attrs='${JSON.stringify(option.attrs)}']`
               : `[data-block-type="${option.type}"]`
-            const button = topControls.querySelector(selector) as HTMLElement | null
+            const button = editorControls.querySelector(selector) as HTMLElement | null
             button?.classList.toggle(
               "active",
               isToolbarBlockTypeActive(state, option)
@@ -628,7 +638,7 @@ export function selectionToolbarPlugin(
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
         if (linkPopup) linkPopup.style.display = "none"
 
-        // Preserve selections for the always-visible top toolbar. Floating
+        // Preserve selections for the always-visible editor toolbar. Floating
         // text selections keep their established outside-click behavior.
         if (currentMode === "floating" && container.style.display === "flex") {
           const { selection } = editorView.state
@@ -643,11 +653,11 @@ export function selectionToolbarPlugin(
       }
       // Use capture phase to catch clicks anywhere in the app
       document.addEventListener("mousedown", handleOutsideClick, true)
-      window.addEventListener("resize", syncTopToolbarBounds)
-      const resizeObserver = typeof ResizeObserver === "undefined" || !topToolbarHost
+      window.addEventListener("resize", syncEditorToolbarBounds)
+      const resizeObserver = typeof ResizeObserver === "undefined" || !editorToolbarHost
         ? null
-        : new ResizeObserver(syncTopToolbarBounds)
-      resizeObserver?.observe(topToolbarHost)
+        : new ResizeObserver(syncEditorToolbarBounds)
+      resizeObserver?.observe(editorToolbarHost)
 
       update()
 
@@ -656,7 +666,7 @@ export function selectionToolbarPlugin(
         destroy() {
           destroyed = true
           document.removeEventListener("mousedown", handleOutsideClick, true)
-          window.removeEventListener("resize", syncTopToolbarBounds)
+          window.removeEventListener("resize", syncEditorToolbarBounds)
           resizeObserver?.disconnect()
           container.remove()
         }
@@ -665,14 +675,14 @@ export function selectionToolbarPlugin(
   })
 }
 
-function createTopToolbarButton(
+function createEditorToolbarButton(
   title: string,
   icon: string,
   run: () => void
 ): HTMLButtonElement {
   const button = document.createElement("button")
   button.type = "button"
-  button.className = "toolbar-button top-toolbar-button"
+  button.className = "toolbar-button editor-toolbar-button"
   button.title = title
   button.setAttribute("aria-label", title)
   button.innerHTML = icon
@@ -682,6 +692,10 @@ function createTopToolbarButton(
     run()
   })
   return button
+}
+
+function isExpandedEditorToolbarMode(mode: EditorToolbarMode): boolean {
+  return mode === "top" || mode === "bottom"
 }
 
 function createToolbarGroup(className: string, label: string): HTMLDivElement {

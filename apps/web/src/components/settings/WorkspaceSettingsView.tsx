@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import type {
-  InlineToolbarMode,
+  EditorToolbarMode,
   WorkspaceSettings,
   WorkspaceSettingsResult
 } from "@rumi/contracts";
@@ -21,12 +21,13 @@ import type { StartupPageMode } from "../../lib/workspaceStartup";
 
 type SettingsLoadState = "idle" | "loading" | "error";
 
-const INLINE_TOOLBAR_OPTIONS: ReadonlyArray<{
-  value: InlineToolbarMode;
+const EDITOR_TOOLBAR_OPTIONS: ReadonlyArray<{
+  value: EditorToolbarMode;
   label: string;
 }> = [
   { value: "floating", label: "Floating" },
   { value: "top", label: "Top" },
+  { value: "bottom", label: "Bottom" },
   { value: "none", label: "None" }
 ];
 
@@ -58,7 +59,7 @@ export function WorkspaceSettingsView({
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
-  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>("floating");
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(savedStartupPageMode);
   const [formError, setFormError] = useState("");
   const [changeRevision, setChangeRevision] = useState(0);
@@ -86,7 +87,7 @@ export function WorkspaceSettingsView({
     setHighlightMisspellings(result.settings.editor.highlightMisspellings);
     setInlineReplacements(result.settings.editor.inlineReplacements);
     setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-    setInlineToolbar(result.settings.editor.inlineToolbar);
+    setEditorToolbar(result.settings.editor.inlineToolbar);
     setFormError("");
     setChangeRevision(0);
     switchAnimationFrameRef.current = requestAnimationFrame(() => {
@@ -138,7 +139,7 @@ export function WorkspaceSettingsView({
         highlightMisspellings,
         inlineReplacements,
         emojiSuggestions,
-        inlineToolbar
+        inlineToolbar: editorToolbar
       }
     }, startupPageMode);
   }, [
@@ -147,7 +148,7 @@ export function WorkspaceSettingsView({
     emojiSuggestions,
     highlightMisspellings,
     inlineReplacements,
-    inlineToolbar,
+    editorToolbar,
     maxFileSizeInput,
     onSave,
     result,
@@ -232,39 +233,39 @@ export function WorkspaceSettingsView({
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
-              <label htmlFor="inline-toolbar" className="text-sm font-medium">
-                Inline toolbar
+              <label htmlFor="editor-toolbar" className="text-sm font-medium">
+                Editor toolbar
               </label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    id="inline-toolbar"
+                    id="editor-toolbar"
                     type="button"
                     variant="outline"
                     className="w-32 justify-between font-normal"
                   >
-                    {INLINE_TOOLBAR_OPTIONS.find(({ value }) => value === inlineToolbar)?.label}
+                    {EDITOR_TOOLBAR_OPTIONS.find(({ value }) => value === editorToolbar)?.label}
                     <CaretDown size={14} className="text-muted-foreground" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-32">
-                  {INLINE_TOOLBAR_OPTIONS.map((option) => (
+                  {EDITOR_TOOLBAR_OPTIONS.map((option) => (
                     <DropdownMenuItem
                       key={option.value}
                       onSelect={() => {
                         markChanged();
-                        setInlineToolbar(option.value);
+                        setEditorToolbar(option.value);
                       }}
                     >
                       <span className="flex-1">{option.label}</span>
-                      {option.value === inlineToolbar ? <Check size={14} /> : null}
+                      {option.value === editorToolbar ? <Check size={14} /> : null}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              Float above a selection, keep the full toolbar fixed near the bottom, or remain hidden.
+              Float above a selection, fix the full toolbar to the top or bottom, or hide it.
             </p>
           </div>
 

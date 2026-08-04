@@ -44,12 +44,7 @@
 
 /* Separate paragraph blocks visibly; hard breaks remain within one compact block. */
 .prosemirror-editor .ProseMirror > p {
-  margin-top: 0;
-  margin-bottom: 1em;
-}
-
-.prosemirror-editor .ProseMirror > p:last-child {
-  margin-bottom: 0;
+  margin: 4px 0;
 }
 
 
@@ -617,7 +612,7 @@
 .prosemirror-editor .ProseMirror .bullet-item,
 .prosemirror-editor .ProseMirror .numbered-item,
 .prosemirror-editor .ProseMirror .task-item {
-  margin: 0.25em 0;
+  margin: 2px 0;
   padding-left: 1.5em;
   position: relative;
 }

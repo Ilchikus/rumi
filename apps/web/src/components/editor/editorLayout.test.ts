@@ -37,6 +37,21 @@ const selectionToolbar = readFileSync(
 );
 
 describe("editor layout contracts", () => {
+  it("uses four-pixel paragraph spacing and tighter two-pixel list spacing", () => {
+    const paragraphRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror > p"
+    );
+    const flatListRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item,\n.prosemirror-editor .ProseMirror .numbered-item,\n.prosemirror-editor .ProseMirror .task-item"
+    );
+
+    expect(paragraphRule).toContain("margin: 4px 0;");
+    expect(flatListRule).toContain("margin: 2px 0;");
+    expect(editorStyles).not.toContain(".prosemirror-editor .ProseMirror > p:last-child");
+  });
+
   it("keeps Markdown tables in normal page scroll flow", () => {
     const wrapperRule = cssRule(
       editorStyles,

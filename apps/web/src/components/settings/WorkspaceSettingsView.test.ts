@@ -16,6 +16,9 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("Enable inline replacements");
     expect(viewSource).toContain("Enable emoji suggestions");
     expect(viewSource).toContain("Inline toolbar");
+    expect(viewSource).toContain("Open on start");
+    expect(viewSource).toContain('{ value: "last-visited", label: "Last visited" }');
+    expect(viewSource).toContain('{ value: "home", label: "Home" }');
     expect(viewSource).toContain('{ value: "floating", label: "Floating" }');
     expect(viewSource).toContain('{ value: "top", label: "Top" }');
     expect(viewSource).toContain('{ value: "none", label: "None" }');
@@ -45,6 +48,7 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("grid-cols-2");
     expect(viewSource).toContain("highlightMisspellings");
     expect(viewSource).toContain("onSave({");
+    expect(viewSource).toContain("}, startupPageMode)");
     expect(viewSource).toContain("<Check");
     expect(viewSource).toContain("<FloppyDisk");
     expect(viewSource).toContain("{saved ? (");
@@ -80,6 +84,7 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("inlineToolbar");
     expect(appSource).toContain("api.getWorkspaceSettings()");
     expect(appSource).toContain("api.updateWorkspaceSettings(settings)");
+    expect(appSource).toContain("writeStartupPageMode");
     expect(appSource).toContain("highlightMisspellings={highlightMisspellings}");
     expect(appSource).toContain("inlineReplacements={inlineReplacements}");
     expect(appSource).toContain("emojiSuggestions={emojiSuggestions}");

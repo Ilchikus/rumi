@@ -10,7 +10,7 @@ depends_on:
   - M05
   - M06
 created: "2026-06-22"
-updated: "2026-07-27"
+updated: "2026-08-04"
 ---
 # M07 Assets Search Polish
 
@@ -29,6 +29,7 @@ Add the next layer of workspace quality after core runtime, editor, and database
 - Portable safe delete and restore for all workspace item types.
 - Optimistic open-page rename with background link, mention, and search-index repair.
 - URL-safe workspace navigation with deep links and browser Back/Forward support.
+- Stable cached workspace startup with a browser-local Home/last-visited preference.
 
 ## Exit Criteria
 
@@ -48,3 +49,5 @@ a centered breadcrumb/search address bar with current-item actions. Workspace-ow
 upload settings are exposed through an editor-like `/settings` system page and typed runtime/API
 commands. `/settings` and `/trash` reserve their application views while equally named workspace
 content receives deterministic route suffixes. Automated browser smoke coverage remains open.
+Workspace startup and per-history-entry scroll restoration are implemented and in release
+verification under M07-015.

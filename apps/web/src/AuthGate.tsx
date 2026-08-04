@@ -3,6 +3,7 @@ import { RumiApiClient } from "@rumi/api-client";
 import type { AuthSessionResult } from "@rumi/contracts";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import { WorkspaceLoadingShell } from "./components/layout/WorkspaceLoadingShell";
 
 type GateState =
   | { status: "loading" }
@@ -65,11 +66,7 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
   };
 
   if (state.status === "loading") {
-    return (
-      <main className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
-        Opening Rumi…
-      </main>
-    );
+    return <WorkspaceLoadingShell />;
   }
 
   if (state.status === "error") {

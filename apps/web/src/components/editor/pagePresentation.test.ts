@@ -137,6 +137,10 @@ describe("page editor presentation", () => {
 
     expect(markup).not.toContain(">Properties<");
     expect(markup).toContain("Create new property");
+    expect(markup).toContain("group-hover/properties:pointer-events-auto");
+    expect(markup).toContain("group-focus-within/properties:opacity-100");
+    expect(markup).toContain("data-[state=open]:opacity-100");
+    expect(markup).toContain("[@media(hover:none)]:opacity-100");
   });
 
   it("renders calm property previews that toggle editing when clicked", () => {

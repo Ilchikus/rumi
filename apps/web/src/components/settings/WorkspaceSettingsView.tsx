@@ -18,6 +18,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
+import type { StartupPageMode } from "../../lib/workspaceStartup";
 
 type SettingsLoadState = "idle" | "loading" | "error";
 
@@ -30,15 +31,25 @@ const INLINE_TOOLBAR_OPTIONS: ReadonlyArray<{
   { value: "none", label: "None" }
 ];
 
+const STARTUP_PAGE_OPTIONS: ReadonlyArray<{
+  value: StartupPageMode;
+  label: string;
+}> = [
+  { value: "last-visited", label: "Last visited" },
+  { value: "home", label: "Home" }
+];
+
 export interface WorkspaceSettingsViewProps {
   result: WorkspaceSettingsResult | null;
+  startupPageMode: StartupPageMode;
   loadState: SettingsLoadState;
   onReload: () => void;
-  onSave: (settings: WorkspaceSettings) => Promise<boolean>;
+  onSave: (settings: WorkspaceSettings, startupPageMode: StartupPageMode) => Promise<boolean>;
 }
 
 export function WorkspaceSettingsView({
   result,
+  startupPageMode: savedStartupPageMode,
   loadState,
   onReload,
   onSave
@@ -49,6 +60,7 @@ export function WorkspaceSettingsView({
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
   const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(savedStartupPageMode);
   const [formError, setFormError] = useState("");
   const [saved, setSaved] = useState(false);
   const [animateMisspellings, setAnimateMisspellings] = useState(false);
@@ -84,6 +96,10 @@ export function WorkspaceSettingsView({
       setAnimateMisspellings(true);
     });
   }, [result]);
+
+  useEffect(() => {
+    setStartupPageMode(savedStartupPageMode);
+  }, [savedStartupPageMode]);
 
   const supportedFileTypes = result?.constraints.uploads.supportedFileTypes ?? [];
 
@@ -131,7 +147,7 @@ export function WorkspaceSettingsView({
         emojiSuggestions,
         inlineToolbar
       }
-    });
+    }, startupPageMode);
     if (!didSave) return;
 
     setSaved(true);
@@ -144,7 +160,7 @@ export function WorkspaceSettingsView({
   return (
     <EditorPageLayout title="Settings">
       {loadState === "loading" && !result ? (
-        <p className="py-6 text-sm text-muted-foreground">Loading settings…</p>
+        <div className="min-h-40" aria-hidden="true" />
       ) : loadState === "error" || !result ? (
         <div className="py-6">
           <p className="text-sm text-muted-foreground">Settings could not be loaded.</p>
@@ -252,6 +268,44 @@ export function WorkspaceSettingsView({
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
               Float above a selection, keep the full toolbar fixed near the bottom, or remain hidden.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <label htmlFor="startup-page" className="text-sm font-medium">
+                Open on start
+              </label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    id="startup-page"
+                    type="button"
+                    variant="outline"
+                    className="w-32 justify-between font-normal"
+                  >
+                    {STARTUP_PAGE_OPTIONS.find(({ value }) => value === startupPageMode)?.label}
+                    <CaretDown size={14} className="text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-32">
+                  {STARTUP_PAGE_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onSelect={() => {
+                        clearSavedState();
+                        setStartupPageMode(option.value);
+                      }}
+                    >
+                      <span className="flex-1">{option.label}</span>
+                      {option.value === startupPageMode ? <Check size={14} /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Open Home or return to the last page visited in this browser.
             </p>
           </div>
 

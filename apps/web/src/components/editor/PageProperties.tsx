@@ -372,7 +372,7 @@ export function PageProperties({
               type="button"
               size="sm"
               variant="ghost"
-              className="mt-1 h-7 text-muted-foreground"
+              className="pointer-events-none mt-1 h-7 text-muted-foreground opacity-0 transition-opacity group-hover/properties:pointer-events-auto group-hover/properties:opacity-100 group-focus-within/properties:pointer-events-auto group-focus-within/properties:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
             >
               <Plus size={13} aria-hidden="true" />
               Create new property

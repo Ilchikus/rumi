@@ -18,9 +18,7 @@ function blockAlreadyHasMenuType(
 }
 
 function sourceText(node: PmNode): string {
-  return node.type.name === "mermaid"
-    ? String(node.attrs.code ?? "")
-    : node.textContent
+  return node.textContent
 }
 
 function sourceInlineContent(node: PmNode, schema: Schema): Fragment | null {
@@ -140,10 +138,10 @@ function createBlockNodeForType(
       )]
     }
     case "mermaid":
-      return [targetType.create({
-        code: DEFAULT_MERMAID_CODE,
-        mode: "split"
-      })]
+      return [targetType.create(
+        { mode: "split" },
+        schema.text(DEFAULT_MERMAID_CODE)
+      )]
     case "horizontal_rule":
       return [targetType.create()]
     default:

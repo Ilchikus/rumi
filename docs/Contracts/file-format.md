@@ -55,7 +55,8 @@ example:
   "editor": {
     "highlightMisspellings": false,
     "inlineReplacements": true,
-    "emojiSuggestions": true
+    "emojiSuggestions": true,
+    "inlineToolbar": "floating"
   }
 }
 ```
@@ -80,7 +81,12 @@ every page in the workspace.
 `editor.emojiSuggestions` controls the caret-anchored selector opened by a valid `:` prose trigger.
 Both default to `true`. Replacement symbols and selected emoji are stored as literal UTF-8 Markdown
 text; opening, pasting, or externally reconciling content does not invoke either typing feature.
-Unknown editor settings and non-boolean values are rejected.
+`editor.inlineToolbar` accepts `floating`, `top`, or `none`. It defaults to `floating`; `top` keeps
+the expanded formatting bar fixed near the viewport bottom and aligned to the editor column, while
+`none` hides it. The former
+`sticky` value is read as `top` for compatibility and is normalized on the next settings save.
+Unknown editor settings, invalid toolbar modes, and non-boolean values for boolean settings are
+rejected.
 
 SQLite index data is rebuildable.
 

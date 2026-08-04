@@ -15,6 +15,13 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("Highlight misspelled words");
     expect(viewSource).toContain("Enable inline replacements");
     expect(viewSource).toContain("Enable emoji suggestions");
+    expect(viewSource).toContain("Inline toolbar");
+    expect(viewSource).toContain('{ value: "floating", label: "Floating" }');
+    expect(viewSource).toContain('{ value: "top", label: "Top" }');
+    expect(viewSource).toContain('{ value: "none", label: "None" }');
+    expect(viewSource).toContain("<DropdownMenu>");
+    expect(viewSource).toContain("<DropdownMenuContent");
+    expect(viewSource).not.toContain("<select");
     expect(viewSource).toContain("Maximum file size");
     expect(viewSource).toContain("Allowed file formats");
     expect(viewSource).toContain("text-xs");
@@ -58,6 +65,9 @@ describe("workspace settings page", () => {
     expect(appSource).toContain(
       "setEmojiSuggestions(result.settings.editor.emojiSuggestions)"
     );
+    expect(appSource).toContain(
+      "setInlineToolbar(result.settings.editor.inlineToolbar)"
+    );
     expect(appSource).toContain("settingsSaveInFlightRef.current");
     expect(viewSource).not.toContain("saving:");
     expect(viewSource).not.toContain("disabled={saving}");
@@ -67,11 +77,14 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("highlightMisspellings");
     expect(viewSource).toContain("inlineReplacements");
     expect(viewSource).toContain("emojiSuggestions");
+    expect(viewSource).toContain("inlineToolbar");
     expect(appSource).toContain("api.getWorkspaceSettings()");
     expect(appSource).toContain("api.updateWorkspaceSettings(settings)");
     expect(appSource).toContain("highlightMisspellings={highlightMisspellings}");
     expect(appSource).toContain("inlineReplacements={inlineReplacements}");
     expect(appSource).toContain("emojiSuggestions={emojiSuggestions}");
+    expect(appSource).toContain("inlineToolbar={inlineToolbar}");
+    expect(appSource).toContain("allowedUploadFileTypes={allowedUploadFileTypes}");
     expect(appSource).toContain("showReservedSystemRouteToast");
     expect(appSource).toContain("is reserved for the system page");
     expect(appSource).toContain('href={route.url}');

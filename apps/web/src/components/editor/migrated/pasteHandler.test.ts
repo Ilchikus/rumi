@@ -424,7 +424,7 @@ describe("live editor external rich paste normalization", () => {
       "horizontal_rule",
       "database_embed"
     ])
-    expect(nodes[0]?.attrs.code).toBe([
+    expect(nodes[0]?.textContent).toBe([
       "flowchart LR",
       "  Client[Client] --> Server[Server]"
     ].join("\n"))
@@ -451,7 +451,7 @@ describe("live editor external rich paste normalization", () => {
       "database_embed",
       "code_block"
     ])
-    expect(nodes[0]?.attrs.code).toBe("graph TD\n  A --> B")
+    expect(nodes[0]?.textContent).toBe("graph TD\n  A --> B")
     expect(nodes[1]?.attrs).toMatchObject({ source: "Tasks", viewType: "table" })
     expect(nodes[2]?.textContent).toBe("const ready = true")
   })
@@ -597,7 +597,7 @@ describe("live editor copy", () => {
     expect(data.get("text/html")).not.toContain("Two")
   })
 
-  it("cuts every explicitly selected block after exporting the same complete payload", () => {
+  it("cuts every explicitly selected block completely after exporting the same payload", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     const firstPos = 0
     const thirdPos = doc.child(0).nodeSize + doc.child(1).nodeSize
@@ -622,7 +622,7 @@ describe("live editor copy", () => {
     expect(Array.from(
       { length: state.doc.childCount },
       (_, index) => state.doc.child(index).textContent
-    )).toEqual(["", "Two"])
+    )).toEqual(["Two"])
     expect(multiBlockSelectionKey.getState(state)?.selectedBlocks).toEqual([])
   })
 })
@@ -724,6 +724,30 @@ describe("live editor code paste", () => {
     expect(transaction).not.toBeNull()
     expect(transaction!.doc.firstChild?.textContent).toBe(pasted)
     expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.code_block)
+  })
+
+  it("treats Mermaid source as ProseMirror code content", () => {
+    const mermaid = schema.nodes.mermaid!.create(
+      { mode: "split" },
+      schema.text("graph TD; A-->B")
+    )
+    const doc = schema.nodes.doc!.create(null, mermaid)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, mermaid.content.size + 1)
+    })
+
+    const transaction = createCodeTextPasteTransaction(
+      state,
+      "\nB-->C",
+      schema
+    )
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.mermaid)
+    expect(transaction!.doc.firstChild?.textContent).toBe(
+      "graph TD; A-->B\nB-->C"
+    )
   })
 
   it("does not claim text selections outside code", () => {

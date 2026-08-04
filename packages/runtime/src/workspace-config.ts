@@ -35,7 +35,8 @@ const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
   editor: {
     highlightMisspellings: false,
     inlineReplacements: true,
-    emojiSuggestions: true
+    emojiSuggestions: true,
+    inlineToolbar: "floating"
   }
 };
 
@@ -118,7 +119,7 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
   requireOnlyKeys(uploads, ["maxFileSizeMb", "allowedFileTypes"], `${WORKSPACE_CONFIG_PATH} uploads`);
   requireOnlyKeys(
     editor,
-    ["highlightMisspellings", "inlineReplacements", "emojiSuggestions"],
+    ["highlightMisspellings", "inlineReplacements", "emojiSuggestions", "inlineToolbar"],
     `${WORKSPACE_CONFIG_PATH} editor`
   );
 
@@ -137,6 +138,9 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
   const emojiSuggestions = "emojiSuggestions" in editor
     ? requireBoolean(editor.emojiSuggestions, "editor.emojiSuggestions")
     : DEFAULT_WORKSPACE_SETTINGS.editor.emojiSuggestions;
+  const inlineToolbar = "inlineToolbar" in editor
+    ? requireInlineToolbarMode(editor.inlineToolbar)
+    : DEFAULT_WORKSPACE_SETTINGS.editor.inlineToolbar;
 
   return {
     uploads: {
@@ -146,7 +150,8 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
     editor: {
       highlightMisspellings,
       inlineReplacements,
-      emojiSuggestions
+      emojiSuggestions,
+      inlineToolbar
     }
   };
 }
@@ -229,6 +234,14 @@ function requireBoolean(value: unknown, setting: string): boolean {
     throw new Error(`Invalid ${WORKSPACE_CONFIG_PATH}: ${setting} must be a boolean`);
   }
   return value;
+}
+
+function requireInlineToolbarMode(value: unknown): "floating" | "top" | "none" {
+  if (value === "sticky") return "top";
+  if (value === "floating" || value === "top" || value === "none") return value;
+  throw new Error(
+    `Invalid ${WORKSPACE_CONFIG_PATH}: editor.inlineToolbar must be floating, top, or none`
+  );
 }
 
 function requireObject(value: unknown, label: string): Record<string, unknown> {

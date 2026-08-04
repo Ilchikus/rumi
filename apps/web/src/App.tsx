@@ -12,6 +12,7 @@ import {
 } from "@rumi/markdown";
 import { cleanWorkspaceName } from "@rumi/workspace-format";
 import type {
+  InlineToolbarMode,
   DatabasePropertyOptionColor,
   DatabasePropertyType,
   PageDocument,
@@ -164,6 +165,8 @@ export function App(): ReactElement {
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
+  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>([]);
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
@@ -256,6 +259,8 @@ export function App(): ReactElement {
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
       setInlineReplacements(result.settings.editor.inlineReplacements);
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
+      setInlineToolbar(result.settings.editor.inlineToolbar);
+      setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
       setSettingsLoadState("idle");
     } catch (error) {
       setSettingsLoadState("error");
@@ -864,9 +869,20 @@ export function App(): ReactElement {
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
   }, [openNode, trashOpen, tree, workspaceRootPath]);
 
-  const openDocumentLink = useCallback((path: string) => {
+  const openDocumentLink = useCallback((
+    path: string,
+    target: "current" | "new" = "current"
+  ) => {
     const linkedNode = resolveWorkspaceDocumentLink(tree, path, pageRef.current?.path);
     if (!linkedNode) {
+      return;
+    }
+    if (target === "new") {
+      window.open(
+        workspaceUrlForNode(linkedNode, tree),
+        "_blank",
+        "noopener,noreferrer"
+      );
       return;
     }
     void openNode(linkedNode);
@@ -1378,6 +1394,8 @@ export function App(): ReactElement {
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
       setInlineReplacements(result.settings.editor.inlineReplacements);
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
+      setInlineToolbar(result.settings.editor.inlineToolbar);
+      setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
       setSettingsLoadState("idle");
       return true;
     } catch (error) {
@@ -2463,6 +2481,8 @@ export function App(): ReactElement {
                         highlightMisspellings={highlightMisspellings}
                         inlineReplacements={inlineReplacements}
                         emojiSuggestions={emojiSuggestions}
+                        inlineToolbar={inlineToolbar}
+                        allowedUploadFileTypes={allowedUploadFileTypes}
                         readOnly
                         onDirty={() => undefined}
                       />
@@ -2551,6 +2571,8 @@ export function App(): ReactElement {
                     highlightMisspellings={highlightMisspellings}
                     inlineReplacements={inlineReplacements}
                     emojiSuggestions={emojiSuggestions}
+                    inlineToolbar={inlineToolbar}
+                    allowedUploadFileTypes={allowedUploadFileTypes}
                     onDirty={() => markPageDirty("editor-autosave")}
                   />
                 </Suspense>

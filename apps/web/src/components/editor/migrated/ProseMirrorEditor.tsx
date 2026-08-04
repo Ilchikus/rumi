@@ -1,6 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
+import type { InlineToolbarMode } from "@rumi/contracts"
 import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh"
 import { cn } from "../../../lib/utils"
 import type { Node as ProseMirrorNode } from "prosemirror-model"
@@ -15,11 +16,15 @@ import { keymap } from "prosemirror-keymap"
 import { schema } from "./schema"
 import { buildKeymap } from "./keymap"
 import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
+import { structuralCaretPlugin } from "./plugins/structuralCaret"
 import { buildInputRules } from "./inputrules"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { taskListPlugin } from "./plugins/taskList"
 import { slashCommandsPlugin } from "./plugins/slashCommands"
-import { selectionToolbarPlugin } from "./plugins/selectionToolbar"
+import {
+  selectionToolbarPlugin,
+  setSelectionToolbarPreferences
+} from "./plugins/selectionToolbar"
 import { linkPlugin } from "./plugins/linkPlugin"
 import { atMentionPlugin, FileItem } from "./plugins/atMention"
 import { blockDragHandlePlugin } from "./plugins/blockDragHandle"
@@ -69,12 +74,14 @@ export interface RumiBlockEditorProps {
   documentKey: string
   markdown: string
   documents?: readonly RumiDocumentLink[]
-  onOpenDocument?: (path: string) => void
+  onOpenDocument?: (path: string, target?: "current" | "new") => void
   onUploadAsset?: (file: File) => Promise<string>
   onMessage?: (message: string) => void
   highlightMisspellings?: boolean
   inlineReplacements?: boolean
   emojiSuggestions?: boolean
+  inlineToolbar?: InlineToolbarMode
+  allowedUploadFileTypes?: readonly string[]
   readOnly?: boolean
   onDirty: () => void
 }
@@ -94,6 +101,8 @@ function ProseMirrorEditor(
     highlightMisspellings = false,
     inlineReplacements = true,
     emojiSuggestions = true,
+    inlineToolbar = "floating",
+    allowedUploadFileTypes = [],
     readOnly = false,
     onDirty
   },
@@ -166,6 +175,7 @@ function ProseMirrorEditor(
           workspaceKey
         }),
         inactiveBlockSelectionPlugin(),
+        structuralCaretPlugin(),
         multiBlockSelectionPlugin(schema),
         buildKeymap(schema),
         keymap(baseKeymap),
@@ -174,7 +184,7 @@ function ProseMirrorEditor(
         taskListPlugin(schema),
         blockDragHandlePlugin(schema),
         slashCommandsPlugin(schema),
-        selectionToolbarPlugin(schema),
+        selectionToolbarPlugin(schema, inlineToolbar, allowedUploadFileTypes),
         linkPlugin(schema),
         atMentionPlugin(schema, getFiles),
         columnResizing(),
@@ -254,6 +264,16 @@ function ProseMirrorEditor(
     const view = viewRef.current
     if (view) setEmojiSuggestionsEnabled(view, emojiSuggestions)
   }, [emojiSuggestions])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (view) {
+      setSelectionToolbarPreferences(view, {
+        mode: inlineToolbar,
+        allowedUploadFileTypes
+      })
+    }
+  }, [allowedUploadFileTypes, inlineToolbar])
 
   useImperativeHandle(ref, () => ({
     focus() {

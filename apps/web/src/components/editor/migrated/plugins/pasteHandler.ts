@@ -65,7 +65,7 @@ export function createUrlPasteTransaction(
   const href = text.trim()
   const link = schema.marks.link
 
-  if (!link || !URL_REGEX.test(href) || state.selection.$from.parent.type === schema.nodes.code_block) {
+  if (!link || !URL_REGEX.test(href) || state.selection.$from.parent.type.spec.code) {
     return null
   }
 
@@ -90,8 +90,8 @@ export function createCodeTextPasteTransaction(
   if (
     text.length === 0 ||
     !(selection instanceof TextSelection) ||
-    selection.$from.parent.type !== schema.nodes.code_block ||
-    selection.$to.parent.type !== schema.nodes.code_block ||
+    !selection.$from.parent.type.spec.code ||
+    !selection.$to.parent.type.spec.code ||
     selection.$from.parent !== selection.$to.parent
   ) {
     return null

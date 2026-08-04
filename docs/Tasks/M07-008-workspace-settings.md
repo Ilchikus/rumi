@@ -59,7 +59,8 @@ The initial centered dialog was subsequently replaced by the editor-like `/setti
 M07-009 without changing the settings contract. Asset request bodies stream to hidden temporary
 storage so blank/unlimited does not imply unbounded server memory buffering; complete, signature-
 verified files are then published atomically. Inline replacement and emoji settings were added to
-the same normalized editor settings domain and update an open editor without remounting it.
+the same normalized editor settings domain and update an open editor without remounting it. The
+floating/top/none inline-toolbar preference later joined that domain in M07-013.
 
 ## Done When
 

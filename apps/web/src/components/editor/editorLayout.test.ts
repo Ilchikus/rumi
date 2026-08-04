@@ -31,6 +31,10 @@ const migratedEditor = readFileSync(
   new URL("./migrated/ProseMirrorEditor.tsx", import.meta.url),
   "utf8"
 );
+const selectionToolbar = readFileSync(
+  new URL("./migrated/plugins/selectionToolbar.ts", import.meta.url),
+  "utf8"
+);
 
 describe("editor layout contracts", () => {
   it("keeps Markdown tables in normal page scroll flow", () => {
@@ -202,6 +206,72 @@ describe("editor layout contracts", () => {
     expect(migratedEditor).toContain('[highlightMisspellings]');
     expect(migratedEditor).toContain("setInlineReplacementsEnabled(view, inlineReplacements)");
     expect(migratedEditor).toContain("setEmojiSuggestionsEnabled(view, emojiSuggestions)");
+  });
+
+  it("supports floating, expanded top, and hidden inline toolbar modes", () => {
+    const floatingRule = cssRule(
+      editorStyles,
+      '.selection-toolbar[data-mode="floating"]'
+    );
+    const topRule = cssRule(
+      editorStyles,
+      '.selection-toolbar[data-mode="top"]'
+    );
+
+    expect(floatingRule).toContain("position: fixed;");
+    expect(topRule).toContain("position: fixed;");
+    expect(topRule).toContain("bottom: calc(20px + env(safe-area-inset-bottom));");
+    expect(topRule).toContain("width: min(900px, calc(100vw - 32px));");
+    expect(topRule).toContain("transform: translateX(-50%);");
+    expect(topRule).toContain("justify-content: space-between;");
+    expect(topRule).toContain("flex-wrap: nowrap;");
+    expect(topRule).toContain("overflow: visible;");
+    expect(topRule).toContain("border: 1px solid hsl(var(--border));");
+    expect(topRule).toContain("border-radius: 8px;");
+    expect(topRule).toContain("box-shadow:");
+    expect(editorStyles).toContain(".selection-toolbar-block-group,");
+    expect(editorStyles).toContain(".selection-toolbar-inline-group {");
+    expect(editorStyles).toContain(".selection-toolbar-history-group,");
+    expect(editorStyles).toContain(".selection-toolbar-delete-group {");
+    expect(editorStyles).toContain(".top-toolbar-delete-button:hover:not(:disabled)");
+    expect(editorStyles).toContain("color: #e11d48;");
+    expect(editorStyles).toContain("border-left: 1px solid hsl(var(--border));");
+    expect(selectionToolbar).toContain('mode === "none"');
+    expect(selectionToolbar).toContain('mode === "top"');
+    expect(selectionToolbar).toContain("selectedBlockInlineRanges(state)");
+    expect(selectionToolbar).toContain("TOP_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach");
+    expect(selectionToolbar).toContain('["mermaid", "table", "horizontal_rule"]');
+    expect(selectionToolbar).toContain('"Upload media"');
+    expect(selectionToolbar).toContain('"Delete block"');
+    expect(selectionToolbar).toContain('"Undo (⌘Z)"');
+    expect(selectionToolbar).toContain('"Redo (⇧⌘Z)"');
+    expect(selectionToolbar).toContain('"Add before (⇧⌘↵)"');
+    expect(selectionToolbar).toContain('"Add after (⌘↵)"');
+    expect(editorStyles).toContain(".rumi-structural-caret-before");
+    expect(editorStyles).toContain(".rumi-structural-caret-after");
+    const databaseCaretBefore = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror-focused > .database-embed-block.rumi-structural-caret-before::before"
+    );
+    const databaseCaretAfter = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror-focused > .database-embed-block.rumi-structural-caret-after::before"
+    );
+    expect(databaseCaretBefore).toContain("top: 0;");
+    expect(databaseCaretBefore).toContain("left: 0;");
+    expect(databaseCaretBefore).toContain("transform: none;");
+    expect(databaseCaretAfter).toContain("top: auto;");
+    expect(databaseCaretAfter).toContain("right: 0;");
+    expect(databaseCaretAfter).toContain("bottom: 0;");
+    expect(migratedEditor).toContain("setSelectionToolbarPreferences(view");
+  });
+
+  it("uses modifier-aware link text and a Phosphor external-link affordance", () => {
+    expect(editorStyles).toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover");
+    expect(editorStyles).toContain('a[data-external-link="true"]::after');
+    expect(editorStyles).toContain("cursor: text;");
+    expect(editorStyles).toContain("cursor: pointer;");
+    expect(editorStyles).toContain("M224,104a8,8");
   });
 });
 

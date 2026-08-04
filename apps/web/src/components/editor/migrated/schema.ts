@@ -1,6 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
-import { Schema, NodeSpec, MarkSpec } from "prosemirror-model"
+import { Fragment, Schema, NodeSpec, MarkSpec } from "prosemirror-model"
 import { mentionKindForPath } from "./mentionTypes"
+import { isExternalLinkHref, normalizeLinkHref } from "./linkHref"
 
 const nodes: { [key: string]: NodeSpec } = {
   doc: {
@@ -214,26 +215,33 @@ const nodes: { [key: string]: NodeSpec } = {
 
   mermaid: {
     group: "block",
-    atom: true,
+    content: "text*",
+    marks: "",
+    code: true,
+    defining: true,
     attrs: {
-      code: { default: "" },
       mode: { default: "split" } // view, edit, split
     },
     parseDOM: [{
       tag: "div.mermaid-block",
       getAttrs(dom: HTMLElement) {
         return {
-          code: dom.getAttribute("data-code") || "",
           mode: dom.getAttribute("data-mode") || "split"
         }
+      },
+      getContent(dom: HTMLElement, parsedSchema: Schema) {
+        const code = dom.getAttribute("data-code") || dom.textContent || ""
+        return code
+          ? Fragment.from(parsedSchema.text(code))
+          : Fragment.empty
       }
     }],
     toDOM(node) {
       return ["div", {
         class: "mermaid-block",
-        "data-code": node.attrs.code,
+        "data-code": node.textContent,
         "data-mode": node.attrs.mode
-      }]
+      }, 0]
     }
   },
 
@@ -454,11 +462,14 @@ const marks: { [key: string]: MarkSpec } = {
       }
     }],
     toDOM(node) {
+      const href = normalizeLinkHref(node.attrs.href)
+      const external = isExternalLinkHref(href)
       return [
         "a",
         {
-          href: node.attrs.href,
+          href,
           title: node.attrs.title,
+          ...(external ? { "data-external-link": "true" } : {}),
           ...(node.attrs.mention ? {
             "data-mention": "true",
             "data-mention-kind": node.attrs.mentionKind ?? mentionKindForPath(node.attrs.href)

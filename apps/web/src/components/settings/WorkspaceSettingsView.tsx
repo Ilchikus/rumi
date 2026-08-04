@@ -1,14 +1,34 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, ReactElement } from "react";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
+import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { FloppyDisk } from "@phosphor-icons/react/dist/csr/FloppyDisk";
-import type { WorkspaceSettings, WorkspaceSettingsResult } from "@rumi/contracts";
+import type {
+  InlineToolbarMode,
+  WorkspaceSettings,
+  WorkspaceSettingsResult
+} from "@rumi/contracts";
 import { EditorPageLayout } from "../layout/EditorPageLayout";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 
 type SettingsLoadState = "idle" | "loading" | "error";
+
+const INLINE_TOOLBAR_OPTIONS: ReadonlyArray<{
+  value: InlineToolbarMode;
+  label: string;
+}> = [
+  { value: "floating", label: "Floating" },
+  { value: "top", label: "Top" },
+  { value: "none", label: "None" }
+];
 
 export interface WorkspaceSettingsViewProps {
   result: WorkspaceSettingsResult | null;
@@ -28,6 +48,7 @@ export function WorkspaceSettingsView({
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
+  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
   const [formError, setFormError] = useState("");
   const [saved, setSaved] = useState(false);
   const [animateMisspellings, setAnimateMisspellings] = useState(false);
@@ -56,6 +77,7 @@ export function WorkspaceSettingsView({
     setHighlightMisspellings(result.settings.editor.highlightMisspellings);
     setInlineReplacements(result.settings.editor.inlineReplacements);
     setEmojiSuggestions(result.settings.editor.emojiSuggestions);
+    setInlineToolbar(result.settings.editor.inlineToolbar);
     setFormError("");
     switchAnimationFrameRef.current = requestAnimationFrame(() => {
       switchAnimationFrameRef.current = null;
@@ -106,7 +128,8 @@ export function WorkspaceSettingsView({
       editor: {
         highlightMisspellings,
         inlineReplacements,
-        emojiSuggestions
+        emojiSuggestions,
+        inlineToolbar
       }
     });
     if (!didSave) return;
@@ -191,6 +214,44 @@ export function WorkspaceSettingsView({
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
               Open the emoji selector when typing : in prose.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <label htmlFor="inline-toolbar" className="text-sm font-medium">
+                Inline toolbar
+              </label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    id="inline-toolbar"
+                    type="button"
+                    variant="outline"
+                    className="w-32 justify-between font-normal"
+                  >
+                    {INLINE_TOOLBAR_OPTIONS.find(({ value }) => value === inlineToolbar)?.label}
+                    <CaretDown size={14} className="text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-32">
+                  {INLINE_TOOLBAR_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onSelect={() => {
+                        clearSavedState();
+                        setInlineToolbar(option.value);
+                      }}
+                    >
+                      <span className="flex-1">{option.label}</span>
+                      {option.value === inlineToolbar ? <Check size={14} /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Float above a selection, keep the full toolbar fixed near the bottom, or remain hidden.
             </p>
           </div>
 

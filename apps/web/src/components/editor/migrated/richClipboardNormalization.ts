@@ -528,7 +528,10 @@ export function normalizeExternalRichSlice(slice: Slice, schema: Schema): Slice 
       const language = String(node.attrs.language ?? "").toLowerCase()
       const text = externalText(node)
       if ((language === "mermaid" || isMermaidStart(text)) && schema.nodes.mermaid) {
-        output.push(schema.nodes.mermaid.create({ code: text, mode: "split" }))
+        output.push(schema.nodes.mermaid.create(
+          { mode: "split" },
+          text ? schema.text(text) : null
+        ))
       } else if ((language === "db" || databaseAttrs(text)) && schema.nodes.database_embed) {
         const attrs = databaseAttrs(text)
         output.push(attrs ? schema.nodes.database_embed.create(attrs) : node)
@@ -550,10 +553,11 @@ export function normalizeExternalRichSlice(slice: Slice, schema: Schema): Slice 
           lines.push(nextText)
           nextIndex += 1
         }
-        output.push(schema.nodes.mermaid.create({
-          code: lines.join("\n").replace(/\n+$/u, ""),
-          mode: "split"
-        }))
+        const code = lines.join("\n").replace(/\n+$/u, "")
+        output.push(schema.nodes.mermaid.create(
+          { mode: "split" },
+          code ? schema.text(code) : null
+        ))
         index = nextIndex
         continue
       }

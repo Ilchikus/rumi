@@ -142,7 +142,8 @@ describe("Rumi server API", () => {
         editor: {
           highlightMisspellings: false,
           inlineReplacements: true,
-          emojiSuggestions: true
+          emojiSuggestions: true,
+          inlineToolbar: "floating"
         }
       }),
       "utf8"
@@ -173,7 +174,8 @@ describe("Rumi server API", () => {
         editor: {
           highlightMisspellings: true,
           inlineReplacements: false,
-          emojiSuggestions: false
+          emojiSuggestions: false,
+          inlineToolbar: "top"
         }
       }
     });
@@ -191,7 +193,8 @@ describe("Rumi server API", () => {
         editor: {
           highlightMisspellings: "yes",
           inlineReplacements: true,
-          emojiSuggestions: true
+          emojiSuggestions: true,
+          inlineToolbar: "floating"
         }
       }
     });
@@ -203,7 +206,8 @@ describe("Rumi server API", () => {
         editor: {
           highlightMisspellings: false,
           inlineReplacements: true,
-          emojiSuggestions: true
+          emojiSuggestions: true,
+          inlineToolbar: "floating"
         }
       },
       constraints: {
@@ -225,7 +229,8 @@ describe("Rumi server API", () => {
         editor: {
           highlightMisspellings: true,
           inlineReplacements: false,
-          emojiSuggestions: false
+          emojiSuggestions: false,
+          inlineToolbar: "top"
         }
       }
     });

@@ -68,7 +68,6 @@ interface SidebarProps {
   workspaceKey: string;
   tree: WorkspaceNode | null;
   selection: SidebarSelection | null;
-  loadState: "idle" | "loading" | "error";
   trashCount: number;
   trashOpen: boolean;
   settingsOpen: boolean;
@@ -140,7 +139,6 @@ export function Sidebar({
   workspaceKey,
   tree,
   selection,
-  loadState,
   trashCount,
   trashOpen,
   settingsOpen,
@@ -481,11 +479,7 @@ export function Sidebar({
             )}
             {rowsAfterStickyScope.map((row) => renderVisibleTreeRow(row))}
           </div>
-        ) : (
-          <p className="px-2 py-3 text-sm text-muted-foreground">
-            {loadState === "loading" ? "Loading workspace..." : "No tree loaded"}
-          </p>
-        )}
+        ) : null}
       </div>
 
       <footer className="space-y-0.5 p-2">

@@ -71,6 +71,31 @@ import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHis
 import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
+import {
+  mergeEditorScrollState,
+  readEditorScrollTop,
+  restoreEditorScroll
+} from "./lib/historyScroll";
+import {
+  MAX_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  SIDEBAR_WIDTH_KEY,
+  clamp,
+  getSavedSidebarCollapsed,
+  getSavedSidebarWidth,
+  saveSidebarCollapsed,
+  sidebarWidthForViewport
+} from "./lib/sidebarLayout";
+import {
+  canHydrateStartupPage,
+  clearWorkspaceStartupSnapshot,
+  readStartupPageMode,
+  readWorkspaceStartupSnapshot,
+  snapshotMatchesWorkspace,
+  writeStartupPageMode,
+  writeWorkspaceStartupSnapshot,
+  type StartupPageMode
+} from "./lib/workspaceStartup";
 
 const RumiBlockEditor = lazy(async () => {
   const module = await import("./components/editor/RumiBlockEditor");
@@ -100,11 +125,6 @@ type PageTitleEditRequest = {
   selectAll?: boolean;
 };
 
-const SIDEBAR_WIDTH_KEY = "rumi-new-sidebar-width";
-const SIDEBAR_COLLAPSED_KEY = "rumi-new-sidebar-collapsed";
-const DEFAULT_SIDEBAR_WIDTH = 320;
-const MIN_SIDEBAR_WIDTH = 240;
-const MAX_SIDEBAR_WIDTH = 520;
 const MOBILE_SIDEBAR_TRANSITION_MS = 200;
 const AUTOSAVE_DELAY_MS = 800;
 const MAX_SAVE_REBASE_ATTEMPTS = 3;
@@ -133,12 +153,24 @@ function waitForEditorFrame(): Promise<void> {
 
 export function App(): ReactElement {
   const api = useMemo(() => new RumiApiClient(), []);
+  const startupSnapshot = useMemo(
+    () => readWorkspaceStartupSnapshot(window.localStorage),
+    []
+  );
+  const initialStartupPageMode = startupSnapshot
+    ? readStartupPageMode(window.localStorage, startupSnapshot.workspace.rootPath)
+    : "last-visited";
+  const hydrateStartupPage = Boolean(
+    startupSnapshot
+    && canHydrateStartupPage(window.location.pathname, initialStartupPageMode)
+  );
   const setMessage = useCallback((message: string) => {
     if (message) toast.error(message);
   }, []);
-  const [workspaceName, setWorkspaceName] = useState("Rumi");
-  const [workspaceRootPath, setWorkspaceRootPath] = useState("");
-  const [tree, setTree] = useState<WorkspaceNode | null>(null);
+  const [workspaceName, setWorkspaceName] = useState(startupSnapshot?.workspace.name ?? "Rumi");
+  const [workspaceRootPath, setWorkspaceRootPath] = useState(startupSnapshot?.workspace.rootPath ?? "");
+  const [tree, setTree] = useState<WorkspaceNode | null>(startupSnapshot?.tree ?? null);
+  const [treeRevalidated, setTreeRevalidated] = useState(false);
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashLoadState, setTrashLoadState] = useState<LoadState>("idle");
@@ -146,13 +178,19 @@ export function App(): ReactElement {
   const [deletingTrashId, setDeletingTrashId] = useState<string | null>(null);
   const [deleteForeverTarget, setDeleteForeverTarget] = useState<TrashItem | null>(null);
   const [activeTrashPage, setActiveTrashPage] = useState<TrashPageResult | null>(null);
-  const [selection, setSelection] = useState<SidebarSelection | null>(null);
-  const [page, setPage] = useState<PageDocument | null>(null);
+  const [selection, setSelection] = useState<SidebarSelection | null>(
+    hydrateStartupPage && startupSnapshot ? startupSnapshot.selection : null
+  );
+  const [page, setPage] = useState<PageDocument | null>(
+    hydrateStartupPage && startupSnapshot ? startupSnapshot.page : null
+  );
   const [pageTitleOverride, setPageTitleOverride] = useState<{ path: string; title: string } | null>(null);
   const [pageRenamePending, setPageRenamePending] = useState(false);
   const [pageTitleEditRequest, setPageTitleEditRequest] = useState<PageTitleEditRequest | null>(null);
-  const [draftBody, setDraftBody] = useState("");
-  const [loadState, setLoadState] = useState<LoadState>("idle");
+  const [draftBody, setDraftBody] = useState(
+    hydrateStartupPage && startupSnapshot ? startupSnapshot.page.markdownBody : ""
+  );
+  const [loadState, setLoadState] = useState<LoadState>("loading");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [editorRevision, setEditorRevision] = useState(0);
   const [databaseRefreshRevisions, setDatabaseRefreshRevisions] = useState<DatabaseRefreshRevisions>({});
@@ -166,9 +204,11 @@ export function App(): ReactElement {
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
   const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(initialStartupPageMode);
   const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>([]);
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
+  const [scrollRestoreRevision, setScrollRestoreRevision] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSavedSidebarCollapsed());
   const [sidebarMounted, setSidebarMounted] = useState(() => !sidebarCollapsed);
@@ -197,11 +237,15 @@ export function App(): ReactElement {
   const pageLoadCacheGenerationRef = useRef(0);
   const openRequestIdRef = useRef(0);
   const restoredWorkspaceRef = useRef<string | null>(null);
+  const hydratedWorkspaceRootRef = useRef(startupSnapshot?.workspace.rootPath ?? null);
+  const startupSnapshotPendingValidationRef = useRef(Boolean(startupSnapshot));
+  const pendingScrollRestoreRef = useRef<number | null>(0);
+  const historyEntryRevisionRef = useRef(0);
   const pageVisitHistoryRef = useRef<string[]>([]);
   const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
   const shortcutLabel = useMemo(() => shortcutLabels(shortcutPlatform), [shortcutPlatform]);
   const isNarrow = viewportWidth < 768;
-  const visibleSidebarWidth = Math.min(sidebarWidth, isNarrow ? Math.max(260, Math.floor(viewportWidth * 0.86)) : MAX_SIDEBAR_WIDTH);
+  const visibleSidebarWidth = sidebarWidthForViewport(sidebarWidth, viewportWidth);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
   const pageTitle = page
@@ -229,9 +273,53 @@ export function App(): ReactElement {
 
     try {
       const [workspace, nextTree] = await Promise.all([api.getWorkspace(), api.getTree()]);
+      const hydratedWorkspaceRoot = hydratedWorkspaceRootRef.current;
+      const shouldValidateStartupSnapshot = startupSnapshotPendingValidationRef.current;
+      if (
+        shouldValidateStartupSnapshot
+        && hydratedWorkspaceRoot
+        && hydratedWorkspaceRoot !== workspace.rootPath
+      ) {
+        clearWorkspaceStartupSnapshot(window.localStorage);
+        openRequestIdRef.current += 1;
+        restoredWorkspaceRef.current = null;
+        selectionRef.current = null;
+        pageRef.current = null;
+        setSelection(null);
+        setPage(null);
+        setDraftBody("");
+      } else if (shouldValidateStartupSnapshot && hydratedWorkspaceRoot === workspace.rootPath) {
+        const currentSelection = selectionRef.current;
+        const freshSelectionNode = currentSelection
+          ? findWorkspaceNode(nextTree, currentSelection.nodePath)
+          : null;
+        const cachedSelectionIsStale = Boolean(
+          currentSelection
+          && (
+            !freshSelectionNode
+            || openPathForNode(freshSelectionNode) !== currentSelection.openPath
+          )
+        );
+
+        if (cachedSelectionIsStale && !hasUnsavedPageChanges(saveStateRef.current)) {
+          clearLastOpenedPage(window.localStorage, workspace.rootPath);
+          clearWorkspaceStartupSnapshot(window.localStorage);
+          openRequestIdRef.current += 1;
+          restoredWorkspaceRef.current = null;
+          selectionRef.current = null;
+          pageRef.current = null;
+          setSelection(null);
+          setPage(null);
+          setDraftBody("");
+        }
+      }
+      startupSnapshotPendingValidationRef.current = false;
+      hydratedWorkspaceRootRef.current = workspace.rootPath;
       setWorkspaceName(workspace.name);
       setWorkspaceRootPath(workspace.rootPath);
       setTree(nextTree);
+      setStartupPageMode(readStartupPageMode(window.localStorage, workspace.rootPath));
+      setTreeRevalidated(true);
       setLoadState("idle");
     } catch (error) {
       setLoadState("error");
@@ -307,6 +395,47 @@ export function App(): ReactElement {
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  useEffect(() => {
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    window.history.replaceState(
+      mergeEditorScrollState(window.history.state, 0),
+      "",
+      window.location.href
+    );
+
+    return () => {
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
+  }, []);
+
+  useEffect(() => {
+    let frame: number | null = null;
+    const captureScroll = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.matches("[data-rumi-editor-canvas]")) {
+        return;
+      }
+      const entryRevision = historyEntryRevisionRef.current;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        if (entryRevision !== historyEntryRevisionRef.current) return;
+        window.history.replaceState(
+          mergeEditorScrollState(window.history.state, target.scrollTop),
+          "",
+          window.location.href
+        );
+      });
+    };
+
+    document.addEventListener("scroll", captureScroll, true);
+    return () => {
+      document.removeEventListener("scroll", captureScroll, true);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, []);
 
   const getCurrentDraftBody = useCallback(() => editorRef.current?.getMarkdown() ?? draftBodyRef.current, []);
 
@@ -779,7 +908,11 @@ export function App(): ReactElement {
   }, [isResizingSidebar]);
 
   const openNode = useCallback(
-    async (node: WorkspaceNode, historyAction: "push" | "replace" = "push") => {
+    async (
+      node: WorkspaceNode,
+      historyAction: "push" | "replace" = "push",
+      scrollTop = 0
+    ) => {
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
       if (historyAction === "push") {
@@ -791,6 +924,7 @@ export function App(): ReactElement {
       }
       const nextSelection = { nodePath: node.path, openPath, kind: node.kind };
       pendingHistoryActionRef.current = historyAction;
+      pendingScrollRestoreRef.current = scrollTop;
       selectionRef.current = nextSelection;
       setSelection(nextSelection);
       saveStateRef.current = "idle";
@@ -819,6 +953,15 @@ export function App(): ReactElement {
           return;
         }
 
+        if (
+          dirtyDocumentPathRef.current === openPath
+          && hasUnsavedPageChanges(saveStateRef.current)
+        ) {
+          setLoadState("idle");
+          return;
+        }
+
+        pageRef.current = nextPage;
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setLoadState("idle");
@@ -867,6 +1010,7 @@ export function App(): ReactElement {
     setTrashOpen(false);
     setActiveTrashPage(null);
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
+    clearWorkspaceStartupSnapshot(window.localStorage);
   }, [openNode, trashOpen, tree, workspaceRootPath]);
 
   const openDocumentLink = useCallback((
@@ -925,8 +1069,13 @@ export function App(): ReactElement {
       return;
     }
 
-    restoredWorkspaceRef.current = workspaceRootPath;
     const route = parseWorkspaceRoute(window.location.pathname);
+
+    if (route?.view === "node" && !findWorkspaceNodeForRoute(tree, route) && !treeRevalidated) {
+      return;
+    }
+
+    restoredWorkspaceRef.current = workspaceRootPath;
 
     if (route?.view === "settings") {
       pendingHistoryActionRef.current = "replace";
@@ -964,12 +1113,28 @@ export function App(): ReactElement {
       }
 
       pendingHistoryActionRef.current = "replace";
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(mergeEditorScrollState(window.history.state, 0), "", "/");
       setRouteSyncReady(true);
       return;
     }
 
     if (route?.view === "home") {
+      const cachedSelection = startupSnapshot
+        && snapshotMatchesWorkspace(startupSnapshot, workspaceRootPath)
+        ? startupSnapshot.selection
+        : null;
+      const savedPage = startupPageMode === "last-visited"
+        ? readLastOpenedPage(window.localStorage, workspaceRootPath) ?? cachedSelection
+        : null;
+      const savedNode = savedPage ? findWorkspaceNode(tree, savedPage.nodePath) : null;
+
+      if (savedPage && savedNode && openPathForNode(savedNode) === savedPage.openPath) {
+        setRouteSyncReady(true);
+        void openNode(savedNode, "replace");
+        return;
+      }
+
+      if (savedPage) clearLastOpenedPage(window.localStorage, workspaceRootPath);
       setRouteSyncReady(true);
       void openNode(tree, "replace");
       return;
@@ -977,43 +1142,32 @@ export function App(): ReactElement {
 
     if (!route) {
       pendingHistoryActionRef.current = "replace";
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(mergeEditorScrollState(window.history.state, 0), "", "/");
       setRouteSyncReady(true);
       return;
     }
-
-    const savedPage = readLastOpenedPage(window.localStorage, workspaceRootPath);
-
-    if (!savedPage) {
-      setRouteSyncReady(true);
-      return;
-    }
-
-    const node = findWorkspaceNode(tree, savedPage.nodePath);
-
-    if (!node || openPathForNode(node) !== savedPage.openPath) {
-      clearLastOpenedPage(window.localStorage, workspaceRootPath);
-      setRouteSyncReady(true);
-      return;
-    }
-
-    setRouteSyncReady(true);
-    void openNode(node, "replace");
   }, [
     loadTrash,
     loadWorkspaceSettings,
     openNode,
     openTrashPage,
+    startupPageMode,
+    startupSnapshot,
     tree,
+    treeRevalidated,
     workspaceRootPath
   ]);
 
   useEffect(() => {
     if (!routeSyncReady || !tree) return;
 
-    const handlePopState = () => {
+    const handlePopState = (event: PopStateEvent) => {
+      historyEntryRevisionRef.current += 1;
+      setScrollRestoreRevision((revision) => revision + 1);
       const route = parseWorkspaceRoute(window.location.pathname);
+      const historyScrollTop = readEditorScrollTop(event.state);
       pendingHistoryActionRef.current = "replace";
+      pendingScrollRestoreRef.current = historyScrollTop;
 
       if (route?.view === "settings") {
         setSettingsOpen(true);
@@ -1042,13 +1196,13 @@ export function App(): ReactElement {
       if (route?.view === "node") {
         const routedNode = findWorkspaceNodeForRoute(tree, route);
         if (routedNode) {
-          void openNode(routedNode, "replace");
+          void openNode(routedNode, "replace", historyScrollTop);
           return;
         }
       }
 
       if (route?.view === "home") {
-        void openNode(tree, "replace");
+        void openNode(tree, "replace", historyScrollTop);
         return;
       }
 
@@ -1060,7 +1214,7 @@ export function App(): ReactElement {
       setDraftBody("");
       setSelection(null);
       setSaveState("idle");
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(mergeEditorScrollState(window.history.state, 0), "", "/");
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -1094,9 +1248,47 @@ export function App(): ReactElement {
     }
 
     const action = pendingHistoryActionRef.current;
-    window.history[action === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
+    historyEntryRevisionRef.current += 1;
+    const canvas = document.querySelector<HTMLElement>("[data-rumi-editor-canvas]");
+    const replacementScrollTop = pendingScrollRestoreRef.current ?? canvas?.scrollTop ?? 0;
+    if (action === "push") {
+      window.history.replaceState(
+        mergeEditorScrollState(window.history.state, canvas?.scrollTop ?? 0),
+        "",
+        window.location.href
+      );
+    }
+    window.history[action === "push" ? "pushState" : "replaceState"](
+      mergeEditorScrollState(
+        action === "push" ? null : window.history.state,
+        action === "push" ? 0 : replacementScrollTop
+      ),
+      "",
+      nextUrl
+    );
+    pendingScrollRestoreRef.current = action === "push" ? 0 : replacementScrollTop;
+    setScrollRestoreRevision((revision) => revision + 1);
     pendingHistoryActionRef.current = "replace";
   }, [activeTrashPage, routeSyncReady, selection, settingsOpen, trashOpen, tree]);
+
+  useEffect(() => {
+    const scrollTop = pendingScrollRestoreRef.current;
+    if (scrollTop === null) return;
+    if (selection?.openPath && page?.path !== selection.openPath) return;
+
+    pendingScrollRestoreRef.current = null;
+    return restoreEditorScroll(
+      () => document.querySelector<HTMLElement>("[data-rumi-editor-canvas]"),
+      scrollTop
+    );
+  }, [
+    activeTrashPage?.item.id,
+    page?.path,
+    scrollRestoreRevision,
+    selection?.openPath,
+    settingsOpen,
+    trashOpen
+  ]);
 
   useEffect(() => {
     if (!workspaceRootPath || !page || !selection || selection.openPath !== page.path) {
@@ -1109,6 +1301,33 @@ export function App(): ReactElement {
       kind: selection.kind
     });
   }, [page, selection, workspaceRootPath]);
+
+  useEffect(() => {
+    if (
+      !workspaceRootPath
+      || !tree
+      || !page
+      || !selection
+      || !selection.openPath
+      || selection.openPath !== page.path
+      || (saveState !== "idle" && saveState !== "saved")
+    ) {
+      return;
+    }
+
+    writeWorkspaceStartupSnapshot(window.localStorage, {
+      schemaVersion: 1,
+      cachedAt: Date.now(),
+      workspace: { rootPath: workspaceRootPath, name: workspaceName },
+      tree,
+      selection: {
+        nodePath: selection.nodePath,
+        openPath: selection.openPath,
+        kind: selection.kind
+      },
+      page
+    });
+  }, [page, saveState, selection, tree, workspaceName, workspaceRootPath]);
 
   const requestPageTitleSelection = useCallback((path: string) => {
     pageTitleEditRequestIdRef.current += 1;
@@ -1385,7 +1604,8 @@ export function App(): ReactElement {
   }, [isNarrow, loadWorkspaceSettings]);
 
   const saveWorkspaceSettings = useCallback(async (
-    settings: WorkspaceSettings
+    settings: WorkspaceSettings,
+    nextStartupPageMode: StartupPageMode
   ): Promise<boolean> => {
     if (settingsSaveInFlightRef.current) return false;
     settingsSaveInFlightRef.current = true;
@@ -1396,6 +1616,8 @@ export function App(): ReactElement {
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
       setInlineToolbar(result.settings.editor.inlineToolbar);
       setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
+      writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
+      setStartupPageMode(nextStartupPageMode);
       setSettingsLoadState("idle");
       return true;
     } catch (error) {
@@ -1404,7 +1626,7 @@ export function App(): ReactElement {
     } finally {
       settingsSaveInFlightRef.current = false;
     }
-  }, [api, setMessage]);
+  }, [api, setMessage, workspaceRootPath]);
 
   const restoreTrashItem = useCallback(async (
     item: TrashItem,
@@ -2323,7 +2545,6 @@ export function App(): ReactElement {
             workspaceKey={workspaceRootPath}
             tree={tree}
             selection={trashOpen || settingsOpen ? null : selection}
-            loadState={loadState}
             trashCount={trashItems.length}
             trashOpen={trashOpen}
             settingsOpen={settingsOpen}
@@ -2408,6 +2629,7 @@ export function App(): ReactElement {
         {settingsOpen ? (
           <WorkspaceSettingsView
             result={workspaceSettingsResult}
+            startupPageMode={startupPageMode}
             loadState={settingsLoadState}
             onReload={() => void loadWorkspaceSettings()}
             onSave={saveWorkspaceSettings}
@@ -2469,7 +2691,7 @@ export function App(): ReactElement {
                   />
                 </div>
                 <div className={Object.keys(activeTrashPage.page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
-                  <Suspense fallback={<p className="py-4 text-sm text-muted-foreground">Loading page…</p>}>
+                  <Suspense fallback={null}>
                     <div className="pointer-events-none">
                       <RumiBlockEditor
                         api={api}
@@ -2556,7 +2778,7 @@ export function App(): ReactElement {
               </div>
 
               <div className={page.kind === "database" || Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
-                <Suspense fallback={<p className="py-4 text-sm text-muted-foreground">Loading editor…</p>}>
+                <Suspense fallback={null}>
                   <RumiBlockEditor
                     ref={editorRef}
                     api={api}
@@ -2579,6 +2801,8 @@ export function App(): ReactElement {
               </div>
             </article>
           </div>
+        ) : loadState === "loading" ? (
+          <div className="min-h-0 flex-1" data-rumi-editor-canvas="" />
         ) : (
           <div className="grid min-h-0 flex-1 place-items-center p-8 text-muted-foreground">
             <p>Open a page from the sidebar.</p>
@@ -2623,43 +2847,20 @@ function canMutate(node: WorkspaceNode | null): boolean {
   return Boolean(node && node.kind !== "workspace");
 }
 
+function hasUnsavedPageChanges(state: SaveState): boolean {
+  return state === "dirty" || state === "saving";
+}
+
 function getViewportWidth(): number {
   return typeof window === "undefined" ? 1024 : window.innerWidth;
-}
-
-function getSavedSidebarWidth(): number {
-  try {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-
-    if (saved) {
-      return clamp(JSON.parse(saved) as number, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
-    }
-  } catch {
-    return DEFAULT_SIDEBAR_WIDTH;
-  }
-
-  return DEFAULT_SIDEBAR_WIDTH;
-}
-
-function getSavedSidebarCollapsed(): boolean {
-  try {
-    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    return saved ? Boolean(JSON.parse(saved)) : false;
-  } catch {
-    return false;
-  }
 }
 
 function setSidebarCollapsedState(
   collapsed: boolean,
   setCollapsed: (collapsed: boolean) => void
 ): void {
-  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(collapsed));
+  saveSidebarCollapsed(collapsed);
   setCollapsed(collapsed);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 function isSameOrDescendant(candidate: string, parentPath: string): boolean {

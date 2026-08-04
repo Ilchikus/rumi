@@ -1,10 +1,12 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AuthGate } from "./AuthGate";
+import { WorkspaceLoadingShell } from "./components/layout/WorkspaceLoadingShell";
 import "./styles.css";
 
+const appModule = import("./App");
 const App = lazy(async () => {
-  const module = await import("./App");
+  const module = await appModule;
   return { default: module.App };
 });
 
@@ -17,13 +19,7 @@ if (!root) {
 createRoot(root).render(
   <StrictMode>
     <AuthGate>
-      <Suspense
-        fallback={
-          <main className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
-            Opening workspace…
-          </main>
-        }
-      >
+      <Suspense fallback={<WorkspaceLoadingShell />}>
         <App />
       </Suspense>
     </AuthGate>

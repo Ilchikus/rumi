@@ -172,9 +172,7 @@ Startup-performance follow-up verified on 2026-08-05:
 
 Loading-copy follow-up verified on 2026-08-05:
 
-- kept the editor canvas empty between workspace-tree resolution and initial route restoration, so
-  `Open a page from the sidebar.` cannot flash while the startup page is still being selected
-- preserved that instruction for the genuine post-routing state where the workspace has no page to
-  open
+- removed the no-page instruction from the editor canvas entirely, so development-mode startup
+  effects cannot expose it between overlapping tree and page requests
 - focused loading-shell coverage passed; user visual QA remains open and no merge is allowed before
   explicit approval

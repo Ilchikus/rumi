@@ -19,7 +19,7 @@ describe("workspace loading shell", () => {
     expect(appSource).toContain(
       'const rumiBlockEditorModule = import("./components/editor/RumiBlockEditor")'
     );
-    expect(appSource).toContain('loadState === "loading" || !routeSyncReady');
+    expect(appSource).not.toContain("Open a page from the sidebar.");
     expect(authSource).not.toContain("Opening Rumi");
     expect(mainSource).not.toContain("Opening workspace");
     expect(sidebarSource).not.toContain("Loading workspace");

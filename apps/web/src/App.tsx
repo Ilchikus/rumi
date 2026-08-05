@@ -2976,12 +2976,8 @@ export function App(): ReactElement {
               </div>
             </article>
           </div>
-        ) : loadState === "loading" || !routeSyncReady ? (
-          <div className="min-h-0 flex-1" data-rumi-editor-canvas="" />
         ) : (
-          <div className="grid min-h-0 flex-1 place-items-center p-8 text-muted-foreground">
-            <p>Open a page from the sidebar.</p>
-          </div>
+          <div className="min-h-0 flex-1" data-rumi-editor-canvas="" />
         )}
       </section>
 

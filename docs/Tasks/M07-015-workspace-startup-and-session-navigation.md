@@ -32,8 +32,10 @@ the position the user left during the current browser session.
 - Persist a bounded, versioned startup snapshot containing workspace identity, tree, last selection,
   and the last successfully loaded or saved page.
 - Keep the cached page aligned with the configured cold-start target: the workspace root for Home,
-  or the latest visited page for Last visited. Reuse that cached page when reopening its matching
-  explicit URL as well as when entering through `/`.
+  or the latest visited page for Last visited. Reuse that cached page only when entering through
+  `/`; never hydrate it for an explicit page URL.
+- Keep bookmarked and directly entered non-home URLs authoritative by resolving them against the
+  freshly loaded server tree before opening their requested page.
 - Hydrate the authenticated application from the startup snapshot, then revalidate workspace, tree,
   settings, trash, and page data without allowing stale cache data to overwrite a newer page or an
   unsaved draft.
@@ -79,8 +81,8 @@ seed the first render and first page request, not create a second long-lived cli
 - Ordinary in-app navigation back to a previously visited page restores that page's latest position
   from memory during the same session.
 - Cached tree/page content appears immediately when valid and reconciles to fresh server data.
-- Home and the matching last-visited URL both hydrate their configured cached page after
-  authentication instead of waiting for the page request.
+- Home hydrates its configured cached page after authentication; explicit page URLs wait for the
+  fresh tree and open only their requested target.
 - Property creation is quiet until the properties area is active without becoming inaccessible.
 - Focused tests, full checks, package release checks, and manual browser QA pass.
 
@@ -128,3 +130,15 @@ Cold-start cache follow-up verified on 2026-08-04:
 - after choosing Home and navigating elsewhere, the snapshot kept the workspace root; a cold `/`
   rendered the cached sidebar and Home page at about 1000 ms while the API response remained held
 - browser QA used a disposable Chrome profile and made no persistent workspace or sandbox changes
+
+Explicit-route follow-up on 2026-08-05:
+
+- restricted persisted page hydration and Last visited redirects to cold visits of `/`
+- made cold explicit page URLs wait for the fresh server tree before resolving their target
+- focused startup, route, and last-opened-page coverage passed with 3 files and 18 tests
+- `corepack pnpm check` passed with 65 test files and 487 tests, typecheck, the production web
+  build, and the bundled server build
+- with workspace and tree requests held, a cold `/vision` kept its URL and empty cached editor
+  shell until the fresh tree arrived; a cold `/` immediately hydrated Vision and replaced the
+  root URL with `/vision` under Last visited
+- user visual QA remains open; no merge is allowed before explicit approval

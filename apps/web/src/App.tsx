@@ -173,21 +173,11 @@ export function App(): ReactElement {
   const initialStartupPageMode = startupSnapshot
     ? readStartupPageMode(window.localStorage, startupSnapshot.workspace.rootPath)
     : "last-visited";
-  const startupSnapshotPathname = startupSnapshot
-    ? workspaceUrlForNode(
-        {
-          path: startupSnapshot.selection.nodePath,
-          kind: startupSnapshot.selection.kind
-        },
-        startupSnapshot.tree
-      )
-    : "";
   const hydrateStartupPage = Boolean(
     startupSnapshot
     && canHydrateStartupPage(
       window.location.pathname,
       initialStartupPageMode,
-      startupSnapshotPathname,
       startupSnapshot.selection.kind === "workspace"
         && startupSnapshot.selection.nodePath === ""
         && startupSnapshot.tree.path === ""
@@ -1139,7 +1129,7 @@ export function App(): ReactElement {
 
     const route = parseWorkspaceRoute(window.location.pathname);
 
-    if (route?.view === "node" && !findWorkspaceNodeForRoute(tree, route) && !treeRevalidated) {
+    if (route?.view === "node" && !treeRevalidated) {
       return;
     }
 

@@ -96,13 +96,10 @@ export function writeStartupPageMode(
 export function canHydrateStartupPage(
   pathname: string,
   mode: StartupPageMode,
-  cachedPathname: string,
   cachedPageIsHome: boolean
 ): boolean {
-  if (pathname === "/") {
-    return mode === "last-visited" || cachedPageIsHome;
-  }
-  return pathname === cachedPathname;
+  if (pathname !== "/") return false;
+  return mode === "last-visited" || cachedPageIsHome;
 }
 
 function startupPageModeKey(workspaceRootPath: string): string {

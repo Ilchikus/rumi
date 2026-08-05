@@ -51,17 +51,17 @@ describe("workspace startup persistence", () => {
     expect(readStartupPageMode(storage, "/workspace/other")).toBe("last-visited");
   });
 
-  it("hydrates the configured cached page at root and its matching explicit URL", () => {
-    expect(canHydrateStartupPage("/", "last-visited", "/projects/roadmap", false)).toBe(true);
-    expect(canHydrateStartupPage("/", "home", "/", true)).toBe(true);
-    expect(canHydrateStartupPage("/", "home", "/projects/roadmap", false)).toBe(false);
+  it("hydrates the configured cached page only for a cold visit to workspace home", () => {
+    expect(canHydrateStartupPage("/", "last-visited", false)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", true)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", false)).toBe(false);
     expect(
-      canHydrateStartupPage("/projects/roadmap", "home", "/projects/roadmap", false)
-    ).toBe(true);
-    expect(
-      canHydrateStartupPage("/projects/other", "last-visited", "/projects/roadmap", false)
+      canHydrateStartupPage("/projects/roadmap", "last-visited", false)
     ).toBe(false);
-    expect(canHydrateStartupPage("/settings", "last-visited", "/projects/roadmap", false)).toBe(false);
+    expect(
+      canHydrateStartupPage("/projects/other", "last-visited", false)
+    ).toBe(false);
+    expect(canHydrateStartupPage("/settings", "last-visited", false)).toBe(false);
   });
 
   it("hydrates behind the authenticated App boundary and revalidates server state", () => {
@@ -71,6 +71,7 @@ describe("workspace startup persistence", () => {
     expect(appSource).toContain("loadPage(homeOpenPath)");
     expect(appSource).toContain("Promise.all([api.getWorkspace(), api.getTree()])");
     expect(appSource).toContain("snapshotMatchesWorkspace");
+    expect(appSource).toContain('if (route?.view === "node" && !treeRevalidated)');
     expect(appSource).toContain('saveState === "idle" || saveState === "saved"');
   });
 });

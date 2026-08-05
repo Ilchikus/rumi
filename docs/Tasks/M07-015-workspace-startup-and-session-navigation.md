@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-04"
-updated: "2026-08-04"
+updated: "2026-08-05"
 ---
 # M07-015 Workspace Startup And Session Navigation
 
@@ -169,3 +169,12 @@ Startup-performance follow-up verified on 2026-08-05:
 - real-browser smoke confirmed Settings, Trash, and Command-K search load their deferred chunks,
   while the emoji catalog is absent from startup and loads successfully when `:` is typed
 - user visual QA remains open; no merge is allowed before explicit approval
+
+Loading-copy follow-up verified on 2026-08-05:
+
+- kept the editor canvas empty between workspace-tree resolution and initial route restoration, so
+  `Open a page from the sidebar.` cannot flash while the startup page is still being selected
+- preserved that instruction for the genuine post-routing state where the workspace has no page to
+  open
+- focused loading-shell coverage passed; user visual QA remains open and no merge is allowed before
+  explicit approval

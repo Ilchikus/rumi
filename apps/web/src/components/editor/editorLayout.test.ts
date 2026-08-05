@@ -37,7 +37,7 @@ const selectionToolbar = readFileSync(
 );
 
 describe("editor layout contracts", () => {
-  it("uses four-pixel paragraph spacing and tighter two-pixel list spacing", () => {
+  it("uses flush five-pixel paragraph spacing and tighter flush list spacing", () => {
     const paragraphRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror > p"
@@ -46,9 +46,16 @@ describe("editor layout contracts", () => {
       editorStyles,
       ".prosemirror-editor .ProseMirror .bullet-item,\n.prosemirror-editor .ProseMirror .numbered-item,\n.prosemirror-editor .ProseMirror .task-item"
     );
+    const bulletMarkerRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item::before"
+    );
 
-    expect(paragraphRule).toContain("margin: 4px 0;");
+    expect(paragraphRule).toContain("margin: 5px 0;");
+    expect(paragraphRule).toContain("padding-left: 0;");
     expect(flatListRule).toContain("margin: 2px 0;");
+    expect(flatListRule).toContain("padding-left: 1.5em;");
+    expect(bulletMarkerRule).toContain("left: 0;");
     expect(editorStyles).not.toContain(".prosemirror-editor .ProseMirror > p:last-child");
   });
 

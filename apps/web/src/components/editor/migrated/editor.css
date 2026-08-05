@@ -44,7 +44,8 @@
 
 /* Separate paragraph blocks visibly; hard breaks remain within one compact block. */
 .prosemirror-editor .ProseMirror > p {
-  margin: 4px 0;
+  margin: 5px 0;
+  padding-left: 0;
 }
 
 
@@ -646,7 +647,7 @@
 .prosemirror-editor .ProseMirror .bullet-item::before {
   content: "•";
   position: absolute;
-  left: 0.25em;
+  left: 0;
   color: hsl(var(--foreground));
 }
 

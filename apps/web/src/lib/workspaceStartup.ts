@@ -1,4 +1,9 @@
-import type { OpenWorkspaceResult, PageDocument, WorkspaceNode } from "@rumi/contracts";
+import type {
+  OpenWorkspaceResult,
+  PageDocument,
+  WorkspaceNode,
+  WorkspaceSettings
+} from "@rumi/contracts";
 import type { LastOpenedPage } from "./lastOpenedPage";
 
 const STARTUP_SNAPSHOT_KEY = "rumi-new-workspace-startup:v1";
@@ -20,6 +25,7 @@ export interface WorkspaceStartupSnapshot {
   tree: WorkspaceNode;
   selection: LastOpenedPage;
   page: PageDocument;
+  settings?: WorkspaceSettings;
 }
 
 export function readWorkspaceStartupSnapshot(
@@ -112,10 +118,31 @@ function isWorkspaceStartupSnapshot(value: unknown): value is WorkspaceStartupSn
     return false;
   }
   if (!isSelection(value.selection) || !isPageDocument(value.page)) return false;
+  if (value.settings !== undefined && !isWorkspaceSettings(value.settings)) return false;
   if (value.selection.openPath !== value.page.path) return false;
 
   const selectedNode = findNode(value.tree, value.selection.nodePath);
   return Boolean(selectedNode && selectedNode.kind === value.selection.kind);
+}
+
+function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
+  if (!isRecord(value) || !isRecord(value.uploads) || !isRecord(value.editor)) return false;
+  const maxFileSizeMb = value.uploads.maxFileSizeMb;
+  const allowedFileTypes = value.uploads.allowedFileTypes;
+  const inlineToolbar = value.editor.inlineToolbar;
+
+  return (maxFileSizeMb === null || (
+    isFiniteNumber(maxFileSizeMb)
+    && Number.isSafeInteger(maxFileSizeMb)
+    && maxFileSizeMb >= 0
+  ))
+    && Array.isArray(allowedFileTypes)
+    && allowedFileTypes.every((fileType) => typeof fileType === "string")
+    && typeof value.editor.highlightMisspellings === "boolean"
+    && typeof value.editor.inlineReplacements === "boolean"
+    && typeof value.editor.emojiSuggestions === "boolean"
+    && typeof inlineToolbar === "string"
+    && ["floating", "top", "bottom", "none"].includes(inlineToolbar);
 }
 
 function isWorkspace(value: unknown): value is OpenWorkspaceResult {

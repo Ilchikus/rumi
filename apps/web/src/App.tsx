@@ -39,7 +39,6 @@ import type {
   RumiBlockEditorHandle,
   RumiDocumentLink
 } from "./components/editor/RumiBlockEditor";
-import { DatabaseView } from "./components/database/DatabaseView";
 import {
   bumpDatabaseRefreshRevision,
   databaseRefreshRevisionFor
@@ -50,7 +49,6 @@ import { PageProperties } from "./components/editor/PageProperties";
 import { EditablePageTitle } from "./components/editor/EditablePageTitle";
 import type { EditableTitleSplitContext } from "./components/editor/EditablePageTitle";
 import { randomDatabaseOptionColor } from "./components/editor/DatabaseOptionPill";
-import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
 import { emptyPageTitle, pageTitleFromPath } from "./components/editor/pagePresentation";
 import {
   EDITOR_PAGE_CONTAINER_CLASS
@@ -60,9 +58,6 @@ import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
-import { SearchDialog } from "./components/search/SearchDialog";
-import { WorkspaceSettingsView } from "./components/settings/WorkspaceSettingsView";
-import { DeleteTrashItemDialog, TrashView } from "./components/trash/TrashView";
 import {
   clearLastOpenedPage,
   findWorkspaceNode,
@@ -110,9 +105,34 @@ import {
   type WorkspaceStartupSnapshot
 } from "./lib/workspaceStartup";
 
+const rumiBlockEditorModule = import("./components/editor/RumiBlockEditor");
 const RumiBlockEditor = lazy(async () => {
-  const module = await import("./components/editor/RumiBlockEditor");
+  const module = await rumiBlockEditorModule;
   return { default: module.RumiBlockEditor };
+});
+const DatabaseView = lazy(async () => {
+  const module = await import("./components/database/DatabaseView");
+  return { default: module.DatabaseView };
+});
+const RevisionHistoryDialog = lazy(async () => {
+  const module = await import("./components/editor/RevisionHistoryDialog");
+  return { default: module.RevisionHistoryDialog };
+});
+const SearchDialog = lazy(async () => {
+  const module = await import("./components/search/SearchDialog");
+  return { default: module.SearchDialog };
+});
+const WorkspaceSettingsView = lazy(async () => {
+  const module = await import("./components/settings/WorkspaceSettingsView");
+  return { default: module.WorkspaceSettingsView };
+});
+const TrashView = lazy(async () => {
+  const module = await import("./components/trash/TrashView");
+  return { default: module.TrashView };
+});
+const DeleteTrashItemDialog = lazy(async () => {
+  const module = await import("./components/trash/TrashView");
+  return { default: module.DeleteTrashItemDialog };
 });
 
 type LoadState = "idle" | "loading" | "error";
@@ -219,13 +239,25 @@ export function App(): ReactElement {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceSettingsResult, setWorkspaceSettingsResult] =
     useState<WorkspaceSettingsResult | null>(null);
+  const [cachedWorkspaceSettings, setCachedWorkspaceSettings] =
+    useState<WorkspaceSettings | undefined>(startupSnapshot?.settings);
   const [settingsLoadState, setSettingsLoadState] = useState<LoadState>("idle");
-  const [highlightMisspellings, setHighlightMisspellings] = useState(false);
-  const [inlineReplacements, setInlineReplacements] = useState(true);
-  const [emojiSuggestions, setEmojiSuggestions] = useState(true);
-  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>("floating");
+  const [highlightMisspellings, setHighlightMisspellings] = useState(
+    startupSnapshot?.settings?.editor.highlightMisspellings ?? false
+  );
+  const [inlineReplacements, setInlineReplacements] = useState(
+    startupSnapshot?.settings?.editor.inlineReplacements ?? true
+  );
+  const [emojiSuggestions, setEmojiSuggestions] = useState(
+    startupSnapshot?.settings?.editor.emojiSuggestions ?? true
+  );
+  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>(
+    startupSnapshot?.settings?.editor.inlineToolbar ?? "floating"
+  );
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(initialStartupPageMode);
-  const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>([]);
+  const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>(
+    startupSnapshot?.settings?.uploads.allowedFileTypes ?? []
+  );
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [scrollRestoreRevision, setScrollRestoreRevision] = useState(0);
@@ -387,6 +419,7 @@ export function App(): ReactElement {
     try {
       const result = await api.getWorkspaceSettings();
       setWorkspaceSettingsResult(result);
+      setCachedWorkspaceSettings(result.settings);
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
       setInlineReplacements(result.settings.editor.inlineReplacements);
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
@@ -1393,7 +1426,8 @@ export function App(): ReactElement {
           openPath: snapshotSelection.openPath,
           kind: snapshotSelection.kind
         },
-        page: snapshotPage
+        page: snapshotPage,
+        ...(cachedWorkspaceSettings ? { settings: cachedWorkspaceSettings } : {})
       };
       startupSnapshotRef.current = writeWorkspaceStartupSnapshot(
         window.localStorage,
@@ -1459,7 +1493,8 @@ export function App(): ReactElement {
     startupPageMode,
     tree,
     workspaceName,
-    workspaceRootPath
+    workspaceRootPath,
+    cachedWorkspaceSettings
   ]);
 
   const requestPageTitleSelection = useCallback((path: string) => {
@@ -1743,6 +1778,7 @@ export function App(): ReactElement {
     const queuedSave = settingsSaveQueueRef.current.then(async (): Promise<boolean> => {
       try {
         const result = await api.updateWorkspaceSettings(settings);
+        setCachedWorkspaceSettings(result.settings);
         setHighlightMisspellings(result.settings.editor.highlightMisspellings);
         setInlineReplacements(result.settings.editor.inlineReplacements);
         setEmojiSuggestions(result.settings.editor.emojiSuggestions);
@@ -2760,23 +2796,27 @@ export function App(): ReactElement {
         />
 
         {settingsOpen ? (
-          <WorkspaceSettingsView
-            result={workspaceSettingsResult}
-            startupPageMode={startupPageMode}
-            loadState={settingsLoadState}
-            onReload={() => void loadWorkspaceSettings()}
-            onSave={saveWorkspaceSettings}
-          />
+          <Suspense fallback={<div className="min-h-0 flex-1" data-rumi-editor-canvas="" />}>
+            <WorkspaceSettingsView
+              result={workspaceSettingsResult}
+              startupPageMode={startupPageMode}
+              loadState={settingsLoadState}
+              onReload={() => void loadWorkspaceSettings()}
+              onSave={saveWorkspaceSettings}
+            />
+          </Suspense>
         ) : trashOpen && !activeTrashPage ? (
-          <TrashView
-            items={trashItems}
-            loadState={trashLoadState}
-            restoringId={restoringTrashId}
-            deletingId={deletingTrashId}
-            onOpen={(item) => void openTrashPage(item)}
-            onRestore={restoreTrashItem}
-            onDeleteForever={setDeleteForeverTarget}
-          />
+          <Suspense fallback={<div className="min-h-0 flex-1" data-rumi-editor-canvas="" />}>
+            <TrashView
+              items={trashItems}
+              loadState={trashLoadState}
+              restoringId={restoringTrashId}
+              deletingId={deletingTrashId}
+              onOpen={(item) => void openTrashPage(item)}
+              onRestore={restoreTrashItem}
+              onDeleteForever={setDeleteForeverTarget}
+            />
+          </Suspense>
         ) : activeTrashPage ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 flex-col items-start justify-between gap-3 border-b border-border bg-muted/70 px-6 py-3 text-sm sm:flex-row sm:items-center">
@@ -2868,18 +2908,20 @@ export function App(): ReactElement {
                 />
 
                 {page.kind === "database" ? (
-                  <DatabaseView
-                    variant="original"
-                    api={api}
-                    databasePath={parentPathForPage(page.path)}
-                    preferenceScope={workspaceRootPath}
-                    refreshRevision={databaseRefreshRevisionFor(
-                      databaseRefreshRevisions,
-                      parentPathForPage(page.path)
-                    )}
-                    onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
-                    onMessage={setMessage}
-                  />
+                  <Suspense fallback={<div className="min-h-40" aria-hidden="true" />}>
+                    <DatabaseView
+                      variant="original"
+                      api={api}
+                      databasePath={parentPathForPage(page.path)}
+                      preferenceScope={workspaceRootPath}
+                      refreshRevision={databaseRefreshRevisionFor(
+                        databaseRefreshRevisions,
+                        parentPathForPage(page.path)
+                      )}
+                      onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
+                      onMessage={setMessage}
+                    />
+                  </Suspense>
                 ) : (
                   <PageProperties
                     frontmatter={page.frontmatter}
@@ -2943,34 +2985,44 @@ export function App(): ReactElement {
         )}
       </section>
 
-      <DeleteTrashItemDialog
-        item={deleteForeverTarget}
-        busy={deletingTrashId !== null}
-        onOpenChange={(open) => {
-          if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
-        }}
-        onConfirm={deleteTrashItemForever}
-      />
-
-      {page && !trashOpen && !settingsOpen && (
-        <RevisionHistoryDialog
-          api={api}
-          path={page.path}
-          open={revisionHistoryOpen}
-          dirty={saveState === "dirty" || saveState === "saving"}
-          currentMarkdown={() => serializeMarkdownFile(page.frontmatter, getCurrentDraftBody())}
-          onOpenChange={setRevisionHistoryOpen}
-          onRestored={refreshOpenPage}
-          onMessage={setMessage}
-        />
+      {deleteForeverTarget && (
+        <Suspense fallback={null}>
+          <DeleteTrashItemDialog
+            item={deleteForeverTarget}
+            busy={deletingTrashId !== null}
+            onOpenChange={(open) => {
+              if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
+            }}
+            onConfirm={deleteTrashItemForever}
+          />
+        </Suspense>
       )}
-      <SearchDialog
-        api={api}
-        open={searchOpen}
-        onOpenChange={setSearchOpen}
-        onOpenItem={(item) => void openSearchResult(item)}
-        onMessage={setMessage}
-      />
+
+      {page && !trashOpen && !settingsOpen && revisionHistoryOpen && (
+        <Suspense fallback={null}>
+          <RevisionHistoryDialog
+            api={api}
+            path={page.path}
+            open
+            dirty={saveState === "dirty" || saveState === "saving"}
+            currentMarkdown={() => serializeMarkdownFile(page.frontmatter, getCurrentDraftBody())}
+            onOpenChange={setRevisionHistoryOpen}
+            onRestored={refreshOpenPage}
+            onMessage={setMessage}
+          />
+        </Suspense>
+      )}
+      {searchOpen && (
+        <Suspense fallback={null}>
+          <SearchDialog
+            api={api}
+            open
+            onOpenChange={setSearchOpen}
+            onOpenItem={(item) => void openSearchResult(item)}
+            onMessage={setMessage}
+          />
+        </Suspense>
+      )}
       <Toaster />
     </main>
   );

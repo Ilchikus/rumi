@@ -13,7 +13,6 @@ import {
   type EmojiPickerPresentation
 } from "../../../emoji/EmojiPicker";
 import {
-  searchEmoji,
   type EmojiDefinition,
   type EmojiSearchResult
 } from "../../../emoji/emojiCatalog";
@@ -38,7 +37,10 @@ export interface EmojiSuggestionsPluginOptions {
   enabled?: boolean;
   workspaceKey?: string;
   picker?: EmojiSuggestionPickerConfig;
+  searchEmoji?: EmojiSearchFunction;
 }
+
+type EmojiSearchFunction = typeof import("../../../emoji/emojiCatalog")["searchEmoji"];
 
 interface EmojiQueryRange {
   from: number;
@@ -74,6 +76,21 @@ interface EmojiSuggestionMeta {
 
 const PICKER_ID = "rumi-editor-emoji-picker";
 const RECENT_LIMIT = 24;
+let loadedEmojiSearch: EmojiSearchFunction | null = null;
+let emojiSearchPromise: Promise<EmojiSearchFunction> | null = null;
+
+function loadEmojiSearch(): Promise<EmojiSearchFunction> {
+  emojiSearchPromise ??= import("../../../emoji/emojiCatalog")
+    .then((module) => {
+      loadedEmojiSearch = module.searchEmoji;
+      return module.searchEmoji;
+    })
+    .catch((error: unknown) => {
+      emojiSearchPromise = null;
+      throw error;
+    });
+  return emojiSearchPromise;
+}
 
 export function emojiSuggestionsPlugin(
   schema: Schema,
@@ -201,6 +218,9 @@ export function emojiSuggestionsPlugin(
           } satisfies EmojiSuggestionMeta);
         transaction = claimSuggestionMenu(transaction, "emoji");
         view.dispatch(transaction);
+        if (!options.searchEmoji && !loadedEmojiSearch) {
+          void loadEmojiSearch().catch(() => undefined);
+        }
         return true;
       },
       handleKeyDown(view, event) {
@@ -215,7 +235,16 @@ export function emojiSuggestionsPlugin(
         }
         if (!pluginState.active || !pluginState.range) return false;
 
-        const results = resultsForState(pluginState, options);
+        const searchEmoji = options.searchEmoji ?? loadedEmojiSearch;
+        if (!searchEmoji && event.key === "Enter") {
+          event.preventDefault();
+          event.stopPropagation();
+          void loadEmojiSearch().catch(() => undefined);
+          return true;
+        }
+        const results = searchEmoji
+          ? resultsForState(pluginState, options, searchEmoji)
+          : [];
         if (event.key === "ArrowRight" || event.key === "ArrowDown") {
           const delta = event.key === "ArrowRight" ? 1 : columns;
           return focusResult(view, Math.min(
@@ -291,6 +320,8 @@ export function emojiSuggestionsPlugin(
       host.dataset.rumiEmojiPickerHost = "true";
       document.body.appendChild(host);
       const root: Root = createRoot(host);
+      let destroyed = false;
+      let searchLoadRequested = false;
 
       const renderPicker = () => {
         const pluginState = emojiSuggestionsPluginKey.getState(editorView.state);
@@ -303,7 +334,25 @@ export function emojiSuggestionsPlugin(
           return;
         }
 
-        const results = resultsForState(pluginState, options);
+        const searchEmoji = options.searchEmoji ?? loadedEmojiSearch;
+        if (!searchEmoji) {
+          if (!searchLoadRequested) {
+            searchLoadRequested = true;
+            void loadEmojiSearch().then(
+              () => {
+                searchLoadRequested = false;
+                if (!destroyed) renderPicker();
+              },
+              () => {
+                searchLoadRequested = false;
+              }
+            );
+          }
+          root.render(null);
+          return;
+        }
+
+        const results = resultsForState(pluginState, options, searchEmoji);
         const focusedIndex = Math.min(
           pluginState.focusedIndex,
           Math.max(0, results.length - 1)
@@ -364,6 +413,7 @@ export function emojiSuggestionsPlugin(
       return {
         update: renderPicker,
         destroy() {
+          destroyed = true;
           document.removeEventListener("pointerdown", handleOutsidePointerDown);
           editorView.dom.removeAttribute("aria-expanded");
           editorView.dom.removeAttribute("aria-controls");
@@ -394,7 +444,8 @@ export function setEmojiSuggestionsEnabled(view: EditorView, enabled: boolean): 
 
 function resultsForState(
   state: EmojiSuggestionState,
-  options: EmojiSuggestionsPluginOptions
+  options: EmojiSuggestionsPluginOptions,
+  searchEmoji: EmojiSearchFunction
 ): EmojiSearchResult[] {
   return searchEmoji(state.query, {
     limit: options.picker?.maxResults ?? 80,

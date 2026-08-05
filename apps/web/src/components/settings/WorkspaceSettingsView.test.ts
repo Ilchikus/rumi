@@ -66,6 +66,7 @@ describe("workspace settings page", () => {
 
   it("serializes auto-save requests without replacing or disabling the live settings form", () => {
     expect(appSource.match(/setWorkspaceSettingsResult\(result\)/g)).toHaveLength(1);
+    expect(appSource.match(/setCachedWorkspaceSettings\(result\.settings\)/g)).toHaveLength(2);
     expect(appSource).toContain(
       "setHighlightMisspellings(result.settings.editor.highlightMisspellings)"
     );

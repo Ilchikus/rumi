@@ -49,6 +49,7 @@ The neutral-first color rule keeps the UI quiet and inspectable while the produc
   position on application mount so a new Rumi session starts at the top; scroll state does not
   belong in workspace configuration, `localStorage`, or Markdown.
 - A bounded, versioned browser-local startup snapshot may hydrate the authenticated shell with the
-  last successfully loaded or saved page and workspace tree. This snapshot is only a startup
-  optimization: explicit deep links win, server responses revalidate it, storage failures fall
-  back to the empty shell, and cached content never becomes workspace truth.
+  last successfully loaded or saved page, workspace tree, and layout-affecting editor settings.
+  This snapshot is only a startup optimization: explicit deep links win, server responses
+  revalidate it, storage failures fall back to the empty shell, and cached content never becomes
+  workspace truth.

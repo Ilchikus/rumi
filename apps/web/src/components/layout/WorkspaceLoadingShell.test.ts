@@ -15,6 +15,9 @@ describe("workspace loading shell", () => {
     expect(authSource).toContain("<WorkspaceLoadingShell />");
     expect(mainSource).toContain("fallback={<WorkspaceLoadingShell />}");
     expect(mainSource).toContain('const appModule = import("./App")');
+    expect(readFileSync(new URL("../../App.tsx", import.meta.url), "utf8")).toContain(
+      'const rumiBlockEditorModule = import("./components/editor/RumiBlockEditor")'
+    );
     expect(authSource).not.toContain("Opening Rumi");
     expect(mainSource).not.toContain("Opening workspace");
     expect(sidebarSource).not.toContain("Loading workspace");

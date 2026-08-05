@@ -24,6 +24,14 @@ describe("workspace startup persistence", () => {
     expect(readWorkspaceStartupSnapshot(storage)).toEqual(snapshot);
   });
 
+  it("keeps pre-settings snapshots readable", () => {
+    const storage = memoryStorage();
+    const { settings: _settings, ...snapshot } = startupSnapshot();
+
+    expect(writeWorkspaceStartupSnapshot(storage, snapshot)).toBe(true);
+    expect(readWorkspaceStartupSnapshot(storage)).toEqual(snapshot);
+  });
+
   it("rejects malformed, mismatched, and oversized snapshots", () => {
     const storage = memoryStorage();
     storage.setItem("rumi-new-workspace-startup:v1", JSON.stringify({ schemaVersion: 2 }));
@@ -38,6 +46,12 @@ describe("workspace startup persistence", () => {
       page: { ...snapshot.page, markdownBody: "x".repeat(STARTUP_SNAPSHOT_MAX_LENGTH) }
     };
     expect(writeWorkspaceStartupSnapshot(storage, oversized)).toBe(false);
+    expect(readWorkspaceStartupSnapshot(storage)).toBeNull();
+
+    storage.setItem(
+      "rumi-new-workspace-startup:v1",
+      JSON.stringify({ ...snapshot, settings: { editor: { inlineToolbar: "side" } } })
+    );
     expect(readWorkspaceStartupSnapshot(storage)).toBeNull();
   });
 
@@ -73,6 +87,8 @@ describe("workspace startup persistence", () => {
     expect(appSource).toContain("snapshotMatchesWorkspace");
     expect(appSource).toContain('if (route?.view === "node" && !treeRevalidated)');
     expect(appSource).toContain('saveState === "idle" || saveState === "saved"');
+    expect(appSource).toContain("startupSnapshot?.settings?.editor.inlineToolbar");
+    expect(appSource).toContain("cachedWorkspaceSettings");
   });
 });
 
@@ -99,7 +115,16 @@ function startupSnapshot(): WorkspaceStartupSnapshot {
     workspace: { rootPath: "/workspace/notes", name: "Notes" },
     tree,
     selection: { nodePath: page.path, openPath: page.path, kind: "page" },
-    page
+    page,
+    settings: {
+      uploads: { maxFileSizeMb: 50, allowedFileTypes: [".png"] },
+      editor: {
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true,
+        inlineToolbar: "bottom"
+      }
+    }
   };
 }
 

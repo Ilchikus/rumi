@@ -30,7 +30,7 @@ the position the user left during the current browser session.
 - Persist Settings automatically after each valid change without a manual Save button, while
   serializing requests so a slower response cannot overwrite a newer choice.
 - Persist a bounded, versioned startup snapshot containing workspace identity, tree, last selection,
-  and the last successfully loaded or saved page.
+  the last successfully loaded or saved page, and layout-affecting editor settings.
 - Keep the cached page aligned with the configured cold-start target: the workspace root for Home,
   or the latest visited page for Last visited. Reuse that cached page only when entering through
   `/`; never hydrate it for an explicit page URL.
@@ -40,6 +40,9 @@ the position the user left during the current browser session.
   settings, trash, and page data without allowing stale cache data to overwrite a newer page or an
   unsaved draft.
 - Replace text-only startup/loading states with the stable sidebar, header, and empty editor layout.
+- Restore persisted sidebar expansion on its first authenticated render, start loading the editor
+  code alongside the application shell, and defer closed system views plus the full emoji catalog
+  until they are actually needed.
 
 ## Out Of Scope
 
@@ -70,6 +73,7 @@ fall back to the empty stable shell, and cached Markdown is never rendered befor
 
 Keep the current in-memory page request cache and prefetch behavior. The startup snapshot should
 seed the first render and first page request, not create a second long-lived client state system.
+Large interaction-only data and views should stay outside the initial home-page execution path.
 
 ## Done When
 
@@ -141,4 +145,27 @@ Explicit-route follow-up on 2026-08-05:
 - with workspace and tree requests held, a cold `/vision` kept its URL and empty cached editor
   shell until the fresh tree arrived; a cold `/` immediately hydrated Vision and replaced the
   root URL with `/vision` under Last visited
+- user visual QA remains open; no merge is allowed before explicit approval
+
+Startup-performance follow-up verified on 2026-08-05:
+
+- measured both the production build and the public Vite development path with a disposable copy
+  of the docs workspace and a browser-local startup snapshot
+- confirmed the public development path spends about one second executing React's development
+  modules on a cached reload; production rendered the cached sidebar, page chrome, and editor at
+  about 425 ms with zero measured cumulative layout shift
+- moved the editor request alongside the application shell so cached page chrome and the editor now
+  appear in one render instead of a second editor phase roughly 240-400 ms later in development
+- restored persisted sidebar expansion on the first authenticated render and cached the editor
+  settings that affect startup geometry before revalidating them with the server
+- split Settings, Trash, search, revision history, and database views out of the ordinary home-page
+  path and deferred the full emoji catalog until the first `:` interaction
+- reduced the minified App chunk from 516.82 kB to 430.30 kB and the editor chunk from 930.76 kB to
+  640.80 kB; the ordinary page's initial JS/CSS payload fell from about 1.77 MB to 1.39 MB before
+  transport compression (about 488 kB to 410 kB gzip)
+- focused startup/sidebar/settings/emoji tests passed; the full repository passed with 65 files and
+  491 tests, typecheck, production web build, server bundle, and the installable
+  `@rumi-md/server@0.1.14` package smoke check
+- real-browser smoke confirmed Settings, Trash, and Command-K search load their deferred chunks,
+  while the emoji catalog is absent from startup and loads successfully when `:` is typed
 - user visual QA remains open; no merge is allowed before explicit approval

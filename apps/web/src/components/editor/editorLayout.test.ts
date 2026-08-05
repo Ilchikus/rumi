@@ -31,6 +31,10 @@ const migratedEditor = readFileSync(
   new URL("./migrated/ProseMirrorEditor.tsx", import.meta.url),
   "utf8"
 );
+const editorSchema = readFileSync(
+  new URL("./migrated/schema.ts", import.meta.url),
+  "utf8"
+);
 const selectionToolbar = readFileSync(
   new URL("./migrated/plugins/selectionToolbar.ts", import.meta.url),
   "utf8"
@@ -46,17 +50,55 @@ describe("editor layout contracts", () => {
       editorStyles,
       ".prosemirror-editor .ProseMirror .bullet-item,\n.prosemirror-editor .ProseMirror .numbered-item,\n.prosemirror-editor .ProseMirror .task-item"
     );
-    const bulletMarkerRule = cssRule(
-      editorStyles,
-      ".prosemirror-editor .ProseMirror .bullet-item::before"
-    );
 
     expect(paragraphRule).toContain("margin: 5px 0;");
     expect(paragraphRule).toContain("padding-left: 0;");
     expect(flatListRule).toContain("margin: 2px 0;");
-    expect(flatListRule).toContain("padding-left: 1.5em;");
-    expect(bulletMarkerRule).toContain("left: 0;");
+    expect(flatListRule).toContain("padding-left: 0;");
     expect(editorStyles).not.toContain(".prosemirror-editor .ProseMirror > p:last-child");
+  });
+
+  it("uses shared muted list decorations, aligned checklist controls, and indent guides", () => {
+    const flatListRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item,\n.prosemirror-editor .ProseMirror .numbered-item,\n.prosemirror-editor .ProseMirror .task-item"
+    );
+    const decorationRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .list-decoration"
+    );
+    const numberedDecorationRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .numbered-item .list-decoration::before"
+    );
+    const checkboxRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .task-item .task-checkbox"
+    );
+    const checkboxInputRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]'
+    );
+    const indentGuideRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror :is(.bullet-item, .numbered-item, .task-item)[data-indent]:not([data-indent="0"])::after'
+    );
+
+    expect(flatListRule).toContain("--rumi-list-decoration-gap: 0.5em;");
+    expect(flatListRule).toContain("display: flex;");
+    expect(flatListRule).toContain("gap: var(--rumi-list-decoration-gap);");
+    expect(decorationRule).toContain("width: auto;");
+    expect(decorationRule).toContain("flex: 0 0 auto;");
+    expect(decorationRule).toContain("color: hsl(var(--muted-foreground));");
+    expect(numberedDecorationRule).toContain("font-variant-numeric: tabular-nums;");
+    expect(numberedDecorationRule).toContain("text-align: left;");
+    expect(checkboxRule).toContain("transform: translateY(2px);");
+    expect(checkboxInputRule).toContain("accent-color: hsl(var(--muted-foreground));");
+    expect(indentGuideRule).toContain("width: var(--rumi-list-indent-offset);");
+    expect(indentGuideRule).toContain("background-size: 1.5em 100%;");
+    expect(editorSchema).toContain('class: "list-decoration bullet-decoration"');
+    expect(editorSchema).toContain('class: "list-decoration numbered-decoration"');
+    expect(editorSchema).toContain('class: "list-item-content"');
   });
 
   it("keeps Markdown tables in normal page scroll flow", () => {
@@ -165,7 +207,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror th\s*,/u);
   });
 
-  it("uses Tailwind sky 600 for checked task boxes", () => {
+  it("uses the muted foreground for checked task boxes", () => {
     const nestedTaskRule = cssRule(
       editorStyles,
       '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]'
@@ -175,8 +217,8 @@ describe("editor layout contracts", () => {
       '.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]'
     );
 
-    expect(nestedTaskRule).toContain("accent-color: #0284c7;");
-    expect(flatTaskRule).toContain("accent-color: #0284c7;");
+    expect(nestedTaskRule).toContain("accent-color: hsl(var(--muted-foreground));");
+    expect(flatTaskRule).toContain("accent-color: hsl(var(--muted-foreground));");
   });
 
   it("uses sky 600 links and semibold typed mention links", () => {

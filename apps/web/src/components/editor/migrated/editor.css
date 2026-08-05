@@ -202,7 +202,7 @@
 }
 
 .prosemirror-editor .ProseMirror li::marker {
-  color: hsl(var(--muted-foreground));
+  color: #d4d4d4;
 }
 
 .prosemirror-editor .ProseMirror ol li::marker {
@@ -599,15 +599,23 @@
 .prosemirror-editor .ProseMirror li.task-list-item > label {
   display: flex;
   align-items: center;
-  transform: translateY(2px);
+  margin-top: 2px;
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: grid;
   width: 16px;
   height: 16px;
+  box-sizing: border-box;
+  place-content: center;
   margin: 0;
+  border: 1px solid #d4d4d4;
+  border-radius: 3px;
+  background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: hsl(var(--muted-foreground));
+  accent-color: #0284c7;
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item .task-content {
@@ -622,7 +630,9 @@
 .prosemirror-editor .ProseMirror .bullet-item,
 .prosemirror-editor .ProseMirror .numbered-item,
 .prosemirror-editor .ProseMirror .task-item {
+  --rumi-list-decoration-width: 1.25em;
   --rumi-list-decoration-gap: 0.5em;
+  --rumi-list-guide-x: 0.625em;
   --rumi-list-indent-offset: 0px;
   position: relative;
   display: flex;
@@ -634,11 +644,11 @@
 
 .prosemirror-editor .ProseMirror .list-decoration {
   display: flex;
-  width: auto;
+  width: var(--rumi-list-decoration-width);
   align-items: center;
-  justify-content: flex-start;
-  flex: 0 0 auto;
-  color: hsl(var(--muted-foreground));
+  justify-content: center;
+  flex: 0 0 var(--rumi-list-decoration-width);
+  color: #d4d4d4;
 }
 
 .prosemirror-editor .ProseMirror .list-item-content {
@@ -684,10 +694,10 @@
   width: var(--rumi-list-indent-offset);
   background-image: linear-gradient(
     to right,
-    transparent calc(50% - 0.5px),
-    hsl(var(--border)) calc(50% - 0.5px),
-    hsl(var(--border)) calc(50% + 0.5px),
-    transparent calc(50% + 0.5px)
+    transparent calc(var(--rumi-list-guide-x) - 0.5px),
+    #f5f5f5 calc(var(--rumi-list-guide-x) - 0.5px),
+    #f5f5f5 calc(var(--rumi-list-guide-x) + 0.5px),
+    transparent calc(var(--rumi-list-guide-x) + 0.5px)
   );
   background-repeat: repeat-x;
   background-size: 1.5em 100%;
@@ -698,7 +708,9 @@
 .prosemirror-editor .ProseMirror .bullet-item .bullet-decoration::before {
   content: "•";
   color: inherit;
-  text-align: left;
+  font-size: 2em;
+  line-height: 0.8;
+  text-align: center;
 }
 
 /* Alternating bullet styles by indent level */
@@ -746,6 +758,10 @@
   white-space: nowrap;
 }
 
+.prosemirror-editor .ProseMirror .numbered-item .numbered-decoration {
+  justify-content: flex-start;
+}
+
 .prosemirror-editor .ProseMirror .numbered-item[data-indent="0"] .numbered-decoration::before {
   content: counter(numbered-item-0) ".";
 }
@@ -764,8 +780,7 @@
 
 /* Reset counters when a non-numbered-item block appears */
 .prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"] {
-  counter-reset: numbered-item-0;
-  counter-increment: numbered-item-0;
+  counter-set: numbered-item-0 1;
 }
 
 /* Task item styling */
@@ -774,15 +789,33 @@
 }
 
 .prosemirror-editor .ProseMirror .task-item .task-checkbox {
-  transform: translateY(2px);
+  margin-top: 2px;
 }
 
 .prosemirror-editor .ProseMirror .task-item input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: grid;
   width: 16px;
   height: 16px;
+  box-sizing: border-box;
+  place-content: center;
   margin: 0;
+  border: 1px solid #d4d4d4;
+  border-radius: 3px;
+  background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: hsl(var(--muted-foreground));
+  accent-color: #0284c7;
+}
+
+.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]:checked,
+.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]:checked {
+  border-color: #0284c7;
+  background-color: #0284c7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
 }
 
 .prosemirror-editor .ProseMirror .task-item .task-content {

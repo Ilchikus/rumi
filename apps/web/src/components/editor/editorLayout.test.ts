@@ -71,6 +71,10 @@ describe("editor layout contracts", () => {
       editorStyles,
       ".prosemirror-editor .ProseMirror .numbered-item .list-decoration::before"
     );
+    const bulletDecorationRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item .bullet-decoration::before"
+    );
     const checkboxRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror .task-item .task-checkbox"
@@ -83,19 +87,32 @@ describe("editor layout contracts", () => {
       editorStyles,
       '.prosemirror-editor .ProseMirror :is(.bullet-item, .numbered-item, .task-item)[data-indent]:not([data-indent="0"])::after'
     );
+    const counterRestartRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"]'
+    );
 
+    expect(flatListRule).toContain("--rumi-list-decoration-width: 1.25em;");
     expect(flatListRule).toContain("--rumi-list-decoration-gap: 0.5em;");
+    expect(flatListRule).toContain("--rumi-list-guide-x: 0.625em;");
     expect(flatListRule).toContain("display: flex;");
     expect(flatListRule).toContain("gap: var(--rumi-list-decoration-gap);");
-    expect(decorationRule).toContain("width: auto;");
-    expect(decorationRule).toContain("flex: 0 0 auto;");
-    expect(decorationRule).toContain("color: hsl(var(--muted-foreground));");
+    expect(decorationRule).toContain("width: var(--rumi-list-decoration-width);");
+    expect(decorationRule).toContain("flex: 0 0 var(--rumi-list-decoration-width);");
+    expect(decorationRule).toContain("color: #d4d4d4;");
+    expect(bulletDecorationRule).toContain("font-size: 2em;");
+    expect(bulletDecorationRule).toContain("line-height: 0.8;");
     expect(numberedDecorationRule).toContain("font-variant-numeric: tabular-nums;");
     expect(numberedDecorationRule).toContain("text-align: left;");
-    expect(checkboxRule).toContain("transform: translateY(2px);");
-    expect(checkboxInputRule).toContain("accent-color: hsl(var(--muted-foreground));");
+    expect(checkboxRule).toContain("margin-top: 2px;");
+    expect(checkboxInputRule).toContain("appearance: none;");
+    expect(checkboxInputRule).toContain("border: 1px solid #d4d4d4;");
     expect(indentGuideRule).toContain("width: var(--rumi-list-indent-offset);");
     expect(indentGuideRule).toContain("background-size: 1.5em 100%;");
+    expect(indentGuideRule).toContain("#f5f5f5");
+    expect(indentGuideRule).toContain("var(--rumi-list-guide-x)");
+    expect(counterRestartRule).toContain("counter-set: numbered-item-0 1;");
+    expect(counterRestartRule).not.toContain("counter-reset:");
     expect(editorSchema).toContain('class: "list-decoration bullet-decoration"');
     expect(editorSchema).toContain('class: "list-decoration numbered-decoration"');
     expect(editorSchema).toContain('class: "list-item-content"');
@@ -207,7 +224,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror th\s*,/u);
   });
 
-  it("uses the muted foreground for checked task boxes", () => {
+  it("uses neutral unchecked task boxes and the original blue checked state", () => {
     const nestedTaskRule = cssRule(
       editorStyles,
       '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]'
@@ -216,9 +233,15 @@ describe("editor layout contracts", () => {
       editorStyles,
       '.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]'
     );
+    const checkedTaskRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]:checked,\n.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]:checked'
+    );
 
-    expect(nestedTaskRule).toContain("accent-color: hsl(var(--muted-foreground));");
-    expect(flatTaskRule).toContain("accent-color: hsl(var(--muted-foreground));");
+    expect(nestedTaskRule).toContain("border: 1px solid #d4d4d4;");
+    expect(flatTaskRule).toContain("border: 1px solid #d4d4d4;");
+    expect(checkedTaskRule).toContain("border-color: #0284c7;");
+    expect(checkedTaskRule).toContain("background-color: #0284c7;");
   });
 
   it("uses sky 600 links and semibold typed mention links", () => {

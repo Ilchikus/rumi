@@ -1,90 +1,58 @@
 // @vitest-environment jsdom
 import { DOMSerializer } from "prosemirror-model"
-import { EditorState, type Transaction } from "prosemirror-state"
+import { EditorState, TextSelection, type Transaction } from "prosemirror-state"
 import { describe, expect, it, vi } from "vitest"
-import type { EditorView } from "prosemirror-view"
+import { EditorView } from "prosemirror-view"
 import { linkClickIntent, linkPlugin } from "./linkPlugin"
+import { selectionToolbarPlugin } from "./selectionToolbar"
 import { schema } from "../schema"
 
 describe("link context menu interaction", () => {
-  it("prevents secondary mousedown selection while leaving contextmenu native", () => {
+  it("prevents the native link menu and opens the shared URL editor", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
     const plugin = linkPlugin(schema)
-    const mouseDownHandler = plugin.props.handleDOMEvents?.mousedown
     const contextMenuHandler = plugin.props.handleDOMEvents?.contextmenu
-    const preventDefault = vi.fn()
-    const preventContextMenu = vi.fn()
-    const classes = new Set<string>()
-    const classList = {
-      add: vi.fn((value: string) => classes.add(value)),
-      remove: vi.fn((value: string) => classes.delete(value)),
-      contains: vi.fn((value: string) => classes.has(value))
-    }
-    const editorContainer = { classList }
-    const view = { dom: { closest: vi.fn(() => editorContainer) } } as unknown as EditorView
-    const link = {}
-    const target = { closest: vi.fn(() => link) }
-
-    const handled = mouseDownHandler?.call(
-      plugin,
-      view,
-      { button: 2, target, preventDefault } as unknown as MouseEvent
+    const linkMark = schema.marks.link!.create({ href: "Notes.md" })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Notes", [linkMark]))
     )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1),
+      plugins: [selectionToolbarPlugin(schema, "top"), plugin]
+    })
+    const view = new EditorView(host, { state })
+    const link = view.dom.querySelector("a")!
+    const preventDefault = vi.fn()
     const contextHandled = contextMenuHandler?.call(
       plugin,
       view,
-      { button: 2, target, preventDefault: preventContextMenu } as unknown as PointerEvent
+      { button: 2, target: link, preventDefault } as unknown as PointerEvent
     )
-    const preventSelection = vi.fn()
-    const textTarget = { parentElement: { closest: vi.fn(() => link) } }
-    const selectionHandled = plugin.props.handleDOMEvents?.selectstart?.call(
-      plugin,
-      view,
-      { target: textTarget, preventDefault: preventSelection } as unknown as Event
-    )
+    await Promise.resolve()
 
-    expect(handled).toBe(true)
-    expect(contextHandled).toBe(false)
+    expect(contextHandled).toBe(true)
     expect(preventDefault).toHaveBeenCalledOnce()
-    expect(preventContextMenu).not.toHaveBeenCalled()
-    expect(selectionHandled).toBe(true)
-    expect(preventSelection).toHaveBeenCalledOnce()
-    expect(target.closest).toHaveBeenCalledWith("a")
-    expect(classList.add).toHaveBeenCalledWith("rumi-native-context-link")
+    const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    expect(popup.style.display).toBe("block")
+    expect(popup.querySelector<HTMLInputElement>(".link-url-input")?.value).toBe("Notes.md")
+
+    view.destroy()
+    host.remove()
   })
 
-  it("also treats macOS Control-click as native context-menu input", () => {
+  it("leaves context-menu events outside links for other app handlers", () => {
     const plugin = linkPlugin(schema)
-    const handler = plugin.props.handleDOMEvents?.mousedown
-    const preventControlClick = vi.fn()
-    const editorContainer = { classList: { add: vi.fn(), remove: vi.fn() } }
-    const view = { dom: { closest: () => editorContainer } } as unknown as EditorView
-    const link = {}
-
-    expect(handler?.call(
-      plugin,
-      view,
-      { button: 0, ctrlKey: true, target: { closest: () => link }, preventDefault: preventControlClick } as unknown as MouseEvent
-    )).toBe(true)
-    expect(preventControlClick).toHaveBeenCalledOnce()
-  })
-
-  it("leaves ordinary primary clicks and secondary clicks outside links unchanged", () => {
-    const plugin = linkPlugin(schema)
-    const handler = plugin.props.handleDOMEvents?.mousedown
-    const preventPrimary = vi.fn()
+    const handler = plugin.props.handleDOMEvents?.contextmenu
     const preventPlainText = vi.fn()
 
     expect(handler?.call(
       plugin,
       {} as EditorView,
-      { button: 0, ctrlKey: false, target: { closest: () => ({}) }, preventDefault: preventPrimary } as unknown as MouseEvent
+      { button: 2, target: { closest: () => null }, preventDefault: preventPlainText } as unknown as PointerEvent
     )).toBe(false)
-    expect(handler?.call(
-      plugin,
-      {} as EditorView,
-      { button: 2, target: { closest: () => null }, preventDefault: preventPlainText } as unknown as MouseEvent
-    )).toBe(false)
-    expect(preventPrimary).not.toHaveBeenCalled()
     expect(preventPlainText).not.toHaveBeenCalled()
   })
 
@@ -130,6 +98,13 @@ describe("link context menu interaction", () => {
       "_blank",
       "noopener,noreferrer"
     )
+
+    const internalLink = document.createElement("a")
+    internalLink.setAttribute("href", "Notes.md")
+    expect(linkClickIntent(
+      internalLink,
+      clickEvent(internalLink, { metaKey: true })
+    )).toBe("current-tab")
 
     expect(linkClickIntent(link, clickEvent(link, { clientX: 95 })))
       .toBe("current-tab")

@@ -61,7 +61,7 @@ class CodeBlockView implements NodeView {
 
   constructor(private node: PmNode, private view: EditorView, private getPos: () => number | undefined) {
     this.dom = document.createElement("pre")
-    this.dom.classList.add("code-block-wrapper")
+    this.dom.classList.add("code-block-wrapper", "bg-neutral-100")
 
     // Toolbar
     this.toolbar = document.createElement("div")

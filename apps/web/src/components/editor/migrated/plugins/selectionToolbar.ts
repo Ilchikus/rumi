@@ -30,6 +30,12 @@ import {
   moveToolbarBlocks
 } from "./topToolbarActions"
 import { moveBlocks } from "./multiBlockSelection"
+import { openEditorHref } from "../platform"
+import {
+  isExternalLinkHref,
+  normalizeLinkHref
+} from "../linkHref"
+import { linkRangeAtSelection } from "../linkSelection"
 
 export const selectionToolbarPluginKey = new PluginKey("selectionToolbar")
 
@@ -67,9 +73,9 @@ export const openSelectionToolbarLinkEditor: Command = (state, dispatch) => {
     | SelectionToolbarState
     | undefined
   const hasBlockSelection = selectedBlockInlineRanges(state).length > 0
+  const hasCaretLink = Boolean(linkRangeAtSelection(state))
   if (
-    toolbarState?.mode === "none" ||
-    (!hasBlockSelection && state.selection.empty)
+    (!hasBlockSelection && state.selection.empty && !hasCaretLink)
   ) return false
 
   dispatch?.(
@@ -326,6 +332,7 @@ export function selectionToolbarPlugin(
         inlineGroup.appendChild(createInlineToolbarSeparator())
 
         const linkContainer = document.createElement("div")
+        linkContainer.className = "link-toolbar-container"
         linkContainer.style.cssText = `display: flex; align-items: center; position: relative;`
 
         const linkBtn = document.createElement("button")
@@ -352,8 +359,19 @@ export function selectionToolbarPlugin(
         const linkInputRow = document.createElement("div")
         linkInputRow.style.cssText = `display: flex; gap: 8px;`
 
+        const linkTextInput = document.createElement("input")
+        linkTextInput.type = "text"
+        linkTextInput.className = "link-text-input"
+        linkTextInput.placeholder = "Link text..."
+        linkTextInput.style.cssText = `
+          display: none; width: 100%; box-sizing: border-box; margin-bottom: 8px;
+          padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
+          border-radius: 6px; font-size: 13px; outline: none;
+        `
+
         const linkInput = document.createElement("input")
         linkInput.type = "text"
+        linkInput.className = "link-url-input"
         linkInput.placeholder = "Enter URL or file path..."
         linkInput.style.cssText = `
           flex: 1; padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
@@ -361,19 +379,50 @@ export function selectionToolbarPlugin(
         `
 
         const linkApplyBtn = document.createElement("button")
-        linkApplyBtn.textContent = "Add"
+        linkApplyBtn.textContent = "Apply"
         linkApplyBtn.style.cssText = `
           padding: 6px 12px; background: hsl(222.2, 47.4%, 11.2%); color: white;
           border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
         `
 
+        linkPopup.appendChild(linkTextInput)
         linkInputRow.appendChild(linkInput)
         linkInputRow.appendChild(linkApplyBtn)
         linkPopup.appendChild(linkInputRow)
 
+        const linkActionRow = document.createElement("div")
+        linkActionRow.style.cssText = `display: flex; gap: 8px; margin-top: 8px;`
+
+        const linkCopyBtn = document.createElement("button")
+        linkCopyBtn.type = "button"
+        linkCopyBtn.className = "link-copy-btn"
+        linkCopyBtn.textContent = "Copy link"
+
+        const linkOpenBtn = document.createElement("button")
+        linkOpenBtn.type = "button"
+        linkOpenBtn.className = "link-open-btn"
+        linkOpenBtn.textContent = "Open"
+
+        const linkUnlinkBtn = document.createElement("button")
+        linkUnlinkBtn.type = "button"
+        linkUnlinkBtn.className = "link-unlink-btn"
+        linkUnlinkBtn.textContent = "Unlink"
+
+        for (const actionButton of [linkCopyBtn, linkOpenBtn, linkUnlinkBtn]) {
+          actionButton.style.cssText = `
+            padding: 5px 9px; background: transparent;
+            border: 1px solid hsl(214.3, 31.8%, 91.4%);
+            border-radius: 6px; font-size: 12px; cursor: pointer;
+          `
+          actionButton.addEventListener("mousedown", preserveEditorSelection)
+          linkActionRow.appendChild(actionButton)
+        }
+        linkPopup.appendChild(linkActionRow)
+
         let savedSelection: {
           ranges: Array<{ from: number; to: number }>
           blockSelection: boolean
+          existingText: string | null
         } | null = null
 
         linkBtn.addEventListener("mousedown", (e) => {
@@ -388,11 +437,14 @@ export function selectionToolbarPlugin(
           const { from, to, empty } = editorView.state.selection
           const blockRanges = selectedBlockInlineRanges(editorView.state)
           const blockSelection = blockRanges.length > 0
-          if (!blockSelection && empty) return
+          const caretLink = empty
+            ? linkRangeAtSelection(editorView.state, schema.marks.link)
+            : null
+          if (!blockSelection && empty && !caretLink) return
 
-          // Check if already has link - if so, remove it
+          // A selected link toggles off. A caret within a link opens its URL editor.
           const linkMark = schema.marks.link
-          if (isInlineMarkActive(editorView.state, linkMark)) {
+          if (!empty && isInlineMarkActive(editorView.state, linkMark)) {
             let tr = editorView.state.tr
             const ranges = blockSelection ? blockRanges : [{ from, to }]
             for (const range of ranges) {
@@ -406,12 +458,26 @@ export function selectionToolbarPlugin(
 
           // Save current selection and show popup
           savedSelection = {
-            ranges: blockSelection ? blockRanges : [{ from, to }],
-            blockSelection
+            ranges: blockSelection
+              ? blockRanges
+              : caretLink
+                ? [{ from: caretLink.from, to: caretLink.to }]
+                : [{ from, to }],
+            blockSelection,
+            existingText: caretLink
+              ? editorView.state.doc.textBetween(caretLink.from, caretLink.to)
+              : null
           }
           linkPopup.style.display = "block"
-          linkInput.value = ""
-          setTimeout(() => linkInput.focus(), 0)
+          linkInput.value = caretLink?.href ?? ""
+          linkTextInput.value = savedSelection.existingText ?? ""
+          linkTextInput.style.display = savedSelection.existingText === null
+            ? "none"
+            : "block"
+          setTimeout(() => {
+            linkInput.focus()
+            linkInput.select()
+          }, 0)
         })
 
         linkApplyBtn.addEventListener("mousedown", preserveEditorSelection)
@@ -419,20 +485,44 @@ export function selectionToolbarPlugin(
           e.preventDefault()
           e.stopPropagation()
 
-          const href = linkInput.value.trim()
-          if (href && savedSelection) {
+          const href = normalizeLinkHref(linkInput.value)
+          if (savedSelection) {
             const linkMark = schema.marks.link
-            const { ranges, blockSelection } = savedSelection
-            let tr = applyInlineMarkToRanges(
-              editorView.state.tr,
-              ranges,
-              linkMark,
-              { href }
-            )
+            const { ranges, blockSelection, existingText } = savedSelection
+            let tr = editorView.state.tr
+            if (existingText !== null && ranges[0]) {
+              const range = ranges[0]
+              const nextText = linkTextInput.value
+              if (nextText === existingText) {
+                tr = tr.removeMark(range.from, range.to, linkMark)
+                if (href) tr = tr.addMark(range.from, range.to, linkMark.create({ href }))
+              } else {
+                const retainedMarks = editorView.state.doc
+                  .resolve(range.from)
+                  .nodeAfter?.marks.filter((mark) => mark.type !== linkMark) ?? []
+                const marks = href
+                  ? [...retainedMarks, linkMark.create({ href })]
+                  : retainedMarks
+                tr = tr.delete(range.from, range.to)
+                if (nextText) {
+                  tr = tr.insert(range.from, schema.text(nextText, marks))
+                }
+              }
+            } else {
+              for (const range of ranges) {
+                tr = tr.removeMark(range.from, range.to, linkMark)
+              }
+              if (href) {
+                tr = applyInlineMarkToRanges(tr, ranges, linkMark, { href })
+              }
+            }
             if (blockSelection) {
               tr.setMeta("multiBlockKeep", true)
             } else if (ranges.at(-1)) {
-              tr = tr.setSelection(TextSelection.create(tr.doc, ranges.at(-1).to))
+              const selectionTo = existingText === null
+                ? ranges.at(-1).to
+                : ranges[0].from + linkTextInput.value.length
+              tr = tr.setSelection(TextSelection.create(tr.doc, selectionTo))
             }
             editorView.dispatch(tr)
           }
@@ -441,7 +531,39 @@ export function selectionToolbarPlugin(
           editorView.focus()
         })
 
+        linkCopyBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const href = normalizeLinkHref(linkInput.value)
+          if (href) void navigator.clipboard.writeText(href)
+        })
+
+        linkOpenBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const href = normalizeLinkHref(linkInput.value)
+          if (!href) return
+          openEditorHref(href, isExternalLinkHref(href) ? "new" : "current")
+        })
+
+        linkUnlinkBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          linkInput.value = ""
+          linkApplyBtn.click()
+        })
+
         linkInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            linkApplyBtn.click()
+          } else if (e.key === "Escape") {
+            linkPopup.style.display = "none"
+            savedSelection = null
+            editorView.focus()
+          }
+        })
+        linkTextInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault()
             linkApplyBtn.click()
@@ -462,6 +584,9 @@ export function selectionToolbarPlugin(
       let destroyed = false
       const editorToolbarHost = editorView.dom.parentElement
       const editorCanvas = editorView.dom.closest<HTMLElement>("[data-rumi-editor-canvas]")
+      const editorOverlayHost = editorView.dom.closest<HTMLElement>(
+        ".prosemirror-editor-wrapper"
+      )
 
       function clearEditorToolbarBounds() {
         container.style.removeProperty("width")
@@ -497,13 +622,16 @@ export function selectionToolbarPlugin(
       }
 
       function placeContainer(mode: EditorToolbarMode) {
-        const correctlyPlaced = container.parentElement === document.body
+        const targetParent = mode === "floating"
+          ? editorOverlayHost ?? document.body
+          : document.body
+        const correctlyPlaced = container.parentElement === targetParent
         if (currentMode === mode && correctlyPlaced) return
         currentMode = mode
         container.dataset.mode = mode
 
-        if (container.parentElement !== document.body) {
-          document.body.appendChild(container)
+        if (container.parentElement !== targetParent) {
+          targetParent.appendChild(container)
         }
       }
 
@@ -519,8 +647,26 @@ export function selectionToolbarPlugin(
         const mode = preferences.mode
         const blockRanges = selectedBlockInlineRanges(state)
         const hasBlockSelection = blockRanges.length > 0
+        const linkEditorRequested = Boolean(
+          linkButton &&
+          preferences.linkEditorRequestRevision > handledLinkEditorRequestRevision
+        )
+        const caretLink = empty
+          ? linkRangeAtSelection(state, schema.marks.link)
+          : null
+        const hasTextSelection = !empty && from !== to && !(selection instanceof NodeSelection)
+        const textSelectionInCode = hasTextSelection && selection.$from.parent.type.spec.code
+        const forceLinkEditor = linkEditorRequested && Boolean(
+          caretLink ||
+          hasBlockSelection ||
+          (hasTextSelection && !textSelectionInCode)
+        )
+        const presentationMode = mode === "none" && forceLinkEditor
+          ? "floating"
+          : mode
 
-        placeContainer(mode)
+        placeContainer(presentationMode)
+        container.classList.toggle("link-editor-only", mode === "none" && forceLinkEditor)
         container.toggleAttribute(
           "data-rumi-preserve-block-selection",
           isExpandedEditorToolbarMode(mode)
@@ -530,41 +676,60 @@ export function selectionToolbarPlugin(
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
         if (linkPopup) linkPopup.style.display = "none"
 
-        if (mode === "none" || !editorView.editable) {
+        if ((mode === "none" && !forceLinkEditor) || !editorView.editable) {
           container.style.display = "none"
           return
         }
 
-        const hasTextSelection = !empty && from !== to && !(selection instanceof NodeSelection)
-        const textSelectionInCode = hasTextSelection && selection.$from.parent.type.spec.code
-        if (mode === "floating" && (!hasBlockSelection && (!hasTextSelection || textSelectionInCode))) {
+        if (
+          presentationMode === "floating" &&
+          !forceLinkEditor &&
+          (!hasBlockSelection && (!hasTextSelection || textSelectionInCode))
+        ) {
           container.style.display = "none"
           return
         }
 
         container.style.display = "flex"
-        if (mode === "floating") {
+        if (presentationMode === "floating") {
           clearEditorToolbarBounds()
           const selectedRects = blockRanges.flatMap((range) => {
             const dom = editorView.nodeDOM(range.from - 1)
             return dom instanceof HTMLElement ? [dom.getBoundingClientRect()] : []
           })
-          const start = hasBlockSelection ? null : editorView.coordsAtPos(from)
-          const end = hasBlockSelection ? null : editorView.coordsAtPos(to)
+          const start = hasBlockSelection
+            ? null
+            : editorView.coordsAtPos(caretLink?.from ?? from)
+          const end = hasBlockSelection
+            ? null
+            : editorView.coordsAtPos(caretLink?.to ?? to)
           const leftEdge = selectedRects.length > 0
             ? Math.min(...selectedRects.map((rect) => rect.left))
             : Math.min(start?.left ?? 10, end?.left ?? 10)
           const rightEdge = selectedRects.length > 0
             ? Math.max(...selectedRects.map((rect) => rect.right))
             : Math.max(start?.left ?? 10, end?.left ?? 10)
-          const selectionTop = selectedRects.length > 0
-            ? Math.min(...selectedRects.map((rect) => rect.top))
-            : Math.min(start?.top ?? 10, end?.top ?? 10)
+          const selectionBottom = selectedRects.length > 0
+            ? Math.max(...selectedRects.map((rect) => rect.bottom))
+            : Math.max(start?.bottom ?? 10, end?.bottom ?? 10)
           const toolbarWidth = container.offsetWidth
-          const toolbarHeight = container.offsetHeight
-          const centeredLeft = (leftEdge + rightEdge - toolbarWidth) / 2
-          container.style.left = `${Math.max(10, Math.min(centeredLeft, window.innerWidth - toolbarWidth - 10))}px`
-          container.style.top = `${Math.max(10, selectionTop - toolbarHeight - 8)}px`
+          const hostRect = editorOverlayHost?.getBoundingClientRect()
+          const originLeft = hostRect?.left ?? -window.scrollX
+          const originTop = hostRect?.top ?? -window.scrollY
+          const horizontalScroll = editorOverlayHost ? 0 : window.scrollX
+          const availableWidth = hostRect && hostRect.width > 0
+            ? hostRect.width
+            : window.innerWidth
+          const centeredLeft = (
+            leftEdge - originLeft + rightEdge - originLeft - toolbarWidth
+          ) / 2
+          const minimumLeft = horizontalScroll + 10
+          const maximumLeft = horizontalScroll + availableWidth - toolbarWidth - 10
+          container.style.left = `${Math.max(
+            minimumLeft,
+            Math.min(centeredLeft, maximumLeft)
+          )}px`
+          container.style.top = `${selectionBottom - originTop + 8}px`
         } else {
           container.style.removeProperty("top")
           syncEditorToolbarBounds()

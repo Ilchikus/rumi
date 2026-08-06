@@ -71,6 +71,11 @@ import {
   workspaceUrlForNode
 } from "./lib/workspaceRoute";
 import { appShortcutAction, appShortcutPlatform, shortcutLabels } from "./lib/appShortcuts";
+import {
+  hasTextEditingFocus,
+  isSecondaryContextGesture,
+  isSelectAllShortcut
+} from "./lib/appBrowserInteractions";
 import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
@@ -907,6 +912,53 @@ export function App(): ReactElement {
     window.addEventListener("keydown", handleSearchShortcut);
     return () => window.removeEventListener("keydown", handleSearchShortcut);
   }, []);
+
+  useEffect(() => {
+    let secondarySelectionTimer: number | null = null;
+    let suppressSecondarySelection = false;
+    const brieflySuppressSecondarySelection = () => {
+      suppressSecondarySelection = true;
+      if (secondarySelectionTimer !== null) window.clearTimeout(secondarySelectionTimer);
+      secondarySelectionTimer = window.setTimeout(() => {
+        suppressSecondarySelection = false;
+        secondarySelectionTimer = null;
+      }, 250);
+    };
+    const preventSecondaryTextSelection = (event: globalThis.MouseEvent) => {
+      if (!isSecondaryContextGesture(event, shortcutPlatform)) return;
+      brieflySuppressSecondarySelection();
+      event.preventDefault();
+    };
+    const preventNativeContextMenu = (event: globalThis.MouseEvent) => {
+      brieflySuppressSecondarySelection();
+      event.preventDefault();
+    };
+    const preventSecondarySelectStart = (event: Event) => {
+      if (suppressSecondarySelection) event.preventDefault();
+    };
+    const selectAllPageBlocks = (event: globalThis.KeyboardEvent) => {
+      if (
+        !isSelectAllShortcut(event, shortcutPlatform) ||
+        hasTextEditingFocus(document.activeElement)
+      ) return;
+      if (!editorRef.current?.selectAllBlocks()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("mousedown", preventSecondaryTextSelection, true);
+    document.addEventListener("contextmenu", preventNativeContextMenu, true);
+    document.addEventListener("selectstart", preventSecondarySelectStart, true);
+    window.addEventListener("keydown", selectAllPageBlocks, true);
+    return () => {
+      document.removeEventListener("mousedown", preventSecondaryTextSelection, true);
+      document.removeEventListener("contextmenu", preventNativeContextMenu, true);
+      document.removeEventListener("selectstart", preventSecondarySelectStart, true);
+      window.removeEventListener("keydown", selectAllPageBlocks, true);
+      if (secondarySelectionTimer !== null) window.clearTimeout(secondarySelectionTimer);
+    };
+  }, [shortcutPlatform]);
 
   useEffect(() => {
     const handleAppShortcut = (event: globalThis.KeyboardEvent) => {

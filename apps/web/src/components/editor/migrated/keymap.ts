@@ -235,6 +235,32 @@ export function insertLiteralNewlineInCode(schema: Schema): Command {
   }
 }
 
+export function moveToCodeBoundary(
+  direction: "start" | "end"
+): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    if (!(selection instanceof TextSelection) || !selection.empty) return false
+
+    const { $from } = selection
+    if (!$from.parent.type.spec.code) return false
+
+    const boundary = direction === "start" ? $from.start() : $from.end()
+    if (selection.from === boundary) {
+      // At the block boundary, preserve the platform's native command-arrow
+      // behavior so the next press reaches the document boundary.
+      return false
+    }
+
+    dispatch?.(
+      state.tr
+        .setSelection(TextSelection.create(state.doc, boundary))
+        .scrollIntoView()
+    )
+    return true
+  }
+}
+
 function stagedBlockSelection(
   contextMenuIntent: BlockContextMenuIntent
 ): Command {
@@ -329,6 +355,8 @@ function buildKeymap(schema: Schema) {
   keys["Delete"] = deleteEmptyBlock
   keys["Mod-Backspace"] = deleteEmptyBlock
   keys["Mod-Delete"] = deleteEmptyBlock
+  keys["Mod-ArrowUp"] = moveToCodeBoundary("start")
+  keys["Mod-ArrowDown"] = moveToCodeBoundary("end")
 
   // Flat list item types
   const flatListItemTypes = getFlatListItemTypes(schema)

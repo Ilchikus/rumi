@@ -2,6 +2,7 @@ import { Plugin, NodeSelection, Selection, TextSelection } from "prosemirror-sta
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view"
 import {
   StructuralCaretSelection,
+  setMermaidEditSelection,
   structuralCaretAtBlock,
   structuralCaretContext,
   supportsStructuralCaret,
@@ -30,16 +31,7 @@ function dispatchMermaidCaret(
   const node = view.state.doc.nodeAt(nodePos)
   if (!node || node.type.name !== "mermaid") return false
   const transaction = view.state.tr
-  if (node.attrs.mode === "view") {
-    transaction.setNodeMarkup(nodePos, undefined, {
-      ...node.attrs,
-      mode: "split"
-    })
-  }
-  transaction.setSelection(TextSelection.create(
-    transaction.doc,
-    side === "before" ? nodePos + 1 : nodePos + node.nodeSize - 1
-  ))
+  setMermaidEditSelection(transaction, nodePos, side)
   view.dispatch(transaction.scrollIntoView())
   return true
 }

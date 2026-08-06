@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: web
@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-04"
-updated: "2026-08-05"
+updated: "2026-08-06"
 ---
 # M07-015 Workspace Startup And Session Navigation
 
@@ -120,8 +120,7 @@ Follow-up verified on 2026-08-04:
   waited for an intentionally delayed first response, then persisted in order; the changed setting
   was returned to its original value
 
-User QA remains open. Per the user's release gate, the follow-up pull request must remain unmerged
-until explicit user approval after testing.
+User QA was pending at this verification point.
 
 Cold-start cache follow-up verified on 2026-08-04:
 
@@ -145,7 +144,7 @@ Explicit-route follow-up on 2026-08-05:
 - with workspace and tree requests held, a cold `/vision` kept its URL and empty cached editor
   shell until the fresh tree arrived; a cold `/` immediately hydrated Vision and replaced the
   root URL with `/vision` under Last visited
-- user visual QA remains open; no merge is allowed before explicit approval
+- user visual QA was pending at this verification point
 
 Startup-performance follow-up verified on 2026-08-05:
 
@@ -168,11 +167,15 @@ Startup-performance follow-up verified on 2026-08-05:
   `@rumi-md/server@0.1.14` package smoke check
 - real-browser smoke confirmed Settings, Trash, and Command-K search load their deferred chunks,
   while the emoji catalog is absent from startup and loads successfully when `:` is typed
-- user visual QA remains open; no merge is allowed before explicit approval
+- user visual QA was pending at this verification point
 
 Loading-copy follow-up verified on 2026-08-05:
 
 - removed the no-page instruction from the editor canvas entirely, so development-mode startup
   effects cannot expose it between overlapping tree and page requests
-- focused loading-shell coverage passed; user visual QA remains open and no merge is allowed before
-  explicit approval
+- focused loading-shell coverage passed; user visual QA was pending at this verification point
+
+Release gate resolved on 2026-08-06:
+
+- the user approved the current branch after visual testing, closing the startup and navigation QA
+  gate for merge

@@ -22,7 +22,8 @@ import {
   extendBlockSelection,
   multiBlockSelectionKey,
   multiBlockSelectionPlugin,
-  selectAllBlocksInStages
+  selectAllBlocksInStages,
+  selectEveryBlock
 } from "./plugins/multiBlockSelection"
 import {
   inactiveBlockSelectionKey,
@@ -229,6 +230,16 @@ describe("live editor block duplication", () => {
 })
 
 describe("live editor staged Select All", () => {
+  it("selects every block directly for the no-caret app fallback", () => {
+    let state = placeCursor(editorState("One\n\nTwo\n\nThree\n"), 1)
+
+    expect(selectEveryBlock(state, (transaction) => { state = state.apply(transaction) }))
+      .toBe(true)
+    expect(multiBlockSelectionKey.getState(state)?.selectedBlocks.map(
+      (pos) => state.doc.nodeAt(pos)?.textContent
+    )).toEqual(["One", "Two", "Three"])
+  })
+
   it("selects and highlights the current block, then every block", () => {
     let state = placeCursor(editorState("One\n\nTwo\n\nThree\n"), 1)
 
@@ -410,6 +421,88 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     })
   })
 
+  it.each(["code_block", "mermaid"])(
+    "moves Mod-Arrow to the %s boundary before the document boundary",
+    (typeName) => {
+      const keymapPlugin = buildKeymap(schema)
+      const before = schema.nodes.paragraph!.create(null, schema.text("Before"))
+      const source = schema.nodes[typeName]!.create(
+        typeName === "code_block"
+          ? { language: "typescript" }
+          : { mode: "edit" },
+        schema.text("line one\nline two")
+      )
+      const after = schema.nodes.paragraph!.create(null, schema.text("After"))
+      const doc = schema.nodes.doc!.create(null, [before, source, after])
+      const sourceStart = before.nodeSize
+      let state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, sourceStart + 5),
+        plugins: [keymapPlugin]
+      })
+      const view = {
+        get state() {
+          return state
+        },
+        dispatch(transaction: Transaction) {
+          state = state.apply(transaction)
+        }
+      } as unknown as EditorView
+
+      expect(applyKey(
+        keymapPlugin,
+        view,
+        keyboardEvent("ArrowDown", { ctrlKey: true })
+      )).toBe(true)
+      expect(state.selection.$from.parent.type.name).toBe(typeName)
+      expect(state.selection.$from.parentOffset).toBe(source.content.size)
+      expect(applyKey(
+        keymapPlugin,
+        view,
+        keyboardEvent("ArrowDown", { ctrlKey: true })
+      )).toBe(false)
+
+      state = state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, sourceStart + 5))
+      )
+      expect(applyKey(
+        keymapPlugin,
+        view,
+        keyboardEvent("ArrowUp", { ctrlKey: true })
+      )).toBe(true)
+      expect(state.selection.$from.parent.type.name).toBe(typeName)
+      expect(state.selection.$from.parentOffset).toBe(0)
+      expect(applyKey(
+        keymapPlugin,
+        view,
+        keyboardEvent("ArrowUp", { ctrlKey: true })
+      )).toBe(false)
+    }
+  )
+
+  it("leaves Mod-Arrow navigation unchanged outside code content", () => {
+    const keymapPlugin = buildKeymap(schema)
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("Text"))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 2),
+      plugins: [keymapPlugin]
+    })
+    const view = { state } as EditorView
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("ArrowDown", { ctrlKey: true })
+    )).toBe(false)
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("ArrowUp", { ctrlKey: true })
+    )).toBe(false)
+  })
+
   it.each([
     ["after", false, ["One", "Two", ""]],
     ["before", true, ["One", "", "Two"]]
@@ -570,7 +663,7 @@ describe("live editor blank block deletion", () => {
   it("removes a blank paragraph after Mermaid and keeps its code caret active", () => {
     const code = "graph TD; A-->B"
     const boundary = schema.nodes.mermaid!.create(
-      { mode: "split" },
+      { mode: "edit" },
       schema.text(code)
     )
     const empty = schema.nodes.paragraph!.create()

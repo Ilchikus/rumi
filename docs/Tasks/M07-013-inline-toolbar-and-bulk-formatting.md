@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -9,7 +9,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-03"
-updated: "2026-08-04"
+updated: "2026-08-06"
 ---
 # M07-013 Editor Toolbar And Bulk Formatting
 
@@ -43,6 +43,9 @@ when the user has explicitly selected several blocks.
 - Store Mermaid source as ordinary ProseMirror code content. Give database embeds and dividers
   native-history-compatible before/after structural caret positions so keyboard navigation and
   block deletion do not require an inactive editor or visible whole-node selection.
+- Present Mermaid in view mode by default without block chrome, and enter its code-formatted edit
+  mode from the absolute mode switcher or by moving a text caret into the block. Keep code and
+  Mermaid edit surfaces on Neutral 100, while rendered Mermaid remains on the page background.
 - Apply toolbar marks and formatting shortcuts to every selected block, including non-contiguous
   selections, without changing blocks between them.
 - Normalize mixed inline-mark selections to one shared state.
@@ -116,5 +119,5 @@ Top/Bottom follow-up verified on 2026-08-04:
 - the persistent Sandbox remained on its original `floating` setting; temporary QA processes and
   workspace copies were removed
 
-User visual QA remains open. The pull request must remain unmerged until explicit approval after
-testing.
+User visual QA was approved on 2026-08-06 after the code-block, Mermaid view/edit, selection, and
+toolbar follow-ups were exercised in the current branch.

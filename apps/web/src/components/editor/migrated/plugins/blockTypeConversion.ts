@@ -139,7 +139,7 @@ function createBlockNodeForType(
     }
     case "mermaid":
       return [targetType.create(
-        { mode: "split" },
+        { mode: "view" },
         schema.text(DEFAULT_MERMAID_CODE)
       )]
     case "horizontal_rule":

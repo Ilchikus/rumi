@@ -244,13 +244,13 @@ const nodes: { [key: string]: NodeSpec } = {
     code: true,
     defining: true,
     attrs: {
-      mode: { default: "split" } // view, edit, split
+      mode: { default: "view" }
     },
     parseDOM: [{
       tag: "div.mermaid-block",
       getAttrs(dom: HTMLElement) {
         return {
-          mode: dom.getAttribute("data-mode") || "split"
+          mode: dom.getAttribute("data-mode") === "edit" ? "edit" : "view"
         }
       },
       getContent(dom: HTMLElement, parsedSchema: Schema) {

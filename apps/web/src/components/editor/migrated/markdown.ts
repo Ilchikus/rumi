@@ -374,7 +374,7 @@ function convertCodeBlock(node: Code, schema: Schema): ProseMirrorNode | null {
   if (node.lang === "mermaid" && schema.nodes.mermaid) {
     const code = node.value || ""
     return schema.nodes.mermaid.create(
-      { mode: "split" },
+      { mode: "view" },
       code ? schema.text(code) : null
     )
   }

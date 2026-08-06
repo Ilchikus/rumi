@@ -23,6 +23,10 @@ const codeBlockView = readFileSync(
   new URL("./migrated/plugins/codeBlockView.ts", import.meta.url),
   "utf8"
 );
+const mermaidNodeView = readFileSync(
+  new URL("./migrated/plugins/mermaidNodeView.ts", import.meta.url),
+  "utf8"
+);
 const codeLanguagePicker = readFileSync(
   new URL("./migrated/plugins/CodeLanguagePicker.tsx", import.meta.url),
   "utf8"
@@ -41,6 +45,42 @@ const selectionToolbar = readFileSync(
 );
 
 describe("editor layout contracts", () => {
+  it("uses Tailwind neutral-100 code surfaces and a borderless Mermaid overlay switcher", () => {
+    const codeBlockRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror pre"
+    );
+    const mermaidBlockRule = cssRule(editorStyles, ".mermaid-block-wrapper");
+    const mermaidToolbarRule = cssRule(editorStyles, ".mermaid-toolbar");
+    const mermaidViewToolbarRule = cssRule(
+      editorStyles,
+      '.mermaid-block-wrapper[data-mode="view"] .mermaid-toolbar'
+    );
+    const mermaidEditorRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror pre.mermaid-editor"
+    );
+
+    expect(codeBlockView).toContain(
+      'this.dom.classList.add("code-block-wrapper", "bg-neutral-100")'
+    );
+    expect(mermaidNodeView).toContain(
+      'this.dom.classList.toggle("bg-neutral-100", !isView)'
+    );
+    expect(codeBlockRule).not.toContain("background");
+    expect(mermaidBlockRule).not.toContain("border:");
+    expect(mermaidBlockRule).not.toContain("background");
+    expect(mermaidToolbarRule).toContain("position: absolute;");
+    expect(mermaidToolbarRule).toContain("top: 8px;");
+    expect(mermaidToolbarRule).toContain("right: 8px;");
+    expect(mermaidViewToolbarRule).toContain("opacity: 0;");
+    expect(mermaidViewToolbarRule).toContain("pointer-events: none;");
+    expect(editorStyles).toContain(
+      '.mermaid-block-wrapper[data-mode="view"]:hover .mermaid-toolbar'
+    );
+    expect(mermaidEditorRule).toContain("overflow: hidden;");
+  });
+
   it("uses flush five-pixel paragraph spacing and tighter flush list spacing", () => {
     const paragraphRule = cssRule(
       editorStyles,
@@ -313,7 +353,7 @@ describe("editor layout contracts", () => {
       '.selection-toolbar[data-mode="bottom"]'
     );
 
-    expect(floatingRule).toContain("position: fixed;");
+    expect(floatingRule).toContain("position: absolute;");
     expect(expandedRule).toContain("position: fixed;");
     expect(expandedRule).toContain("width: min(900px, calc(100vw - 32px));");
     expect(expandedRule).toContain("transform: translateX(-50%);");

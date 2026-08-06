@@ -20,13 +20,11 @@ import {
   normalizeExternalRichSlice,
   normalizePastedTables
 } from "../richClipboardNormalization"
+import { isLinkDestination, normalizeLinkHref } from "../linkHref"
 
 export { normalizePastedTables } from "../richClipboardNormalization"
 
 export const pasteHandlerKey = new PluginKey("pasteHandler")
-
-// URL regex that matches common URL patterns
-const URL_REGEX = /^(https?:\/\/[^\s<>\"]+)$/i
 
 function insertBlockAtSelection(view: EditorView, blockNode: ProseMirrorNode) {
   const { state, dispatch } = view
@@ -64,21 +62,32 @@ export function createUrlPasteTransaction(
 ): Transaction | null {
   const href = text.trim()
   const link = schema.marks.link
+  const hasSelectedText = state.selection instanceof TextSelection && !state.selection.empty
+  const isExternalUrl = /^(?:https?:\/\/|www\.)[^\s<>"]+$/iu.test(href)
 
-  if (!link || !URL_REGEX.test(href) || state.selection.$from.parent.type.spec.code) {
+  if (
+    !link ||
+    (!isExternalUrl && !(hasSelectedText && isLinkDestination(href))) ||
+    state.selection.$from.parent.type.spec.code
+  ) {
     return null
   }
 
-  if (state.selection instanceof TextSelection && !state.selection.empty) {
+  const normalizedHref = normalizeLinkHref(href)
+
+  if (hasSelectedText) {
     const transaction = state.tr.addMark(
       state.selection.from,
       state.selection.to,
-      link.create({ href })
+      link.create({ href: normalizedHref })
     )
     return transaction.setSelection(TextSelection.create(transaction.doc, state.selection.to))
   }
 
-  return state.tr.replaceSelectionWith(schema.text(href, [link.create({ href })]), false)
+  return state.tr.replaceSelectionWith(
+    schema.text(href, [link.create({ href: normalizedHref })]),
+    false
+  )
 }
 
 export function createCodeTextPasteTransaction(

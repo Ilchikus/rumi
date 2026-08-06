@@ -433,7 +433,7 @@ describe("selected-block handle menu trigger", () => {
   it("places the text caret in Mermaid when deletion reveals it", () => {
     const removed = schema.nodes.paragraph!.create(null, schema.text("Remove"))
     const mermaid = schema.nodes.mermaid!.create(
-      { mode: "split" },
+      { mode: "view" },
       schema.text("graph TD; A-->B")
     )
     const after = schema.nodes.paragraph!.create(null, schema.text("After"))
@@ -456,12 +456,14 @@ describe("selected-block handle menu trigger", () => {
     expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
     state = state.apply(transaction!)
 
-    expect(state.doc.firstChild).toBe(mermaid)
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.mermaid)
+    expect(state.doc.firstChild?.textContent).toBe(mermaid.textContent)
     expect(selectedBlocks(state)).toEqual([])
     expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
     expect(state.selection).toBeInstanceOf(TextSelection)
-    expect(state.selection.$from.parent).toBe(mermaid)
+    expect(state.selection.$from.parent).toBe(state.doc.firstChild)
     expect(state.selection.$from.parentOffset).toBe(0)
+    expect(state.doc.firstChild?.attrs.mode).toBe("edit")
   })
 
   it("focuses search immediately for keyboard selection but preserves handle drag timing", () => {

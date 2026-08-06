@@ -130,6 +130,78 @@ describe("selection toolbar mode", () => {
     host.remove()
   })
 
+  it("anchors the floating toolbar below highlighted text in editor document space", () => {
+    const canvas = document.createElement("div")
+    canvas.dataset.rumiEditorCanvas = ""
+    const wrapper = document.createElement("div")
+    wrapper.className = "prosemirror-editor-wrapper"
+    const host = document.createElement("div")
+    host.className = "prosemirror-editor"
+    wrapper.appendChild(host)
+    canvas.appendChild(wrapper)
+    document.body.appendChild(canvas)
+
+    let wrapperTop = 200
+    Object.defineProperty(wrapper, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: wrapperTop + 800,
+        height: 800,
+        left: 100,
+        right: 700,
+        top: wrapperTop,
+        width: 600,
+        x: 100,
+        y: wrapperTop,
+        toJSON: () => ({})
+      })
+    })
+    const paragraph = schema.nodes.paragraph!.create(
+      null,
+      schema.text("Highlighted text")
+    )
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1),
+      plugins: [selectionToolbarPlugin(schema)]
+    })
+    const view = new EditorView(host, { state })
+    Object.defineProperty(view, "coordsAtPos", {
+      configurable: true,
+      value: (pos: number) => ({
+        bottom: 280,
+        left: pos === 1 ? 180 : 380,
+        right: pos === 1 ? 180 : 380,
+        top: 260
+      })
+    })
+    const toolbar = wrapper.querySelector<HTMLElement>(".selection-toolbar")!
+    Object.defineProperty(toolbar, "offsetWidth", {
+      configurable: true,
+      value: 120
+    })
+
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5))
+    )
+
+    expect(toolbar.parentElement).toBe(wrapper)
+    expect(toolbar.style.display).toBe("flex")
+    expect(toolbar.style.left).toBe("120px")
+    expect(toolbar.style.top).toBe("88px")
+
+    // The stored document-local coordinate is unchanged when the wrapper
+    // moves in the viewport, so browser scrolling carries toolbar and text
+    // together without a fixed-position refresh loop.
+    wrapperTop = 100
+    canvas.dispatchEvent(new Event("scroll"))
+    expect(toolbar.style.top).toBe("88px")
+
+    view.destroy()
+    canvas.remove()
+  })
+
   it("executes arrow, block-change, and inline actions from their groups", async () => {
     const host = document.createElement("div")
     document.body.appendChild(host)
@@ -164,7 +236,7 @@ describe("selection toolbar mode", () => {
 
     toolbar.querySelector<HTMLButtonElement>(".link-btn")!.click()
     const linkPopup = toolbar.querySelector<HTMLElement>(".link-input-popup")!
-    const linkInput = linkPopup.querySelector<HTMLInputElement>("input")!
+    const linkInput = linkPopup.querySelector<HTMLInputElement>(".link-url-input")!
     linkInput.value = "https://example.com"
     linkPopup.querySelector<HTMLButtonElement>("button")!.click()
     expect(schema.marks.link!.isInSet(view.state.doc.firstChild!.firstChild!.marks)?.attrs.href)
@@ -218,6 +290,79 @@ describe("selection toolbar mode", () => {
     await Promise.resolve()
 
     expect(popup.style.display).toBe("none")
+    host.remove()
+  })
+
+  it("edits a caret link with its URL selected and unlinks on empty Enter", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const link = schema.marks.link!.create({ href: "Notes.md" })
+    const bold = schema.marks.bold!.create()
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Linked text", [bold, link]))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 4),
+      plugins: [selectionToolbarPlugin(schema, "top")]
+    })
+    const view = new EditorView(host, { state })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    const input = popup.querySelector<HTMLInputElement>(".link-url-input")!
+    expect(popup.style.display).toBe("block")
+    expect(input.value).toBe("Notes.md")
+    expect(document.activeElement).toBe(input)
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe("Notes.md".length)
+    expect(popup.querySelector(".link-copy-btn")).not.toBeNull()
+    expect(popup.querySelector(".link-open-btn")).not.toBeNull()
+    expect(popup.querySelector(".link-unlink-btn")).not.toBeNull()
+
+    input.value = ""
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    expect(schema.marks.link!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+      .toBeUndefined()
+    expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+      .toBeDefined()
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("opens only the link editor when the formatting toolbar is hidden", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const link = schema.marks.link!.create({ href: "Notes.md" })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Notes", [link]))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 3),
+      plugins: [selectionToolbarPlugin(schema, "none")]
+    })
+    const view = new EditorView(host, { state })
+    Object.defineProperty(view, "coordsAtPos", {
+      value: () => ({ left: 20, right: 20, top: 20, bottom: 40 })
+    })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+    expect(toolbar.classList.contains("link-editor-only")).toBe(true)
+    expect(toolbar.dataset.mode).toBe("floating")
+    expect(toolbar.querySelector<HTMLElement>(".link-input-popup")?.style.display)
+      .toBe("block")
+
+    view.destroy()
     host.remove()
   })
 })

@@ -1,5 +1,5 @@
 ---
-status: verify
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-04"
-updated: "2026-08-05"
+updated: "2026-08-06"
 ---
 # M07-016 Editor Block Spacing
 
@@ -78,8 +78,7 @@ Verified on 2026-08-04:
 - a disposable Chrome profile against the no-auth sandbox reported computed paragraph margins of
   4 pixels and flat-list margins of 2 pixels on both top and bottom
 
-User visual QA remains open. The pull request must remain unmerged until explicit approval after
-testing.
+User visual QA was pending at this verification point.
 
 Spacing follow-up on 2026-08-05:
 
@@ -101,7 +100,7 @@ Spacing follow-up on 2026-08-05:
   decoration families resolve to the muted foreground color
 - the same browser pass confirmed a 24-pixel guide region with an active vertical-line background
   for first-level nested checklist rows
-- user visual QA remains open; no merge is allowed before explicit approval
+- user visual QA was pending at this verification point
 
 List-decoration follow-up on 2026-08-05:
 
@@ -113,4 +112,9 @@ List-decoration follow-up on 2026-08-05:
   checkbox offset
 - the browser pass confirmed Neutral 100 indentation guides centered 10 pixels into each
   decoration column and rendered the numbered-list fixture as `1`, `2`, `a`, `3`, `4`, `5`
-- user visual QA remains open; no merge is allowed before explicit approval
+- user visual QA was pending at this verification point
+
+Release gate resolved on 2026-08-06:
+
+- the user approved the current branch after visual testing, closing the block-spacing QA gate for
+  merge

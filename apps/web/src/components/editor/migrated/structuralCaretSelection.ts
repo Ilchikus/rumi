@@ -122,6 +122,27 @@ export function structuralCaretAtBlock(
   return new StructuralCaretSelection(doc.resolve(pos), side)
 }
 
+export function setMermaidEditSelection(
+  transaction: import("prosemirror-state").Transaction,
+  nodePos: number,
+  side: StructuralCaretSide = "before"
+): boolean {
+  const node = transaction.doc.nodeAt(nodePos)
+  if (!node || node.type.name !== "mermaid") return false
+
+  if (node.attrs.mode !== "edit") {
+    transaction.setNodeMarkup(nodePos, undefined, {
+      ...node.attrs,
+      mode: "edit"
+    })
+  }
+  transaction.setSelection(TextSelection.create(
+    transaction.doc,
+    side === "before" ? nodePos + 1 : nodePos + node.nodeSize - 1
+  ))
+  return true
+}
+
 export function setSelectionBeforeNextSpecialBlock(
   transaction: import("prosemirror-state").Transaction,
   deletedBlockPos: number
@@ -136,16 +157,7 @@ export function setSelectionBeforeNextSpecialBlock(
     return true
   }
   if (nextBlock.type.name === "mermaid") {
-    if (nextBlock.attrs.mode === "view") {
-      transaction.setNodeMarkup(nextBlockPos, undefined, {
-        ...nextBlock.attrs,
-        mode: "split"
-      })
-    }
-    transaction.setSelection(
-      TextSelection.create(transaction.doc, nextBlockPos + 1)
-    )
-    return true
+    return setMermaidEditSelection(transaction, nextBlockPos)
   }
   return false
 }

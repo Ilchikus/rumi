@@ -1,5 +1,7 @@
 import { Node as PmNode } from "prosemirror-model"
+import { NodeSelection, Selection } from "prosemirror-state"
 import { EditorView, NodeView } from "prosemirror-view"
+import { setMermaidEditSelection } from "../structuralCaretSelection"
 
 type MermaidApi = typeof import("mermaid")["default"]
 
@@ -20,9 +22,12 @@ function loadMermaid(): Promise<MermaidApi> {
 
 const VIEW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"></path></svg>`
 const EDIT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path></svg>`
-const SPLIT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V200H136V56ZM40,56h80V200H40Z"></path></svg>`
 
-type MermaidMode = "view" | "edit" | "split"
+type MermaidMode = "view" | "edit"
+
+function mermaidMode(value: unknown): MermaidMode {
+  return value === "edit" ? "edit" : "view"
+}
 
 let mermaidIdCounter = 0
 
@@ -39,19 +44,21 @@ class MermaidNodeView implements NodeView {
   private errorEl: HTMLElement
   private mermaidId: string
   private renderRevision = 0
+  private viewHeight: number | null = null
 
   constructor(node: PmNode, view: EditorView, getPos: () => number | undefined) {
     this.node = node
     this.view = view
     this.getPos = getPos
-    this.mode = (node.attrs.mode as MermaidMode) || "split"
+    this.mode = mermaidMode(node.attrs.mode)
     this.mermaidId = `mermaid-${++mermaidIdCounter}`
 
     // Main container
     this.dom = document.createElement("div")
     this.dom.className = "mermaid-block-wrapper"
 
-    // Toolbar
+    // The view/edit switcher floats over both presentations instead of
+    // reserving a heading row above the block.
     this.toolbar = this.createToolbar()
     this.dom.appendChild(this.toolbar)
 
@@ -60,17 +67,17 @@ class MermaidNodeView implements NodeView {
     content.className = "mermaid-content"
     this.dom.appendChild(content)
 
-    // Editor container (left side in split, full in edit mode)
-    this.editorContainer = document.createElement("div")
-    this.editorContainer.className = "mermaid-editor"
+    // Editor container
+    this.editorContainer = document.createElement("pre")
+    this.editorContainer.className = "mermaid-editor code-block-wrapper"
 
     this.contentDOM = document.createElement("code")
-    this.contentDOM.className = "mermaid-textarea"
+    this.contentDOM.className = "mermaid-textarea language-mermaid"
     this.contentDOM.dataset.placeholder = "Enter Mermaid diagram code..."
     this.contentDOM.spellcheck = false
     this.editorContainer.appendChild(this.contentDOM)
 
-    // Preview container (right side in split, full in view mode)
+    // Preview container
     this.previewContainer = document.createElement("div")
     this.previewContainer.className = "mermaid-preview"
 
@@ -92,18 +99,12 @@ class MermaidNodeView implements NodeView {
     toolbar.className = "mermaid-toolbar"
     toolbar.contentEditable = "false"
 
-    const label = document.createElement("span")
-    label.className = "mermaid-label"
-    label.textContent = "Mermaid"
-    toolbar.appendChild(label)
-
     const buttons = document.createElement("div")
     buttons.className = "mermaid-mode-buttons"
 
     const modes: { mode: MermaidMode; icon: string; title: string }[] = [
-      { mode: "view", icon: VIEW_SVG, title: "View only" },
-      { mode: "edit", icon: EDIT_SVG, title: "Edit only" },
-      { mode: "split", icon: SPLIT_SVG, title: "Split view" }
+      { mode: "view", icon: VIEW_SVG, title: "View diagram" },
+      { mode: "edit", icon: EDIT_SVG, title: "Edit source" }
     ]
 
     modes.forEach(({ mode, icon, title }) => {
@@ -111,10 +112,15 @@ class MermaidNodeView implements NodeView {
       btn.className = "mermaid-mode-btn"
       btn.type = "button"
       btn.title = title
+      btn.setAttribute("aria-label", title)
       btn.innerHTML = icon
       btn.dataset.mode = mode
       if (this.mode === mode) btn.classList.add("active")
-      btn.addEventListener("click", () => this.setMode(mode))
+      btn.addEventListener("mousedown", (event) => event.preventDefault())
+      btn.addEventListener("click", (event) => {
+        event.preventDefault()
+        this.setMode(mode)
+      })
       buttons.appendChild(btn)
     })
 
@@ -123,40 +129,75 @@ class MermaidNodeView implements NodeView {
   }
 
   private setMode(mode: MermaidMode) {
-    this.mode = mode
     const pos = this.getPos()
-    if (pos !== undefined) {
-      const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
-        ...this.node.attrs,
-        mode
+    if (pos === undefined) return
+
+    const transaction = this.view.state.tr
+    if (mode === "edit") {
+      setMermaidEditSelection(transaction, pos)
+    } else {
+      const currentNode = transaction.doc.nodeAt(pos)
+      if (!currentNode || currentNode.type !== this.node.type) return
+      transaction.setNodeMarkup(pos, undefined, {
+        ...currentNode.attrs,
+        mode: "view"
       })
-      this.view.dispatch(tr)
+
+      const { $from, $to } = transaction.selection
+      const selectionIsInside = $from.depth > 0 &&
+        $to.depth > 0 &&
+        $from.node(1).type === this.node.type &&
+        $to.node(1).type === this.node.type &&
+        $from.before(1) === pos &&
+        $to.before(1) === pos
+      if (selectionIsInside) {
+        const after = Selection.findFrom(
+          transaction.doc.resolve(pos + currentNode.nodeSize),
+          1,
+          true
+        )
+        const before = Selection.findFrom(
+          transaction.doc.resolve(pos),
+          -1,
+          true
+        )
+        transaction.setSelection(
+          after ?? before ?? NodeSelection.create(transaction.doc, pos)
+        )
+      }
     }
-    this.updateMode()
+
+    this.view.dispatch(transaction.scrollIntoView())
+    this.view.focus()
   }
 
   private updateMode() {
     // Update button states
     this.toolbar.querySelectorAll(".mermaid-mode-btn").forEach((btn) => {
-      btn.classList.toggle("active", (btn as HTMLElement).dataset.mode === this.mode)
+      const active = (btn as HTMLElement).dataset.mode === this.mode
+      btn.classList.toggle("active", active)
+      btn.setAttribute("aria-pressed", String(active))
     })
 
     // Update visibility
     const isView = this.mode === "view"
-    const isEdit = this.mode === "edit"
-    const isSplit = this.mode === "split"
 
+    this.dom.dataset.mode = this.mode
+    this.dom.classList.toggle("bg-neutral-100", !isView)
     this.editorContainer.style.display = isView ? "none" : "flex"
-    this.previewContainer.style.display = isEdit ? "none" : "flex"
-
-    // Set widths for split mode
-    if (isSplit) {
-      this.editorContainer.style.width = "50%"
-      this.previewContainer.style.width = "50%"
-    } else {
-      this.editorContainer.style.width = "100%"
-      this.previewContainer.style.width = "100%"
+    this.previewContainer.style.display = isView ? "flex" : "none"
+    this.editorContainer.style.width = "100%"
+    this.previewContainer.style.width = "100%"
+    if (isView) {
+      this.dom.style.removeProperty("height")
+    } else if (this.viewHeight !== null) {
+      this.dom.style.height = `${this.viewHeight}px`
     }
+  }
+
+  private captureViewHeight() {
+    const height = this.dom.getBoundingClientRect().height
+    if (height > 0) this.viewHeight = Math.ceil(height)
   }
 
   private async renderDiagram() {
@@ -210,7 +251,11 @@ class MermaidNodeView implements NodeView {
     this.node = node
 
     if (modeChanged) {
-      this.mode = node.attrs.mode || "split"
+      const nextMode = mermaidMode(node.attrs.mode)
+      if (nextMode === "edit" && this.mode === "view") {
+        this.captureViewHeight()
+      }
+      this.mode = nextMode
       this.updateMode()
     }
 

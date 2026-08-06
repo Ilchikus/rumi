@@ -73,6 +73,17 @@ describe("live editor URL paste", () => {
 
     expect(createUrlPasteTransaction(state, "https://rumi.md", schema)).toBeNull()
   })
+
+  it("turns a pasted workspace path into a link only for highlighted text", () => {
+    const selected = stateWithSelection("Open notes", 1, 11)
+    const caret = stateWithSelection("Open notes", 1)
+
+    const transaction = createUrlPasteTransaction(selected, "Notes/Today.md", schema)
+    expect(transaction).not.toBeNull()
+    expect(serializeMarkdown(transaction!.doc))
+      .toBe("[Open notes](Notes/Today.md)\n")
+    expect(createUrlPasteTransaction(caret, "Notes/Today.md", schema)).toBeNull()
+  })
 })
 
 describe("live editor plain-text paste", () => {
@@ -728,7 +739,7 @@ describe("live editor code paste", () => {
 
   it("treats Mermaid source as ProseMirror code content", () => {
     const mermaid = schema.nodes.mermaid!.create(
-      { mode: "split" },
+      { mode: "edit" },
       schema.text("graph TD; A-->B")
     )
     const doc = schema.nodes.doc!.create(null, mermaid)

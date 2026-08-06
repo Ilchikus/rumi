@@ -61,6 +61,14 @@ describe("sidebar settings entry", () => {
 });
 
 describe("sidebar active ancestor trail", () => {
+  it("restores cached expansion state before the first sidebar render", () => {
+    expect(sidebarSource).toContain("initialSidebarExpansion(tree, workspaceKey)");
+    expect(sidebarSource).toContain("() => initialExpansion.paths");
+    expect(sidebarSource).toContain(
+      "initialExpansion.restored ? initialExpansion.workspaceKey : null"
+    );
+  });
+
   it("uses a CSS sticky scope ending at the active item", () => {
     expect(sidebarSource).toContain("const stickyAncestorIndexes = useMemo(");
     expect(sidebarSource).toContain("const paths = selection ? ancestorPaths(selection.nodePath) : []");

@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
@@ -12,7 +21,7 @@ import {
 } from "@rumi/markdown";
 import { cleanWorkspaceName } from "@rumi/workspace-format";
 import type {
-  InlineToolbarMode,
+  EditorToolbarMode,
   DatabasePropertyOptionColor,
   DatabasePropertyType,
   PageDocument,
@@ -30,7 +39,6 @@ import type {
   RumiBlockEditorHandle,
   RumiDocumentLink
 } from "./components/editor/RumiBlockEditor";
-import { DatabaseView } from "./components/database/DatabaseView";
 import {
   bumpDatabaseRefreshRevision,
   databaseRefreshRevisionFor
@@ -41,7 +49,6 @@ import { PageProperties } from "./components/editor/PageProperties";
 import { EditablePageTitle } from "./components/editor/EditablePageTitle";
 import type { EditableTitleSplitContext } from "./components/editor/EditablePageTitle";
 import { randomDatabaseOptionColor } from "./components/editor/DatabaseOptionPill";
-import { RevisionHistoryDialog } from "./components/editor/RevisionHistoryDialog";
 import { emptyPageTitle, pageTitleFromPath } from "./components/editor/pagePresentation";
 import {
   EDITOR_PAGE_CONTAINER_CLASS
@@ -51,9 +58,6 @@ import { Sidebar } from "./components/sidebar/Sidebar";
 import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
-import { SearchDialog } from "./components/search/SearchDialog";
-import { WorkspaceSettingsView } from "./components/settings/WorkspaceSettingsView";
-import { DeleteTrashItemDialog, TrashView } from "./components/trash/TrashView";
 import {
   clearLastOpenedPage,
   findWorkspaceNode,
@@ -67,13 +71,21 @@ import {
   workspaceUrlForNode
 } from "./lib/workspaceRoute";
 import { appShortcutAction, appShortcutPlatform, shortcutLabels } from "./lib/appShortcuts";
+import {
+  hasTextEditingFocus,
+  isSecondaryContextGesture,
+  isSelectAllShortcut
+} from "./lib/appBrowserInteractions";
 import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import {
   mergeEditorScrollState,
+  pageScrollKey,
   readEditorScrollTop,
+  rememberSessionScrollTop,
+  resolveNavigationScrollTop,
   restoreEditorScroll
 } from "./lib/historyScroll";
 import {
@@ -94,12 +106,38 @@ import {
   snapshotMatchesWorkspace,
   writeStartupPageMode,
   writeWorkspaceStartupSnapshot,
-  type StartupPageMode
+  type StartupPageMode,
+  type WorkspaceStartupSnapshot
 } from "./lib/workspaceStartup";
 
+const rumiBlockEditorModule = import("./components/editor/RumiBlockEditor");
 const RumiBlockEditor = lazy(async () => {
-  const module = await import("./components/editor/RumiBlockEditor");
+  const module = await rumiBlockEditorModule;
   return { default: module.RumiBlockEditor };
+});
+const DatabaseView = lazy(async () => {
+  const module = await import("./components/database/DatabaseView");
+  return { default: module.DatabaseView };
+});
+const RevisionHistoryDialog = lazy(async () => {
+  const module = await import("./components/editor/RevisionHistoryDialog");
+  return { default: module.RevisionHistoryDialog };
+});
+const SearchDialog = lazy(async () => {
+  const module = await import("./components/search/SearchDialog");
+  return { default: module.SearchDialog };
+});
+const WorkspaceSettingsView = lazy(async () => {
+  const module = await import("./components/settings/WorkspaceSettingsView");
+  return { default: module.WorkspaceSettingsView };
+});
+const TrashView = lazy(async () => {
+  const module = await import("./components/trash/TrashView");
+  return { default: module.TrashView };
+});
+const DeleteTrashItemDialog = lazy(async () => {
+  const module = await import("./components/trash/TrashView");
+  return { default: module.DeleteTrashItemDialog };
 });
 
 type LoadState = "idle" | "loading" | "error";
@@ -162,7 +200,14 @@ export function App(): ReactElement {
     : "last-visited";
   const hydrateStartupPage = Boolean(
     startupSnapshot
-    && canHydrateStartupPage(window.location.pathname, initialStartupPageMode)
+    && canHydrateStartupPage(
+      window.location.pathname,
+      initialStartupPageMode,
+      startupSnapshot.selection.kind === "workspace"
+        && startupSnapshot.selection.nodePath === ""
+        && startupSnapshot.tree.path === ""
+        && startupSnapshot.tree.companionPath === startupSnapshot.selection.openPath
+    )
   );
   const setMessage = useCallback((message: string) => {
     if (message) toast.error(message);
@@ -199,13 +244,25 @@ export function App(): ReactElement {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceSettingsResult, setWorkspaceSettingsResult] =
     useState<WorkspaceSettingsResult | null>(null);
+  const [cachedWorkspaceSettings, setCachedWorkspaceSettings] =
+    useState<WorkspaceSettings | undefined>(startupSnapshot?.settings);
   const [settingsLoadState, setSettingsLoadState] = useState<LoadState>("idle");
-  const [highlightMisspellings, setHighlightMisspellings] = useState(false);
-  const [inlineReplacements, setInlineReplacements] = useState(true);
-  const [emojiSuggestions, setEmojiSuggestions] = useState(true);
-  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [highlightMisspellings, setHighlightMisspellings] = useState(
+    startupSnapshot?.settings?.editor.highlightMisspellings ?? false
+  );
+  const [inlineReplacements, setInlineReplacements] = useState(
+    startupSnapshot?.settings?.editor.inlineReplacements ?? true
+  );
+  const [emojiSuggestions, setEmojiSuggestions] = useState(
+    startupSnapshot?.settings?.editor.emojiSuggestions ?? true
+  );
+  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>(
+    startupSnapshot?.settings?.editor.inlineToolbar ?? "floating"
+  );
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(initialStartupPageMode);
-  const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>([]);
+  const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>(
+    startupSnapshot?.settings?.uploads.allowedFileTypes ?? []
+  );
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [scrollRestoreRevision, setScrollRestoreRevision] = useState(0);
@@ -231,7 +288,7 @@ export function App(): ReactElement {
   const pageTitleUndoInFlightRef = useRef(false);
   const pageTitleEditRequestIdRef = useRef(0);
   const deferredReferenceRepairRef = useRef<RumiEvent | null>(null);
-  const settingsSaveInFlightRef = useRef(false);
+  const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingHistoryActionRef = useRef<"push" | "replace">("replace");
   const pageLoadCacheRef = useRef<Map<string, Promise<PageDocument>>>(new Map());
   const pageLoadCacheGenerationRef = useRef(0);
@@ -239,8 +296,11 @@ export function App(): ReactElement {
   const restoredWorkspaceRef = useRef<string | null>(null);
   const hydratedWorkspaceRootRef = useRef(startupSnapshot?.workspace.rootPath ?? null);
   const startupSnapshotPendingValidationRef = useRef(Boolean(startupSnapshot));
+  const startupSnapshotRef = useRef(startupSnapshot);
   const pendingScrollRestoreRef = useRef<number | null>(0);
   const historyEntryRevisionRef = useRef(0);
+  const sessionScrollPositionsRef = useRef<Map<string, number>>(new Map());
+  const activeScrollKeyRef = useRef<string | null>(null);
   const pageVisitHistoryRef = useRef<string[]>([]);
   const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
   const shortcutLabel = useMemo(() => shortcutLabels(shortcutPlatform), [shortcutPlatform]);
@@ -256,6 +316,24 @@ export function App(): ReactElement {
       : pageTitleFromPath(page.path, page.kind)
     : null;
   const editorDocuments = useMemo(() => collectEditorDocuments(tree), [tree]);
+  const renderedScrollKey = settingsOpen
+    ? "system:settings"
+    : activeTrashPage
+      ? `trash:${activeTrashPage.item.id}`
+      : trashOpen
+        ? "system:trash"
+        : page
+          ? pageScrollKey(page.path)
+          : null;
+  const destinationScrollKey = settingsOpen
+    ? "system:settings"
+    : activeTrashPage
+      ? `trash:${activeTrashPage.item.id}`
+      : trashOpen
+        ? "system:trash"
+        : selection?.openPath
+          ? pageScrollKey(selection.openPath)
+          : null;
 
   useEffect(() => {
     document.title = activeTrashPage
@@ -281,6 +359,7 @@ export function App(): ReactElement {
         && hydratedWorkspaceRoot !== workspace.rootPath
       ) {
         clearWorkspaceStartupSnapshot(window.localStorage);
+        startupSnapshotRef.current = null;
         openRequestIdRef.current += 1;
         restoredWorkspaceRef.current = null;
         selectionRef.current = null;
@@ -304,6 +383,7 @@ export function App(): ReactElement {
         if (cachedSelectionIsStale && !hasUnsavedPageChanges(saveStateRef.current)) {
           clearLastOpenedPage(window.localStorage, workspace.rootPath);
           clearWorkspaceStartupSnapshot(window.localStorage);
+          startupSnapshotRef.current = null;
           openRequestIdRef.current += 1;
           restoredWorkspaceRef.current = null;
           selectionRef.current = null;
@@ -344,10 +424,11 @@ export function App(): ReactElement {
     try {
       const result = await api.getWorkspaceSettings();
       setWorkspaceSettingsResult(result);
+      setCachedWorkspaceSettings(result.settings);
       setHighlightMisspellings(result.settings.editor.highlightMisspellings);
       setInlineReplacements(result.settings.editor.inlineReplacements);
       setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-      setInlineToolbar(result.settings.editor.inlineToolbar);
+      setEditorToolbar(result.settings.editor.inlineToolbar);
       setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
       setSettingsLoadState("idle");
     } catch (error) {
@@ -396,6 +477,10 @@ export function App(): ReactElement {
     selectionRef.current = selection;
   }, [selection]);
 
+  useLayoutEffect(() => {
+    activeScrollKeyRef.current = renderedScrollKey;
+  }, [renderedScrollKey]);
+
   useEffect(() => {
     const previousScrollRestoration = window.history.scrollRestoration;
     window.history.scrollRestoration = "manual";
@@ -417,6 +502,12 @@ export function App(): ReactElement {
       if (!(target instanceof HTMLElement) || !target.matches("[data-rumi-editor-canvas]")) {
         return;
       }
+      const scrollKey = activeScrollKeyRef.current;
+      rememberSessionScrollTop(
+        sessionScrollPositionsRef.current,
+        scrollKey,
+        target.scrollTop
+      );
       const entryRevision = historyEntryRevisionRef.current;
       if (frame !== null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -823,6 +914,53 @@ export function App(): ReactElement {
   }, []);
 
   useEffect(() => {
+    let secondarySelectionTimer: number | null = null;
+    let suppressSecondarySelection = false;
+    const brieflySuppressSecondarySelection = () => {
+      suppressSecondarySelection = true;
+      if (secondarySelectionTimer !== null) window.clearTimeout(secondarySelectionTimer);
+      secondarySelectionTimer = window.setTimeout(() => {
+        suppressSecondarySelection = false;
+        secondarySelectionTimer = null;
+      }, 250);
+    };
+    const preventSecondaryTextSelection = (event: globalThis.MouseEvent) => {
+      if (!isSecondaryContextGesture(event, shortcutPlatform)) return;
+      brieflySuppressSecondarySelection();
+      event.preventDefault();
+    };
+    const preventNativeContextMenu = (event: globalThis.MouseEvent) => {
+      brieflySuppressSecondarySelection();
+      event.preventDefault();
+    };
+    const preventSecondarySelectStart = (event: Event) => {
+      if (suppressSecondarySelection) event.preventDefault();
+    };
+    const selectAllPageBlocks = (event: globalThis.KeyboardEvent) => {
+      if (
+        !isSelectAllShortcut(event, shortcutPlatform) ||
+        hasTextEditingFocus(document.activeElement)
+      ) return;
+      if (!editorRef.current?.selectAllBlocks()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("mousedown", preventSecondaryTextSelection, true);
+    document.addEventListener("contextmenu", preventNativeContextMenu, true);
+    document.addEventListener("selectstart", preventSecondarySelectStart, true);
+    window.addEventListener("keydown", selectAllPageBlocks, true);
+    return () => {
+      document.removeEventListener("mousedown", preventSecondaryTextSelection, true);
+      document.removeEventListener("contextmenu", preventNativeContextMenu, true);
+      document.removeEventListener("selectstart", preventSecondarySelectStart, true);
+      window.removeEventListener("keydown", selectAllPageBlocks, true);
+      if (secondarySelectionTimer !== null) window.clearTimeout(secondarySelectionTimer);
+    };
+  }, [shortcutPlatform]);
+
+  useEffect(() => {
     const handleAppShortcut = (event: globalThis.KeyboardEvent) => {
       const action = appShortcutAction(event, shortcutPlatform);
       if (!action) return;
@@ -911,7 +1049,7 @@ export function App(): ReactElement {
     async (
       node: WorkspaceNode,
       historyAction: "push" | "replace" = "push",
-      scrollTop = 0
+      historyEntryScrollTop?: number
     ) => {
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
@@ -924,7 +1062,11 @@ export function App(): ReactElement {
       }
       const nextSelection = { nodePath: node.path, openPath, kind: node.kind };
       pendingHistoryActionRef.current = historyAction;
-      pendingScrollRestoreRef.current = scrollTop;
+      pendingScrollRestoreRef.current = resolveNavigationScrollTop(
+        sessionScrollPositionsRef.current,
+        openPath ? pageScrollKey(openPath) : null,
+        historyEntryScrollTop
+      );
       selectionRef.current = nextSelection;
       setSelection(nextSelection);
       saveStateRef.current = "idle";
@@ -1011,6 +1153,7 @@ export function App(): ReactElement {
     setActiveTrashPage(null);
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
     clearWorkspaceStartupSnapshot(window.localStorage);
+    startupSnapshotRef.current = null;
   }, [openNode, trashOpen, tree, workspaceRootPath]);
 
   const openDocumentLink = useCallback((
@@ -1071,7 +1214,7 @@ export function App(): ReactElement {
 
     const route = parseWorkspaceRoute(window.location.pathname);
 
-    if (route?.view === "node" && !findWorkspaceNodeForRoute(tree, route) && !treeRevalidated) {
+    if (route?.view === "node" && !treeRevalidated) {
       return;
     }
 
@@ -1250,7 +1393,14 @@ export function App(): ReactElement {
     const action = pendingHistoryActionRef.current;
     historyEntryRevisionRef.current += 1;
     const canvas = document.querySelector<HTMLElement>("[data-rumi-editor-canvas]");
-    const replacementScrollTop = pendingScrollRestoreRef.current ?? canvas?.scrollTop ?? 0;
+    const replacementScrollTop = pendingScrollRestoreRef.current
+      ?? (action === "replace"
+        ? canvas?.scrollTop
+        : resolveNavigationScrollTop(
+            sessionScrollPositionsRef.current,
+            destinationScrollKey
+          ))
+      ?? 0;
     if (action === "push") {
       window.history.replaceState(
         mergeEditorScrollState(window.history.state, canvas?.scrollTop ?? 0),
@@ -1261,15 +1411,23 @@ export function App(): ReactElement {
     window.history[action === "push" ? "pushState" : "replaceState"](
       mergeEditorScrollState(
         action === "push" ? null : window.history.state,
-        action === "push" ? 0 : replacementScrollTop
+        replacementScrollTop
       ),
       "",
       nextUrl
     );
-    pendingScrollRestoreRef.current = action === "push" ? 0 : replacementScrollTop;
+    pendingScrollRestoreRef.current = replacementScrollTop;
     setScrollRestoreRevision((revision) => revision + 1);
     pendingHistoryActionRef.current = "replace";
-  }, [activeTrashPage, routeSyncReady, selection, settingsOpen, trashOpen, tree]);
+  }, [
+    activeTrashPage,
+    destinationScrollKey,
+    routeSyncReady,
+    selection,
+    settingsOpen,
+    trashOpen,
+    tree
+  ]);
 
   useEffect(() => {
     const scrollTop = pendingScrollRestoreRef.current;
@@ -1303,31 +1461,93 @@ export function App(): ReactElement {
   }, [page, selection, workspaceRootPath]);
 
   useEffect(() => {
-    if (
-      !workspaceRootPath
-      || !tree
-      || !page
-      || !selection
-      || !selection.openPath
-      || selection.openPath !== page.path
-      || (saveState !== "idle" && saveState !== "saved")
-    ) {
+    if (!workspaceRootPath || !tree) return;
+
+    const persistSnapshot = (
+      snapshotSelection: SidebarSelection,
+      snapshotPage: PageDocument
+    ): void => {
+      if (!snapshotSelection.openPath || snapshotSelection.openPath !== snapshotPage.path) return;
+      const nextSnapshot: WorkspaceStartupSnapshot = {
+        schemaVersion: 1,
+        cachedAt: Date.now(),
+        workspace: { rootPath: workspaceRootPath, name: workspaceName },
+        tree,
+        selection: {
+          nodePath: snapshotSelection.nodePath,
+          openPath: snapshotSelection.openPath,
+          kind: snapshotSelection.kind
+        },
+        page: snapshotPage,
+        ...(cachedWorkspaceSettings ? { settings: cachedWorkspaceSettings } : {})
+      };
+      startupSnapshotRef.current = writeWorkspaceStartupSnapshot(
+        window.localStorage,
+        nextSnapshot
+      )
+        ? nextSnapshot
+        : null;
+    };
+
+    const currentPageIsStable = Boolean(
+      page
+      && selection?.openPath
+      && selection.openPath === page.path
+      && (saveState === "idle" || saveState === "saved")
+    );
+
+    if (startupPageMode === "last-visited") {
+      if (currentPageIsStable && page && selection) persistSnapshot(selection, page);
       return;
     }
 
-    writeWorkspaceStartupSnapshot(window.localStorage, {
-      schemaVersion: 1,
-      cachedAt: Date.now(),
-      workspace: { rootPath: workspaceRootPath, name: workspaceName },
-      tree,
-      selection: {
-        nodePath: selection.nodePath,
-        openPath: selection.openPath,
-        kind: selection.kind
+    const homeOpenPath = openPathForNode(tree);
+    if (!homeOpenPath) return;
+    const homeSelection: SidebarSelection = {
+      nodePath: tree.path,
+      openPath: homeOpenPath,
+      kind: "workspace"
+    };
+
+    if (page?.path === homeOpenPath && selection?.nodePath === tree.path) {
+      if (currentPageIsStable) persistSnapshot(homeSelection, page);
+      return;
+    }
+
+    const cachedSnapshot = startupSnapshotRef.current;
+    if (
+      cachedSnapshot
+      && snapshotMatchesWorkspace(cachedSnapshot, workspaceRootPath)
+      && cachedSnapshot.selection.kind === "workspace"
+      && cachedSnapshot.selection.nodePath === tree.path
+      && cachedSnapshot.selection.openPath === homeOpenPath
+      && cachedSnapshot.page.path === homeOpenPath
+    ) {
+      persistSnapshot(homeSelection, cachedSnapshot.page);
+      return;
+    }
+
+    let active = true;
+    void loadPage(homeOpenPath).then(
+      (homePage) => {
+        if (active) persistSnapshot(homeSelection, homePage);
       },
-      page
-    });
-  }, [page, saveState, selection, tree, workspaceName, workspaceRootPath]);
+      () => undefined
+    );
+    return () => {
+      active = false;
+    };
+  }, [
+    loadPage,
+    page,
+    saveState,
+    selection,
+    startupPageMode,
+    tree,
+    workspaceName,
+    workspaceRootPath,
+    cachedWorkspaceSettings
+  ]);
 
   const requestPageTitleSelection = useCallback((path: string) => {
     pageTitleEditRequestIdRef.current += 1;
@@ -1603,29 +1823,30 @@ export function App(): ReactElement {
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
   }, [isNarrow, loadWorkspaceSettings]);
 
-  const saveWorkspaceSettings = useCallback(async (
+  const saveWorkspaceSettings = useCallback((
     settings: WorkspaceSettings,
     nextStartupPageMode: StartupPageMode
   ): Promise<boolean> => {
-    if (settingsSaveInFlightRef.current) return false;
-    settingsSaveInFlightRef.current = true;
-    try {
-      const result = await api.updateWorkspaceSettings(settings);
-      setHighlightMisspellings(result.settings.editor.highlightMisspellings);
-      setInlineReplacements(result.settings.editor.inlineReplacements);
-      setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-      setInlineToolbar(result.settings.editor.inlineToolbar);
-      setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
-      writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
-      setStartupPageMode(nextStartupPageMode);
-      setSettingsLoadState("idle");
-      return true;
-    } catch (error) {
-      setMessage(errorMessage(error));
-      return false;
-    } finally {
-      settingsSaveInFlightRef.current = false;
-    }
+    const queuedSave = settingsSaveQueueRef.current.then(async (): Promise<boolean> => {
+      try {
+        const result = await api.updateWorkspaceSettings(settings);
+        setCachedWorkspaceSettings(result.settings);
+        setHighlightMisspellings(result.settings.editor.highlightMisspellings);
+        setInlineReplacements(result.settings.editor.inlineReplacements);
+        setEmojiSuggestions(result.settings.editor.emojiSuggestions);
+        setEditorToolbar(result.settings.editor.inlineToolbar);
+        setAllowedUploadFileTypes(result.settings.uploads.allowedFileTypes);
+        writeStartupPageMode(window.localStorage, workspaceRootPath, nextStartupPageMode);
+        setStartupPageMode(nextStartupPageMode);
+        setSettingsLoadState("idle");
+        return true;
+      } catch (error) {
+        setMessage(errorMessage(error));
+        return false;
+      }
+    });
+    settingsSaveQueueRef.current = queuedSave.then(() => undefined);
+    return queuedSave;
   }, [api, setMessage, workspaceRootPath]);
 
   const restoreTrashItem = useCallback(async (
@@ -2627,23 +2848,27 @@ export function App(): ReactElement {
         />
 
         {settingsOpen ? (
-          <WorkspaceSettingsView
-            result={workspaceSettingsResult}
-            startupPageMode={startupPageMode}
-            loadState={settingsLoadState}
-            onReload={() => void loadWorkspaceSettings()}
-            onSave={saveWorkspaceSettings}
-          />
+          <Suspense fallback={<div className="min-h-0 flex-1" data-rumi-editor-canvas="" />}>
+            <WorkspaceSettingsView
+              result={workspaceSettingsResult}
+              startupPageMode={startupPageMode}
+              loadState={settingsLoadState}
+              onReload={() => void loadWorkspaceSettings()}
+              onSave={saveWorkspaceSettings}
+            />
+          </Suspense>
         ) : trashOpen && !activeTrashPage ? (
-          <TrashView
-            items={trashItems}
-            loadState={trashLoadState}
-            restoringId={restoringTrashId}
-            deletingId={deletingTrashId}
-            onOpen={(item) => void openTrashPage(item)}
-            onRestore={restoreTrashItem}
-            onDeleteForever={setDeleteForeverTarget}
-          />
+          <Suspense fallback={<div className="min-h-0 flex-1" data-rumi-editor-canvas="" />}>
+            <TrashView
+              items={trashItems}
+              loadState={trashLoadState}
+              restoringId={restoringTrashId}
+              deletingId={deletingTrashId}
+              onOpen={(item) => void openTrashPage(item)}
+              onRestore={restoreTrashItem}
+              onDeleteForever={setDeleteForeverTarget}
+            />
+          </Suspense>
         ) : activeTrashPage ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 flex-col items-start justify-between gap-3 border-b border-border bg-muted/70 px-6 py-3 text-sm sm:flex-row sm:items-center">
@@ -2703,7 +2928,7 @@ export function App(): ReactElement {
                         highlightMisspellings={highlightMisspellings}
                         inlineReplacements={inlineReplacements}
                         emojiSuggestions={emojiSuggestions}
-                        inlineToolbar={inlineToolbar}
+                        editorToolbar={editorToolbar}
                         allowedUploadFileTypes={allowedUploadFileTypes}
                         readOnly
                         onDirty={() => undefined}
@@ -2735,18 +2960,20 @@ export function App(): ReactElement {
                 />
 
                 {page.kind === "database" ? (
-                  <DatabaseView
-                    variant="original"
-                    api={api}
-                    databasePath={parentPathForPage(page.path)}
-                    preferenceScope={workspaceRootPath}
-                    refreshRevision={databaseRefreshRevisionFor(
-                      databaseRefreshRevisions,
-                      parentPathForPage(page.path)
-                    )}
-                    onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
-                    onMessage={setMessage}
-                  />
+                  <Suspense fallback={<div className="min-h-40" aria-hidden="true" />}>
+                    <DatabaseView
+                      variant="original"
+                      api={api}
+                      databasePath={parentPathForPage(page.path)}
+                      preferenceScope={workspaceRootPath}
+                      refreshRevision={databaseRefreshRevisionFor(
+                        databaseRefreshRevisions,
+                        parentPathForPage(page.path)
+                      )}
+                      onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
+                      onMessage={setMessage}
+                    />
+                  </Suspense>
                 ) : (
                   <PageProperties
                     frontmatter={page.frontmatter}
@@ -2793,7 +3020,7 @@ export function App(): ReactElement {
                     highlightMisspellings={highlightMisspellings}
                     inlineReplacements={inlineReplacements}
                     emojiSuggestions={emojiSuggestions}
-                    inlineToolbar={inlineToolbar}
+                    editorToolbar={editorToolbar}
                     allowedUploadFileTypes={allowedUploadFileTypes}
                     onDirty={() => markPageDirty("editor-autosave")}
                   />
@@ -2801,43 +3028,49 @@ export function App(): ReactElement {
               </div>
             </article>
           </div>
-        ) : loadState === "loading" ? (
-          <div className="min-h-0 flex-1" data-rumi-editor-canvas="" />
         ) : (
-          <div className="grid min-h-0 flex-1 place-items-center p-8 text-muted-foreground">
-            <p>Open a page from the sidebar.</p>
-          </div>
+          <div className="min-h-0 flex-1" data-rumi-editor-canvas="" />
         )}
       </section>
 
-      <DeleteTrashItemDialog
-        item={deleteForeverTarget}
-        busy={deletingTrashId !== null}
-        onOpenChange={(open) => {
-          if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
-        }}
-        onConfirm={deleteTrashItemForever}
-      />
-
-      {page && !trashOpen && !settingsOpen && (
-        <RevisionHistoryDialog
-          api={api}
-          path={page.path}
-          open={revisionHistoryOpen}
-          dirty={saveState === "dirty" || saveState === "saving"}
-          currentMarkdown={() => serializeMarkdownFile(page.frontmatter, getCurrentDraftBody())}
-          onOpenChange={setRevisionHistoryOpen}
-          onRestored={refreshOpenPage}
-          onMessage={setMessage}
-        />
+      {deleteForeverTarget && (
+        <Suspense fallback={null}>
+          <DeleteTrashItemDialog
+            item={deleteForeverTarget}
+            busy={deletingTrashId !== null}
+            onOpenChange={(open) => {
+              if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
+            }}
+            onConfirm={deleteTrashItemForever}
+          />
+        </Suspense>
       )}
-      <SearchDialog
-        api={api}
-        open={searchOpen}
-        onOpenChange={setSearchOpen}
-        onOpenItem={(item) => void openSearchResult(item)}
-        onMessage={setMessage}
-      />
+
+      {page && !trashOpen && !settingsOpen && revisionHistoryOpen && (
+        <Suspense fallback={null}>
+          <RevisionHistoryDialog
+            api={api}
+            path={page.path}
+            open
+            dirty={saveState === "dirty" || saveState === "saving"}
+            currentMarkdown={() => serializeMarkdownFile(page.frontmatter, getCurrentDraftBody())}
+            onOpenChange={setRevisionHistoryOpen}
+            onRestored={refreshOpenPage}
+            onMessage={setMessage}
+          />
+        </Suspense>
+      )}
+      {searchOpen && (
+        <Suspense fallback={null}>
+          <SearchDialog
+            api={api}
+            open
+            onOpenChange={setSearchOpen}
+            onOpenItem={(item) => void openSearchResult(item)}
+            onMessage={setMessage}
+          />
+        </Suspense>
+      )}
       <Toaster />
     </main>
   );

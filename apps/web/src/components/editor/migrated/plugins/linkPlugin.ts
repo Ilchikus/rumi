@@ -3,19 +3,16 @@ import { Plugin, PluginKey, TextSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { Schema, Mark } from "prosemirror-model"
 import { openEditorHref } from "../platform"
-import { isExternalLinkHref, normalizeLinkHref } from "../linkHref"
+import {
+  isExternalLinkHref,
+  isLinkDestination,
+  normalizeLinkHref
+} from "../linkHref"
+import { linkRangeAtPosition } from "../linkSelection"
+import { openSelectionToolbarLinkEditor } from "./selectionToolbar"
 
 export const linkPluginKey = new PluginKey("link")
-const NATIVE_CONTEXT_LINK_CLASS = "rumi-native-context-link"
 const COMMAND_LINK_MODE_CLASS = "rumi-command-link-mode"
-const nativeContextSelectionTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
-
-// URL detection regex
-const URL_REGEX = /^(https?:\/\/|www\.)[^\s]+$/i
-
-function isValidUrl(text: string): boolean {
-  return URL_REGEX.test(text.trim())
-}
 
 export function linkPlugin(schema: Schema) {
   if (!schema.marks.link) return new Plugin({ key: linkPluginKey })
@@ -25,43 +22,19 @@ export function linkPlugin(schema: Schema) {
 
     props: {
       handleDOMEvents: {
-        mousedown(view, event) {
-          const link = closestLink(event.target)
-          if (!link || !isNativeContextMenuGesture(event)) return false
-
-          // Keep secondary-click exclusively for the browser's native link
-          // menu. Preventing the mousedown default stops ProseMirror/browser
-          // word selection without cancelling the later contextmenu event.
-          temporarilyDisableLinkSelection(view)
-          event.preventDefault()
-          return true
-        },
         contextmenu(view, event) {
           const link = closestLink(event.target)
           if (!link) return false
 
-          // Some browsers perform editable-text selection as the context menu
-          // opens rather than on mousedown. Keep the anchor non-selectable for
-          // that default action, but deliberately leave the event unhandled so
-          // the native browser link menu opens.
-          temporarilyDisableLinkSelection(view)
-          return false
-        },
-        selectstart(view, event) {
-          const link = closestLink(event.target)
-          const editorContainer = view.dom.closest(".prosemirror-editor") ?? view.dom
-          if (!link || !editorContainer.classList.contains(NATIVE_CONTEXT_LINK_CLASS)) {
-            return false
-          }
-
           event.preventDefault()
+          openLinkEditorForDomLink(view, link)
           return true
         }
       },
 
       handleClick(view, pos, event) {
         const link = closestLink(event.target)
-        if (!link || event.button !== 0 || isNativeContextMenuGesture(event)) return false
+        if (!link || event.button !== 0 || isSecondaryContextGesture(event)) return false
 
         event.preventDefault()
         const href = normalizeLinkHref(link.getAttribute("href") ?? "")
@@ -90,14 +63,12 @@ export function linkPlugin(schema: Schema) {
         const clipboardText = event.clipboardData?.getData("text/plain")
         if (!clipboardText) return false
 
-        // Check if clipboard contains a valid URL
-        if (isValidUrl(clipboardText)) {
+        // A URL or workspace path turns the highlighted text into a link.
+        if (isLinkDestination(clipboardText)) {
           event.preventDefault()
 
           const linkMark = schema.marks.link
-          const href = clipboardText.trim().startsWith("www.")
-            ? "https://" + clipboardText.trim()
-            : clipboardText.trim()
+          const href = normalizeLinkHref(clipboardText)
 
           // Apply link to selected text
           let tr = view.state.tr.addMark(from, to, linkMark.create({ href }))
@@ -314,7 +285,7 @@ export function linkPlugin(schema: Schema) {
         if (currentLinkData) {
           const linkDataCopy = { ...currentLinkData }
           hideTooltip()
-          showEditPopover(editorView, linkDataCopy, schema)
+          openLinkEditorAtPosition(editorView, linkDataCopy.from)
         }
       })
 
@@ -367,25 +338,42 @@ function closestLink(target: EventTarget | null): Element | null {
     : null
 }
 
-function isNativeContextMenuGesture(event: MouseEvent): boolean {
-  return event.button === 2 || (event.button === 0 && event.ctrlKey)
+function isSecondaryContextGesture(event: MouseEvent): boolean {
+  return event.button === 2 || (
+    /Mac|iP(hone|ad|od)/iu.test(globalThis.navigator?.platform ?? "") &&
+    event.button === 0 &&
+    event.ctrlKey
+  )
 }
 
-function temporarilyDisableLinkSelection(view: EditorView): void {
-  const editorContainer = view.dom.closest(".prosemirror-editor") ?? view.dom
-  const existingTimer = nativeContextSelectionTimers.get(editorContainer)
-  if (existingTimer) clearTimeout(existingTimer)
-  editorContainer.classList.add(NATIVE_CONTEXT_LINK_CLASS)
-  nativeContextSelectionTimers.set(editorContainer, globalThis.setTimeout(() => {
-    editorContainer.classList.remove(NATIVE_CONTEXT_LINK_CLASS)
-    nativeContextSelectionTimers.delete(editorContainer)
-  }, 250))
+function openLinkEditorForDomLink(view: EditorView, link: Element): boolean {
+  try {
+    return openLinkEditorAtPosition(view, view.posAtDOM(link, 0))
+  } catch {
+    return false
+  }
+}
+
+function openLinkEditorAtPosition(view: EditorView, position: number): boolean {
+  const range = linkRangeAtPosition(view.state, position)
+  if (!range) return false
+
+  view.dispatch(
+    view.state.tr
+      .setSelection(TextSelection.create(view.state.doc, range.from))
+      .setMeta("addToHistory", false)
+  )
+  return openSelectionToolbarLinkEditor(view.state, view.dispatch)
 }
 
 export type LinkClickIntent = "caret" | "current-tab" | "new-tab"
 
 export function linkClickIntent(link: Element, event: MouseEvent): LinkClickIntent {
-  if (event.metaKey) return "new-tab"
+  if (event.metaKey) {
+    return isExternalLinkHref(link.getAttribute("href") ?? "")
+      ? "new-tab"
+      : "current-tab"
+  }
   return isExternalLinkIconClick(link, event) ? "current-tab" : "caret"
 }
 
@@ -404,165 +392,6 @@ export function isExternalLinkIconClick(link: Element, event: MouseEvent): boole
     event.clientX <= rect.right &&
     event.clientY >= rect.top &&
     event.clientY <= rect.bottom
-}
-
-function showEditPopover(view: EditorView, linkData: { href: string; from: number; to: number }, schema: Schema) {
-  // Remove any existing edit popover
-  const existing = document.querySelector(".link-edit-popover")
-  if (existing) existing.remove()
-
-  // Get current anchor text
-  const anchorText = view.state.doc.textBetween(linkData.from, linkData.to)
-
-  // Create edit popover
-  const popover = document.createElement("div")
-  popover.className = "link-edit-popover"
-  popover.style.cssText = `
-    position: absolute;
-    z-index: 1002;
-    background: white;
-    border: 1px solid hsl(214.3, 31.8%, 91.4%);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 280px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `
-
-  // Row 1: Anchor input, Apply button, Remove button
-  const anchorRow = document.createElement("div")
-  anchorRow.style.cssText = `display: flex; gap: 6px; align-items: center;`
-
-  const anchorInput = document.createElement("input")
-  anchorInput.type = "text"
-  anchorInput.value = anchorText
-  anchorInput.placeholder = "Link text..."
-  anchorInput.style.cssText = `
-    flex: 1;
-    padding: 6px 10px;
-    border: 1px solid hsl(214.3, 31.8%, 91.4%);
-    border-radius: 6px;
-    font-size: 13px;
-    outline: none;
-  `
-
-  const applyBtn = document.createElement("button")
-  applyBtn.textContent = "Apply"
-  applyBtn.title = "Apply changes"
-  applyBtn.style.cssText = `
-    padding: 6px 12px;
-    background: hsl(222.2, 47.4%, 11.2%);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    cursor: pointer;
-  `
-
-  const unlinkBtn = document.createElement("button")
-  unlinkBtn.title = "Remove link"
-  unlinkBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.84 12.25l1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="M5.17 11.75l-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>`
-  unlinkBtn.style.cssText = `
-    padding: 6px 8px;
-    background: transparent;
-    border: 1px solid hsl(214.3, 31.8%, 91.4%);
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: hsl(222.2, 84%, 4.9%);
-  `
-
-  anchorRow.appendChild(anchorInput)
-  anchorRow.appendChild(applyBtn)
-  anchorRow.appendChild(unlinkBtn)
-  popover.appendChild(anchorRow)
-
-  // Row 2: URL input
-  const urlInput = document.createElement("input")
-  urlInput.type = "text"
-  urlInput.value = linkData.href
-  urlInput.placeholder = "URL..."
-  urlInput.style.cssText = `
-    width: 100%;
-    padding: 6px 10px;
-    border: 1px solid hsl(214.3, 31.8%, 91.4%);
-    border-radius: 6px;
-    font-size: 13px;
-    outline: none;
-    box-sizing: border-box;
-  `
-  popover.appendChild(urlInput)
-
-  // Position popover
-  const coords = view.coordsAtPos(linkData.from)
-  popover.style.left = `${Math.max(10, coords.left - 100)}px`
-  popover.style.top = `${coords.bottom + 8}px`
-
-  document.body.appendChild(popover)
-
-  // Focus anchor input
-  setTimeout(() => {
-    anchorInput.focus()
-    anchorInput.select()
-  }, 0)
-
-  // Event handlers
-  const closePopover = () => {
-    popover.remove()
-    view.focus()
-  }
-
-  applyBtn.addEventListener("click", (e) => {
-    e.preventDefault()
-    const newAnchor = anchorInput.value.trim()
-    const newHref = urlInput.value.trim()
-
-    if (newAnchor && newHref) {
-      const linkMark = schema.marks.link
-      // Delete old link text and insert new text with link mark
-      let tr = view.state.tr.delete(linkData.from, linkData.to)
-      const linkText = schema.text(newAnchor, [linkMark.create({ href: newHref })])
-      tr = tr.insert(linkData.from, linkText)
-      view.dispatch(tr)
-    }
-    closePopover()
-  })
-
-  unlinkBtn.addEventListener("click", (e) => {
-    e.preventDefault()
-    const linkMark = schema.marks.link
-    const tr = view.state.tr.removeMark(linkData.from, linkData.to, linkMark)
-    view.dispatch(tr)
-    closePopover()
-  })
-
-  const handleKeydown = (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      applyBtn.click()
-    } else if (e.key === "Escape") {
-      closePopover()
-    }
-  }
-
-  anchorInput.addEventListener("keydown", handleKeydown)
-  urlInput.addEventListener("keydown", handleKeydown)
-
-  // Close on outside click
-  const handleOutsideClick = (e: MouseEvent) => {
-    if (!popover.contains(e.target as Node)) {
-      closePopover()
-      document.removeEventListener("mousedown", handleOutsideClick)
-    }
-  }
-  setTimeout(() => {
-    document.addEventListener("mousedown", handleOutsideClick)
-  }, 0)
 }
 
 // Helper function to add a link to selected text (used by selection toolbar)

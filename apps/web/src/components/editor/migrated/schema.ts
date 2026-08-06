@@ -76,7 +76,19 @@ const nodes: { [key: string]: NodeSpec } = {
       }
     }],
     toDOM(node) {
-      return ["div", { class: "bullet-item", "data-indent": node.attrs.indent }, 0]
+      return [
+        "div",
+        { class: "bullet-item", "data-indent": node.attrs.indent },
+        [
+          "span",
+          {
+            class: "list-decoration bullet-decoration",
+            contenteditable: "false",
+            "aria-hidden": "true"
+          }
+        ],
+        ["span", { class: "list-item-content" }, 0]
+      ]
     },
     defining: true
   },
@@ -92,7 +104,19 @@ const nodes: { [key: string]: NodeSpec } = {
       }
     }],
     toDOM(node) {
-      return ["div", { class: "numbered-item", "data-indent": node.attrs.indent }, 0]
+      return [
+        "div",
+        { class: "numbered-item", "data-indent": node.attrs.indent },
+        [
+          "span",
+          {
+            class: "list-decoration numbered-decoration",
+            contenteditable: "false",
+            "aria-hidden": "true"
+          }
+        ],
+        ["span", { class: "list-item-content" }, 0]
+      ]
     },
     defining: true
   },
@@ -120,10 +144,10 @@ const nodes: { [key: string]: NodeSpec } = {
         { class: "task-item", "data-indent": node.attrs.indent },
         [
           "label",
-          { contenteditable: "false", class: "task-checkbox" },
+          { contenteditable: "false", class: "list-decoration task-checkbox" },
           ["input", { type: "checkbox", checked: node.attrs.checked ? "checked" : null }]
         ],
-        ["span", { class: "task-content" }, 0]
+        ["span", { class: "list-item-content task-content" }, 0]
       ]
     },
     defining: true
@@ -220,13 +244,13 @@ const nodes: { [key: string]: NodeSpec } = {
     code: true,
     defining: true,
     attrs: {
-      mode: { default: "split" } // view, edit, split
+      mode: { default: "view" }
     },
     parseDOM: [{
       tag: "div.mermaid-block",
       getAttrs(dom: HTMLElement) {
         return {
-          mode: dom.getAttribute("data-mode") || "split"
+          mode: dom.getAttribute("data-mode") === "edit" ? "edit" : "view"
         }
       },
       getContent(dom: HTMLElement, parsedSchema: Schema) {

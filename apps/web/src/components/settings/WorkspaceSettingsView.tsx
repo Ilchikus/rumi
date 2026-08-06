@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
-import { FloppyDisk } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import type {
-  InlineToolbarMode,
+  EditorToolbarMode,
   WorkspaceSettings,
   WorkspaceSettingsResult
 } from "@rumi/contracts";
@@ -22,12 +21,13 @@ import type { StartupPageMode } from "../../lib/workspaceStartup";
 
 type SettingsLoadState = "idle" | "loading" | "error";
 
-const INLINE_TOOLBAR_OPTIONS: ReadonlyArray<{
-  value: InlineToolbarMode;
+const EDITOR_TOOLBAR_OPTIONS: ReadonlyArray<{
+  value: EditorToolbarMode;
   label: string;
 }> = [
   { value: "floating", label: "Floating" },
   { value: "top", label: "Top" },
+  { value: "bottom", label: "Bottom" },
   { value: "none", label: "None" }
 ];
 
@@ -59,16 +59,14 @@ export function WorkspaceSettingsView({
   const [highlightMisspellings, setHighlightMisspellings] = useState(false);
   const [inlineReplacements, setInlineReplacements] = useState(true);
   const [emojiSuggestions, setEmojiSuggestions] = useState(true);
-  const [inlineToolbar, setInlineToolbar] = useState<InlineToolbarMode>("floating");
+  const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>("floating");
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(savedStartupPageMode);
   const [formError, setFormError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [changeRevision, setChangeRevision] = useState(0);
   const [animateMisspellings, setAnimateMisspellings] = useState(false);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchAnimationFrameRef = useRef<number | null>(null);
 
   useEffect(() => () => {
-    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     if (switchAnimationFrameRef.current !== null) {
       cancelAnimationFrame(switchAnimationFrameRef.current);
     }
@@ -89,8 +87,9 @@ export function WorkspaceSettingsView({
     setHighlightMisspellings(result.settings.editor.highlightMisspellings);
     setInlineReplacements(result.settings.editor.inlineReplacements);
     setEmojiSuggestions(result.settings.editor.emojiSuggestions);
-    setInlineToolbar(result.settings.editor.inlineToolbar);
+    setEditorToolbar(result.settings.editor.inlineToolbar);
     setFormError("");
+    setChangeRevision(0);
     switchAnimationFrameRef.current = requestAnimationFrame(() => {
       switchAnimationFrameRef.current = null;
       setAnimateMisspellings(true);
@@ -103,16 +102,13 @@ export function WorkspaceSettingsView({
 
   const supportedFileTypes = result?.constraints.uploads.supportedFileTypes ?? [];
 
-  const clearSavedState = () => {
-    if (savedTimerRef.current) {
-      clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = null;
-    }
-    setSaved(false);
+  const markChanged = () => {
+    setFormError("");
+    setChangeRevision((revision) => revision + 1);
   };
 
   const toggleFileType = (extension: string) => {
-    clearSavedState();
+    markChanged();
     setAllowedFileTypes((current) => (
       current.includes(extension)
         ? current.filter((item) => item !== extension)
@@ -120,9 +116,8 @@ export function WorkspaceSettingsView({
     ));
   };
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!result) return;
+  useEffect(() => {
+    if (!result || changeRevision === 0) return;
 
     const trimmedSize = maxFileSizeInput.trim();
     const maxFileSizeMb = trimmedSize === "" ? null : Number(trimmedSize);
@@ -135,8 +130,7 @@ export function WorkspaceSettingsView({
     }
 
     setFormError("");
-    clearSavedState();
-    const didSave = await onSave({
+    void onSave({
       uploads: {
         maxFileSizeMb,
         allowedFileTypes
@@ -145,17 +139,21 @@ export function WorkspaceSettingsView({
         highlightMisspellings,
         inlineReplacements,
         emojiSuggestions,
-        inlineToolbar
+        inlineToolbar: editorToolbar
       }
     }, startupPageMode);
-    if (!didSave) return;
-
-    setSaved(true);
-    savedTimerRef.current = setTimeout(() => {
-      savedTimerRef.current = null;
-      setSaved(false);
-    }, 1000);
-  };
+  }, [
+    allowedFileTypes,
+    changeRevision,
+    emojiSuggestions,
+    highlightMisspellings,
+    inlineReplacements,
+    editorToolbar,
+    maxFileSizeInput,
+    onSave,
+    result,
+    startupPageMode
+  ]);
 
   return (
     <EditorPageLayout title="Settings">
@@ -169,7 +167,7 @@ export function WorkspaceSettingsView({
           </Button>
         </div>
       ) : (
-        <form className="space-y-10" onSubmit={submit}>
+        <div className="space-y-10">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
               <label htmlFor="highlight-misspellings" className="text-sm font-medium">
@@ -181,7 +179,7 @@ export function WorkspaceSettingsView({
                 checked={highlightMisspellings}
                 aria-label="Highlight misspelled words"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setHighlightMisspellings(checked);
                 }}
               />
@@ -202,7 +200,7 @@ export function WorkspaceSettingsView({
                 checked={inlineReplacements}
                 aria-label="Enable inline replacements"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setInlineReplacements(checked);
                 }}
               />
@@ -223,7 +221,7 @@ export function WorkspaceSettingsView({
                 checked={emojiSuggestions}
                 aria-label="Enable emoji suggestions"
                 onCheckedChange={(checked) => {
-                  clearSavedState();
+                  markChanged();
                   setEmojiSuggestions(checked);
                 }}
               />
@@ -235,39 +233,39 @@ export function WorkspaceSettingsView({
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
-              <label htmlFor="inline-toolbar" className="text-sm font-medium">
-                Inline toolbar
+              <label htmlFor="editor-toolbar" className="text-sm font-medium">
+                Editor toolbar
               </label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    id="inline-toolbar"
+                    id="editor-toolbar"
                     type="button"
                     variant="outline"
                     className="w-32 justify-between font-normal"
                   >
-                    {INLINE_TOOLBAR_OPTIONS.find(({ value }) => value === inlineToolbar)?.label}
+                    {EDITOR_TOOLBAR_OPTIONS.find(({ value }) => value === editorToolbar)?.label}
                     <CaretDown size={14} className="text-muted-foreground" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-32">
-                  {INLINE_TOOLBAR_OPTIONS.map((option) => (
+                  {EDITOR_TOOLBAR_OPTIONS.map((option) => (
                     <DropdownMenuItem
                       key={option.value}
                       onSelect={() => {
-                        clearSavedState();
-                        setInlineToolbar(option.value);
+                        markChanged();
+                        setEditorToolbar(option.value);
                       }}
                     >
                       <span className="flex-1">{option.label}</span>
-                      {option.value === inlineToolbar ? <Check size={14} /> : null}
+                      {option.value === editorToolbar ? <Check size={14} /> : null}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              Float above a selection, keep the full toolbar fixed near the bottom, or remain hidden.
+              Float above a selection, fix the full toolbar to the top or bottom, or hide it.
             </p>
           </div>
 
@@ -293,7 +291,7 @@ export function WorkspaceSettingsView({
                     <DropdownMenuItem
                       key={option.value}
                       onSelect={() => {
-                        clearSavedState();
+                        markChanged();
                         setStartupPageMode(option.value);
                       }}
                     >
@@ -325,7 +323,7 @@ export function WorkspaceSettingsView({
                   value={maxFileSizeInput}
                   className="w-28 text-right tabular-nums"
                   onChange={(event) => {
-                    clearSavedState();
+                    markChanged();
                     setMaxFileSizeInput(event.currentTarget.value);
                   }}
                 />
@@ -363,23 +361,7 @@ export function WorkspaceSettingsView({
           {formError ? (
             <p role="alert" className="text-sm text-destructive">{formError}</p>
           ) : null}
-
-          <div className="flex justify-end">
-            <Button type="submit" className="min-w-24">
-              {saved ? (
-                <>
-                  <Check size={15} weight="bold" />
-                  Saved
-                </>
-              ) : (
-                <>
-                  <FloppyDisk size={15} />
-                  Save
-                </>
-              )}
-            </Button>
-          </div>
-        </form>
+        </div>
       )}
     </EditorPageLayout>
   );

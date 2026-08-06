@@ -24,6 +24,14 @@ describe("workspace startup persistence", () => {
     expect(readWorkspaceStartupSnapshot(storage)).toEqual(snapshot);
   });
 
+  it("keeps pre-settings snapshots readable", () => {
+    const storage = memoryStorage();
+    const { settings: _settings, ...snapshot } = startupSnapshot();
+
+    expect(writeWorkspaceStartupSnapshot(storage, snapshot)).toBe(true);
+    expect(readWorkspaceStartupSnapshot(storage)).toEqual(snapshot);
+  });
+
   it("rejects malformed, mismatched, and oversized snapshots", () => {
     const storage = memoryStorage();
     storage.setItem("rumi-new-workspace-startup:v1", JSON.stringify({ schemaVersion: 2 }));
@@ -39,6 +47,12 @@ describe("workspace startup persistence", () => {
     };
     expect(writeWorkspaceStartupSnapshot(storage, oversized)).toBe(false);
     expect(readWorkspaceStartupSnapshot(storage)).toBeNull();
+
+    storage.setItem(
+      "rumi-new-workspace-startup:v1",
+      JSON.stringify({ ...snapshot, settings: { editor: { inlineToolbar: "side" } } })
+    );
+    expect(readWorkspaceStartupSnapshot(storage)).toBeNull();
   });
 
   it("keeps the startup choice browser-local and workspace-scoped", () => {
@@ -51,18 +65,30 @@ describe("workspace startup persistence", () => {
     expect(readStartupPageMode(storage, "/workspace/other")).toBe("last-visited");
   });
 
-  it("hydrates cached page content only for a last-visited cold start at root", () => {
-    expect(canHydrateStartupPage("/", "last-visited")).toBe(true);
-    expect(canHydrateStartupPage("/", "home")).toBe(false);
-    expect(canHydrateStartupPage("/projects/roadmap", "last-visited")).toBe(false);
-    expect(canHydrateStartupPage("/settings", "last-visited")).toBe(false);
+  it("hydrates the configured cached page only for a cold visit to workspace home", () => {
+    expect(canHydrateStartupPage("/", "last-visited", false)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", true)).toBe(true);
+    expect(canHydrateStartupPage("/", "home", false)).toBe(false);
+    expect(
+      canHydrateStartupPage("/projects/roadmap", "last-visited", false)
+    ).toBe(false);
+    expect(
+      canHydrateStartupPage("/projects/other", "last-visited", false)
+    ).toBe(false);
+    expect(canHydrateStartupPage("/settings", "last-visited", false)).toBe(false);
   });
 
   it("hydrates behind the authenticated App boundary and revalidates server state", () => {
     expect(appSource).toContain("readWorkspaceStartupSnapshot(window.localStorage)");
+    expect(appSource).toContain("startupSnapshotRef");
+    expect(appSource).toContain('startupPageMode === "last-visited"');
+    expect(appSource).toContain("loadPage(homeOpenPath)");
     expect(appSource).toContain("Promise.all([api.getWorkspace(), api.getTree()])");
     expect(appSource).toContain("snapshotMatchesWorkspace");
-    expect(appSource).toContain('saveState !== "idle" && saveState !== "saved"');
+    expect(appSource).toContain('if (route?.view === "node" && !treeRevalidated)');
+    expect(appSource).toContain('saveState === "idle" || saveState === "saved"');
+    expect(appSource).toContain("startupSnapshot?.settings?.editor.inlineToolbar");
+    expect(appSource).toContain("cachedWorkspaceSettings");
   });
 });
 
@@ -89,7 +115,16 @@ function startupSnapshot(): WorkspaceStartupSnapshot {
     workspace: { rootPath: "/workspace/notes", name: "Notes" },
     tree,
     selection: { nodePath: page.path, openPath: page.path, kind: "page" },
-    page
+    page,
+    settings: {
+      uploads: { maxFileSizeMb: 50, allowedFileTypes: [".png"] },
+      editor: {
+        highlightMisspellings: false,
+        inlineReplacements: true,
+        emojiSuggestions: true,
+        inlineToolbar: "bottom"
+      }
+    }
   };
 }
 

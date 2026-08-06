@@ -9,38 +9,43 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-03"
-updated: "2026-08-04"
+updated: "2026-08-06"
 ---
-# M07-013 Inline Toolbar And Bulk Formatting
+# M07-013 Editor Toolbar And Bulk Formatting
 
 ## Goal
 
-Let a workspace choose how the inline formatting toolbar appears and make inline actions coherent
+Let a workspace choose how the editor formatting toolbar appears and make inline actions coherent
 when the user has explicitly selected several blocks.
 
 ## Scope
 
-- Persist `floating`, `top`, and `none` inline-toolbar modes in workspace settings, while reading
-  the former `sticky` value as `top`.
+- Persist `floating`, `top`, `bottom`, and `none` editor-toolbar modes in workspace settings, while
+  retaining the compatible `editor.inlineToolbar` key and reading the former `sticky` value as
+  `bottom`.
 - Keep floating behavior anchored above the active text or block highlight.
-- Keep Floating compact and render Top as an always-visible, left-aligned formatting bar fixed
-  above the viewport's bottom safe-area inset and aligned to the editor content column.
+- Keep Floating compact. Render Top below the workspace header and Bottom above the viewport's
+  bottom safe-area inset as always-visible full formatting bars aligned to the editor content
+  column.
 - Hide the toolbar completely in none mode.
-- Give Top separate block-placement, undo/redo, block conversion/media, inline-formatting, and
+- Give Top and Bottom separate block-placement, undo/redo, block conversion/media, inline-formatting, and
   delete groups divided by vertical borders. The history group sits between placement and block
   conversion, while delete remains the final destructive action. Distribute the groups across the
   full bar width while preserving compact spacing between controls inside each group.
-- Use Phosphor icons for placement, history, and delete controls. Top offers the common handle-menu
+- Use Phosphor icons for placement, history, and delete controls. The full toolbar offers the common handle-menu
   block conversions but leaves Mermaid, Table, and Divider in the handle menu; its media picker is
   limited to allowed workspace upload extensions.
-- Route Top's delete button through the canonical block deletion transaction, which removes whole
+- Route the full toolbar's delete button through the canonical block deletion transaction, which removes whole
   selected block nodes for every handle, keyboard-menu, or toolbar entry point.
-- Keep toolbar buttons and keyboard shortcuts on the same ProseMirror history. Top shows shortcut
+- Keep toolbar buttons and keyboard shortcuts on the same ProseMirror history. The full toolbar shows shortcut
   hints for placement, movement, history, and block replacement; Mod-Enter adds after and
   Shift-Mod-Enter adds before, while code retains its established Mod-Enter exit behavior.
 - Store Mermaid source as ordinary ProseMirror code content. Give database embeds and dividers
   native-history-compatible before/after structural caret positions so keyboard navigation and
   block deletion do not require an inactive editor or visible whole-node selection.
+- Present Mermaid in view mode by default without block chrome, and enter its code-formatted edit
+  mode from the absolute mode switcher or by moving a text caret into the block. Keep code and
+  Mermaid edit surfaces on Neutral 100, while rendered Mermaid remains on the page background.
 - Apply toolbar marks and formatting shortcuts to every selected block, including non-contiguous
   selections, without changing blocks between them.
 - Normalize mixed inline-mark selections to one shared state.
@@ -74,10 +79,10 @@ editor
 ## Done When
 
 - Saving any toolbar mode updates an open editor without remounting it.
-- Floating, Top, and hidden modes match their named behavior.
-- Top undo/redo follows editor history, and its final delete action removes the current block or all
+- Floating, Top, Bottom, and hidden modes match their named behavior.
+- Full-toolbar undo/redo follows editor history, and its final delete action removes the current block or all
   explicitly selected blocks through the canonical whole-block deletion transaction.
-- Keyboard undo/redo and Top undo/redo invoke the same ProseMirror commands and history stack.
+- Keyboard undo/redo and full-toolbar undo/redo invoke the same ProseMirror commands and history stack.
 - Mermaid source accepts a normal text caret; database embeds and dividers expose distinct leading
   and trailing caret positions that survive undo and redo.
 - Inline and block Shift-arrow gestures dispatch according to the active selection kind, and held
@@ -98,3 +103,21 @@ Verified on 2026-08-04:
 - `@rumi-md/server@0.1.13` was published with the npm `latest` tag
 - Personal, ClickOut, and Sandbox were upgraded to `0.1.13`; all services, public pages, auth-session
   endpoints, and the public Sandbox workspace endpoint passed post-restart health checks
+
+Top/Bottom follow-up verified on 2026-08-04:
+
+- focused runtime, API, Settings, editor-layout, and toolbar tests passed with 6 files and 87 tests
+- `corepack pnpm check` passed with 65 test files and 486 tests, typecheck, the production web
+  build, and the bundled server build
+- `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.14`
+- a disposable browser and workspace confirmed the **Editor toolbar** Settings label and the
+  `Floating`, `Top`, `Bottom`, and `None` options; selecting Top and Bottom persisted each exact
+  value through the current runtime
+- at a 1440-pixel browser width, both full positions aligned to the same 724-pixel editor width;
+  Top rendered 20 pixels below the 56-pixel workspace header and Bottom rendered 20 pixels above
+  the viewport edge
+- the persistent Sandbox remained on its original `floating` setting; temporary QA processes and
+  workspace copies were removed
+
+User visual QA was approved on 2026-08-06 after the code-block, Mermaid view/edit, selection, and
+toolbar follow-ups were exercised in the current branch.

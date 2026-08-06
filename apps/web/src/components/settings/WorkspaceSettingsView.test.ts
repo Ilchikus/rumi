@@ -15,12 +15,14 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("Highlight misspelled words");
     expect(viewSource).toContain("Enable inline replacements");
     expect(viewSource).toContain("Enable emoji suggestions");
-    expect(viewSource).toContain("Inline toolbar");
+    expect(viewSource).toContain("Editor toolbar");
+    expect(viewSource).not.toContain("Inline toolbar");
     expect(viewSource).toContain("Open on start");
     expect(viewSource).toContain('{ value: "last-visited", label: "Last visited" }');
     expect(viewSource).toContain('{ value: "home", label: "Home" }');
     expect(viewSource).toContain('{ value: "floating", label: "Floating" }');
     expect(viewSource).toContain('{ value: "top", label: "Top" }');
+    expect(viewSource).toContain('{ value: "bottom", label: "Bottom" }');
     expect(viewSource).toContain('{ value: "none", label: "None" }');
     expect(viewSource).toContain("<DropdownMenu>");
     expect(viewSource).toContain("<DropdownMenuContent");
@@ -38,7 +40,7 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("setEmojiSuggestions(checked)");
   });
 
-  it("uses a switch for misspellings, Sky checkboxes for formats, and saves blank as unlimited", () => {
+  it("uses a switch for misspellings, Sky checkboxes for formats, and auto-saves blank as unlimited", () => {
     expect(viewSource).toContain('type="checkbox"');
     expect(viewSource).toContain("accent-sky-600");
     expect(viewSource).toContain('trimmedSize === "" ? null');
@@ -50,16 +52,21 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("onSave({");
     expect(viewSource).toContain("}, startupPageMode)");
     expect(viewSource).toContain("<Check");
-    expect(viewSource).toContain("<FloppyDisk");
-    expect(viewSource).toContain("{saved ? (");
+    expect(viewSource).not.toContain("<FloppyDisk");
+    expect(viewSource).not.toContain('type="submit"');
+    expect(viewSource).not.toContain("{saved ? (");
     expect(viewSource).not.toContain("Saving…");
     expect(viewSource).not.toContain("Save settings");
-    expect(viewSource).toContain("}, 1000)");
+    expect(viewSource).not.toMatch(/>\s*Save\s*</);
+    expect(viewSource).toContain("changeRevision");
+    expect(viewSource).toContain("markChanged");
+    expect(viewSource).toContain("void onSave({");
     expect(appSource).not.toContain('toast.success("Settings saved")');
   });
 
-  it("persists without replacing or disabling the live settings form", () => {
+  it("serializes auto-save requests without replacing or disabling the live settings form", () => {
     expect(appSource.match(/setWorkspaceSettingsResult\(result\)/g)).toHaveLength(1);
+    expect(appSource.match(/setCachedWorkspaceSettings\(result\.settings\)/g)).toHaveLength(2);
     expect(appSource).toContain(
       "setHighlightMisspellings(result.settings.editor.highlightMisspellings)"
     );
@@ -70,9 +77,10 @@ describe("workspace settings page", () => {
       "setEmojiSuggestions(result.settings.editor.emojiSuggestions)"
     );
     expect(appSource).toContain(
-      "setInlineToolbar(result.settings.editor.inlineToolbar)"
+      "setEditorToolbar(result.settings.editor.inlineToolbar)"
     );
-    expect(appSource).toContain("settingsSaveInFlightRef.current");
+    expect(appSource).toContain("settingsSaveQueueRef.current.then");
+    expect(appSource).not.toContain("settingsSaveInFlightRef.current");
     expect(viewSource).not.toContain("saving:");
     expect(viewSource).not.toContain("disabled={saving}");
   });
@@ -81,14 +89,14 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("highlightMisspellings");
     expect(viewSource).toContain("inlineReplacements");
     expect(viewSource).toContain("emojiSuggestions");
-    expect(viewSource).toContain("inlineToolbar");
+    expect(viewSource).toContain("editorToolbar");
     expect(appSource).toContain("api.getWorkspaceSettings()");
     expect(appSource).toContain("api.updateWorkspaceSettings(settings)");
     expect(appSource).toContain("writeStartupPageMode");
     expect(appSource).toContain("highlightMisspellings={highlightMisspellings}");
     expect(appSource).toContain("inlineReplacements={inlineReplacements}");
     expect(appSource).toContain("emojiSuggestions={emojiSuggestions}");
-    expect(appSource).toContain("inlineToolbar={inlineToolbar}");
+    expect(appSource).toContain("editorToolbar={editorToolbar}");
     expect(appSource).toContain("allowedUploadFileTypes={allowedUploadFileTypes}");
     expect(appSource).toContain("showReservedSystemRouteToast");
     expect(appSource).toContain("is reserved for the system page");

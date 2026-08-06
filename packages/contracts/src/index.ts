@@ -345,13 +345,15 @@ export interface WorkspaceUploadSettings {
   allowedFileTypes: string[];
 }
 
-export type InlineToolbarMode = "floating" | "top" | "none";
+export type EditorToolbarMode = "floating" | "top" | "bottom" | "none";
+/** @deprecated Use EditorToolbarMode. */
+export type InlineToolbarMode = EditorToolbarMode;
 
 export interface WorkspaceEditorSettings {
   highlightMisspellings: boolean;
   inlineReplacements: boolean;
   emojiSuggestions: boolean;
-  inlineToolbar: InlineToolbarMode;
+  inlineToolbar: EditorToolbarMode;
 }
 
 export interface WorkspaceSettings {

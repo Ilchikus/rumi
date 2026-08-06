@@ -8,7 +8,7 @@ import {
 } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { Schema, MarkType } from "prosemirror-model"
-import type { InlineToolbarMode } from "@rumi/contracts"
+import type { EditorToolbarMode } from "@rumi/contracts"
 import {
   redoEditorChange,
   undoEditorChange
@@ -30,11 +30,17 @@ import {
   moveToolbarBlocks
 } from "./topToolbarActions"
 import { moveBlocks } from "./multiBlockSelection"
+import { openEditorHref } from "../platform"
+import {
+  isExternalLinkHref,
+  normalizeLinkHref
+} from "../linkHref"
+import { linkRangeAtSelection } from "../linkSelection"
 
 export const selectionToolbarPluginKey = new PluginKey("selectionToolbar")
 
 interface SelectionToolbarPreferences {
-  mode: InlineToolbarMode
+  mode: EditorToolbarMode
   allowedUploadFileTypes: readonly string[]
 }
 
@@ -51,7 +57,7 @@ const UNDO_SVG = phosphorSvg("M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16
 const REDO_SVG = phosphorSvg("M170.34,130.34,204.69,96H88a48,48,0,0,0,0,96h88a8,8,0,0,1,0,16H88A64,64,0,0,1,88,80H204.69L170.34,45.66a8,8,0,0,1,11.32-11.32l48,48a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32-11.32Z")
 const TRASH_SVG = phosphorSvg("M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z")
 
-const TOP_TOOLBAR_BLOCK_TYPE_OPTIONS = BLOCK_TYPE_OPTIONS.filter(
+const EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS = BLOCK_TYPE_OPTIONS.filter(
   ({ type }) => !["mermaid", "table", "horizontal_rule"].includes(type)
 )
 
@@ -67,9 +73,9 @@ export const openSelectionToolbarLinkEditor: Command = (state, dispatch) => {
     | SelectionToolbarState
     | undefined
   const hasBlockSelection = selectedBlockInlineRanges(state).length > 0
+  const hasCaretLink = Boolean(linkRangeAtSelection(state))
   if (
-    toolbarState?.mode === "none" ||
-    (!hasBlockSelection && state.selection.empty)
+    (!hasBlockSelection && state.selection.empty && !hasCaretLink)
   ) return false
 
   dispatch?.(
@@ -98,7 +104,7 @@ function toggleToolbarMark(view: EditorView, markType: MarkType) {
 
 export function selectionToolbarPlugin(
   schema: Schema,
-  initialMode: InlineToolbarMode = "floating",
+  initialMode: EditorToolbarMode = "floating",
   initialAllowedUploadFileTypes: readonly string[] = []
 ) {
   const buttonDefs = [
@@ -134,27 +140,27 @@ export function selectionToolbarPlugin(
       container.setAttribute("aria-label", "Editor formatting")
       document.body.appendChild(container)
 
-      const topControls = document.createElement("div")
-      topControls.className = "selection-toolbar-top-controls"
-      container.appendChild(topControls)
+      const editorControls = document.createElement("div")
+      editorControls.className = "selection-toolbar-editor-controls"
+      container.appendChild(editorControls)
 
       const arrowGroup = createToolbarGroup(
         "selection-toolbar-arrow-group",
         "Block placement and movement"
       )
-      topControls.appendChild(arrowGroup)
+      editorControls.appendChild(arrowGroup)
 
       const historyGroup = createToolbarGroup(
         "selection-toolbar-history-group",
         "History"
       )
-      topControls.appendChild(historyGroup)
+      editorControls.appendChild(historyGroup)
 
       const blockGroup = createToolbarGroup(
         "selection-toolbar-block-group",
         "Block type and media"
       )
-      topControls.appendChild(blockGroup)
+      editorControls.appendChild(blockGroup)
 
       const inlineGroup = createToolbarGroup(
         "selection-toolbar-inline-group",
@@ -168,56 +174,56 @@ export function selectionToolbarPlugin(
       )
       container.appendChild(deleteGroup)
 
-      const addBeforeButton = createTopToolbarButton(
+      const addBeforeButton = createEditorToolbarButton(
         "Add before (⇧⌘↵)",
         ARROW_LINE_UP_SVG,
         () => insertAdjacentParagraph(editorView, "before")
       )
-      addBeforeButton.dataset.topAction = "add-before"
+      addBeforeButton.dataset.editorToolbarAction = "add-before"
       arrowGroup.appendChild(addBeforeButton)
 
-      const addAfterButton = createTopToolbarButton(
+      const addAfterButton = createEditorToolbarButton(
         "Add after (⌘↵)",
         ARROW_LINE_DOWN_SVG,
         () => insertAdjacentParagraph(editorView, "after")
       )
-      addAfterButton.dataset.topAction = "add-after"
+      addAfterButton.dataset.editorToolbarAction = "add-after"
       arrowGroup.appendChild(addAfterButton)
 
-      const moveUpButton = createTopToolbarButton(
+      const moveUpButton = createEditorToolbarButton(
         "Move up (⌃⇧↑)",
         ARROW_UP_SVG,
         () => moveToolbarBlocks(editorView, "up")
       )
-      moveUpButton.dataset.topAction = "move-up"
+      moveUpButton.dataset.editorToolbarAction = "move-up"
       arrowGroup.appendChild(moveUpButton)
 
-      const moveDownButton = createTopToolbarButton(
+      const moveDownButton = createEditorToolbarButton(
         "Move down (⌃⇧↓)",
         ARROW_DOWN_SVG,
         () => moveToolbarBlocks(editorView, "down")
       )
-      moveDownButton.dataset.topAction = "move-down"
+      moveDownButton.dataset.editorToolbarAction = "move-down"
       arrowGroup.appendChild(moveDownButton)
 
-      const undoButton = createTopToolbarButton(
+      const undoButton = createEditorToolbarButton(
         "Undo (⌘Z)",
         UNDO_SVG,
         () => runHistoryCommand(editorView, undoEditorChange)
       )
-      undoButton.dataset.topAction = "undo"
+      undoButton.dataset.editorToolbarAction = "undo"
       historyGroup.appendChild(undoButton)
 
-      const redoButton = createTopToolbarButton(
+      const redoButton = createEditorToolbarButton(
         "Redo (⇧⌘Z)",
         REDO_SVG,
         () => runHistoryCommand(editorView, redoEditorChange)
       )
-      redoButton.dataset.topAction = "redo"
+      redoButton.dataset.editorToolbarAction = "redo"
       historyGroup.appendChild(redoButton)
 
-      TOP_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach((option) => {
-        const button = createTopToolbarButton(
+      EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach((option) => {
+        const button = createEditorToolbarButton(
           `${option.label} (⌘/)`,
           option.icon,
           () => changeToolbarBlockType(editorView, option)
@@ -229,7 +235,7 @@ export function selectionToolbarPlugin(
         blockGroup.appendChild(button)
       })
 
-      const uploadButton = createTopToolbarButton(
+      const uploadButton = createEditorToolbarButton(
         "Upload media",
         UPLOAD_SVG,
         () => {
@@ -238,16 +244,16 @@ export function selectionToolbarPlugin(
           void chooseAndInsertToolbarMedia(editorView, allowedFileTypes)
         }
       )
-      uploadButton.dataset.topAction = "upload-media"
+      uploadButton.dataset.editorToolbarAction = "upload-media"
       blockGroup.appendChild(uploadButton)
 
-      const deleteButton = createTopToolbarButton(
+      const deleteButton = createEditorToolbarButton(
         "Delete block",
         TRASH_SVG,
         () => deleteToolbarBlocks(editorView)
       )
-      deleteButton.dataset.topAction = "delete-block"
-      deleteButton.classList.add("top-toolbar-delete-button")
+      deleteButton.dataset.editorToolbarAction = "delete-block"
+      deleteButton.classList.add("editor-toolbar-delete-button")
       deleteGroup.appendChild(deleteButton)
 
       // Create formatting buttons
@@ -326,6 +332,7 @@ export function selectionToolbarPlugin(
         inlineGroup.appendChild(createInlineToolbarSeparator())
 
         const linkContainer = document.createElement("div")
+        linkContainer.className = "link-toolbar-container"
         linkContainer.style.cssText = `display: flex; align-items: center; position: relative;`
 
         const linkBtn = document.createElement("button")
@@ -352,8 +359,19 @@ export function selectionToolbarPlugin(
         const linkInputRow = document.createElement("div")
         linkInputRow.style.cssText = `display: flex; gap: 8px;`
 
+        const linkTextInput = document.createElement("input")
+        linkTextInput.type = "text"
+        linkTextInput.className = "link-text-input"
+        linkTextInput.placeholder = "Link text..."
+        linkTextInput.style.cssText = `
+          display: none; width: 100%; box-sizing: border-box; margin-bottom: 8px;
+          padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
+          border-radius: 6px; font-size: 13px; outline: none;
+        `
+
         const linkInput = document.createElement("input")
         linkInput.type = "text"
+        linkInput.className = "link-url-input"
         linkInput.placeholder = "Enter URL or file path..."
         linkInput.style.cssText = `
           flex: 1; padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
@@ -361,19 +379,50 @@ export function selectionToolbarPlugin(
         `
 
         const linkApplyBtn = document.createElement("button")
-        linkApplyBtn.textContent = "Add"
+        linkApplyBtn.textContent = "Apply"
         linkApplyBtn.style.cssText = `
           padding: 6px 12px; background: hsl(222.2, 47.4%, 11.2%); color: white;
           border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
         `
 
+        linkPopup.appendChild(linkTextInput)
         linkInputRow.appendChild(linkInput)
         linkInputRow.appendChild(linkApplyBtn)
         linkPopup.appendChild(linkInputRow)
 
+        const linkActionRow = document.createElement("div")
+        linkActionRow.style.cssText = `display: flex; gap: 8px; margin-top: 8px;`
+
+        const linkCopyBtn = document.createElement("button")
+        linkCopyBtn.type = "button"
+        linkCopyBtn.className = "link-copy-btn"
+        linkCopyBtn.textContent = "Copy link"
+
+        const linkOpenBtn = document.createElement("button")
+        linkOpenBtn.type = "button"
+        linkOpenBtn.className = "link-open-btn"
+        linkOpenBtn.textContent = "Open"
+
+        const linkUnlinkBtn = document.createElement("button")
+        linkUnlinkBtn.type = "button"
+        linkUnlinkBtn.className = "link-unlink-btn"
+        linkUnlinkBtn.textContent = "Unlink"
+
+        for (const actionButton of [linkCopyBtn, linkOpenBtn, linkUnlinkBtn]) {
+          actionButton.style.cssText = `
+            padding: 5px 9px; background: transparent;
+            border: 1px solid hsl(214.3, 31.8%, 91.4%);
+            border-radius: 6px; font-size: 12px; cursor: pointer;
+          `
+          actionButton.addEventListener("mousedown", preserveEditorSelection)
+          linkActionRow.appendChild(actionButton)
+        }
+        linkPopup.appendChild(linkActionRow)
+
         let savedSelection: {
           ranges: Array<{ from: number; to: number }>
           blockSelection: boolean
+          existingText: string | null
         } | null = null
 
         linkBtn.addEventListener("mousedown", (e) => {
@@ -388,11 +437,14 @@ export function selectionToolbarPlugin(
           const { from, to, empty } = editorView.state.selection
           const blockRanges = selectedBlockInlineRanges(editorView.state)
           const blockSelection = blockRanges.length > 0
-          if (!blockSelection && empty) return
+          const caretLink = empty
+            ? linkRangeAtSelection(editorView.state, schema.marks.link)
+            : null
+          if (!blockSelection && empty && !caretLink) return
 
-          // Check if already has link - if so, remove it
+          // A selected link toggles off. A caret within a link opens its URL editor.
           const linkMark = schema.marks.link
-          if (isInlineMarkActive(editorView.state, linkMark)) {
+          if (!empty && isInlineMarkActive(editorView.state, linkMark)) {
             let tr = editorView.state.tr
             const ranges = blockSelection ? blockRanges : [{ from, to }]
             for (const range of ranges) {
@@ -406,12 +458,26 @@ export function selectionToolbarPlugin(
 
           // Save current selection and show popup
           savedSelection = {
-            ranges: blockSelection ? blockRanges : [{ from, to }],
-            blockSelection
+            ranges: blockSelection
+              ? blockRanges
+              : caretLink
+                ? [{ from: caretLink.from, to: caretLink.to }]
+                : [{ from, to }],
+            blockSelection,
+            existingText: caretLink
+              ? editorView.state.doc.textBetween(caretLink.from, caretLink.to)
+              : null
           }
           linkPopup.style.display = "block"
-          linkInput.value = ""
-          setTimeout(() => linkInput.focus(), 0)
+          linkInput.value = caretLink?.href ?? ""
+          linkTextInput.value = savedSelection.existingText ?? ""
+          linkTextInput.style.display = savedSelection.existingText === null
+            ? "none"
+            : "block"
+          setTimeout(() => {
+            linkInput.focus()
+            linkInput.select()
+          }, 0)
         })
 
         linkApplyBtn.addEventListener("mousedown", preserveEditorSelection)
@@ -419,20 +485,44 @@ export function selectionToolbarPlugin(
           e.preventDefault()
           e.stopPropagation()
 
-          const href = linkInput.value.trim()
-          if (href && savedSelection) {
+          const href = normalizeLinkHref(linkInput.value)
+          if (savedSelection) {
             const linkMark = schema.marks.link
-            const { ranges, blockSelection } = savedSelection
-            let tr = applyInlineMarkToRanges(
-              editorView.state.tr,
-              ranges,
-              linkMark,
-              { href }
-            )
+            const { ranges, blockSelection, existingText } = savedSelection
+            let tr = editorView.state.tr
+            if (existingText !== null && ranges[0]) {
+              const range = ranges[0]
+              const nextText = linkTextInput.value
+              if (nextText === existingText) {
+                tr = tr.removeMark(range.from, range.to, linkMark)
+                if (href) tr = tr.addMark(range.from, range.to, linkMark.create({ href }))
+              } else {
+                const retainedMarks = editorView.state.doc
+                  .resolve(range.from)
+                  .nodeAfter?.marks.filter((mark) => mark.type !== linkMark) ?? []
+                const marks = href
+                  ? [...retainedMarks, linkMark.create({ href })]
+                  : retainedMarks
+                tr = tr.delete(range.from, range.to)
+                if (nextText) {
+                  tr = tr.insert(range.from, schema.text(nextText, marks))
+                }
+              }
+            } else {
+              for (const range of ranges) {
+                tr = tr.removeMark(range.from, range.to, linkMark)
+              }
+              if (href) {
+                tr = applyInlineMarkToRanges(tr, ranges, linkMark, { href })
+              }
+            }
             if (blockSelection) {
               tr.setMeta("multiBlockKeep", true)
             } else if (ranges.at(-1)) {
-              tr = tr.setSelection(TextSelection.create(tr.doc, ranges.at(-1).to))
+              const selectionTo = existingText === null
+                ? ranges.at(-1).to
+                : ranges[0].from + linkTextInput.value.length
+              tr = tr.setSelection(TextSelection.create(tr.doc, selectionTo))
             }
             editorView.dispatch(tr)
           }
@@ -441,7 +531,39 @@ export function selectionToolbarPlugin(
           editorView.focus()
         })
 
+        linkCopyBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const href = normalizeLinkHref(linkInput.value)
+          if (href) void navigator.clipboard.writeText(href)
+        })
+
+        linkOpenBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const href = normalizeLinkHref(linkInput.value)
+          if (!href) return
+          openEditorHref(href, isExternalLinkHref(href) ? "new" : "current")
+        })
+
+        linkUnlinkBtn.addEventListener("click", (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          linkInput.value = ""
+          linkApplyBtn.click()
+        })
+
         linkInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            linkApplyBtn.click()
+          } else if (e.key === "Escape") {
+            linkPopup.style.display = "none"
+            savedSelection = null
+            editorView.focus()
+          }
+        })
+        linkTextInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault()
             linkApplyBtn.click()
@@ -457,22 +579,35 @@ export function selectionToolbarPlugin(
         inlineGroup.appendChild(linkContainer)
       }
 
-      let currentMode: InlineToolbarMode | null = null
+      let currentMode: EditorToolbarMode | null = null
       let handledLinkEditorRequestRevision = 0
       let destroyed = false
-      const topToolbarHost = editorView.dom.parentElement
+      const editorToolbarHost = editorView.dom.parentElement
+      const editorCanvas = editorView.dom.closest<HTMLElement>("[data-rumi-editor-canvas]")
+      const editorOverlayHost = editorView.dom.closest<HTMLElement>(
+        ".prosemirror-editor-wrapper"
+      )
 
-      function clearTopToolbarBounds() {
+      function clearEditorToolbarBounds() {
         container.style.removeProperty("width")
         container.style.removeProperty("transform")
+        container.style.removeProperty("--rumi-editor-toolbar-top")
       }
 
-      function syncTopToolbarBounds() {
-        if (currentMode !== "top") return
-        const rect = topToolbarHost?.getBoundingClientRect()
+      function syncEditorToolbarBounds() {
+        if (!currentMode || !isExpandedEditorToolbarMode(currentMode)) return
+        if (currentMode === "top") {
+          const canvasTop = editorCanvas?.getBoundingClientRect().top
+          if (canvasTop !== undefined && canvasTop >= 0) {
+            container.style.setProperty("--rumi-editor-toolbar-top", `${canvasTop + 20}px`)
+          }
+        } else {
+          container.style.removeProperty("--rumi-editor-toolbar-top")
+        }
+        const rect = editorToolbarHost?.getBoundingClientRect()
         if (!rect || rect.width <= 0) {
           container.style.removeProperty("left")
-          clearTopToolbarBounds()
+          clearEditorToolbarBounds()
           return
         }
 
@@ -486,14 +621,17 @@ export function selectionToolbarPlugin(
         container.style.transform = "none"
       }
 
-      function placeContainer(mode: InlineToolbarMode) {
-        const correctlyPlaced = container.parentElement === document.body
+      function placeContainer(mode: EditorToolbarMode) {
+        const targetParent = mode === "floating"
+          ? editorOverlayHost ?? document.body
+          : document.body
+        const correctlyPlaced = container.parentElement === targetParent
         if (currentMode === mode && correctlyPlaced) return
         currentMode = mode
         container.dataset.mode = mode
 
-        if (container.parentElement !== document.body) {
-          document.body.appendChild(container)
+        if (container.parentElement !== targetParent) {
+          targetParent.appendChild(container)
         }
       }
 
@@ -509,55 +647,92 @@ export function selectionToolbarPlugin(
         const mode = preferences.mode
         const blockRanges = selectedBlockInlineRanges(state)
         const hasBlockSelection = blockRanges.length > 0
+        const linkEditorRequested = Boolean(
+          linkButton &&
+          preferences.linkEditorRequestRevision > handledLinkEditorRequestRevision
+        )
+        const caretLink = empty
+          ? linkRangeAtSelection(state, schema.marks.link)
+          : null
+        const hasTextSelection = !empty && from !== to && !(selection instanceof NodeSelection)
+        const textSelectionInCode = hasTextSelection && selection.$from.parent.type.spec.code
+        const forceLinkEditor = linkEditorRequested && Boolean(
+          caretLink ||
+          hasBlockSelection ||
+          (hasTextSelection && !textSelectionInCode)
+        )
+        const presentationMode = mode === "none" && forceLinkEditor
+          ? "floating"
+          : mode
 
-        placeContainer(mode)
+        placeContainer(presentationMode)
+        container.classList.toggle("link-editor-only", mode === "none" && forceLinkEditor)
         container.toggleAttribute(
           "data-rumi-preserve-block-selection",
-          mode === "top"
+          isExpandedEditorToolbarMode(mode)
         )
 
         // Close the link popup on any update
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
         if (linkPopup) linkPopup.style.display = "none"
 
-        if (mode === "none" || !editorView.editable) {
+        if ((mode === "none" && !forceLinkEditor) || !editorView.editable) {
           container.style.display = "none"
           return
         }
 
-        const hasTextSelection = !empty && from !== to && !(selection instanceof NodeSelection)
-        const textSelectionInCode = hasTextSelection && selection.$from.parent.type.spec.code
-        if (mode === "floating" && (!hasBlockSelection && (!hasTextSelection || textSelectionInCode))) {
+        if (
+          presentationMode === "floating" &&
+          !forceLinkEditor &&
+          (!hasBlockSelection && (!hasTextSelection || textSelectionInCode))
+        ) {
           container.style.display = "none"
           return
         }
 
         container.style.display = "flex"
-        if (mode === "floating") {
-          clearTopToolbarBounds()
+        if (presentationMode === "floating") {
+          clearEditorToolbarBounds()
           const selectedRects = blockRanges.flatMap((range) => {
             const dom = editorView.nodeDOM(range.from - 1)
             return dom instanceof HTMLElement ? [dom.getBoundingClientRect()] : []
           })
-          const start = hasBlockSelection ? null : editorView.coordsAtPos(from)
-          const end = hasBlockSelection ? null : editorView.coordsAtPos(to)
+          const start = hasBlockSelection
+            ? null
+            : editorView.coordsAtPos(caretLink?.from ?? from)
+          const end = hasBlockSelection
+            ? null
+            : editorView.coordsAtPos(caretLink?.to ?? to)
           const leftEdge = selectedRects.length > 0
             ? Math.min(...selectedRects.map((rect) => rect.left))
             : Math.min(start?.left ?? 10, end?.left ?? 10)
           const rightEdge = selectedRects.length > 0
             ? Math.max(...selectedRects.map((rect) => rect.right))
             : Math.max(start?.left ?? 10, end?.left ?? 10)
-          const selectionTop = selectedRects.length > 0
-            ? Math.min(...selectedRects.map((rect) => rect.top))
-            : Math.min(start?.top ?? 10, end?.top ?? 10)
+          const selectionBottom = selectedRects.length > 0
+            ? Math.max(...selectedRects.map((rect) => rect.bottom))
+            : Math.max(start?.bottom ?? 10, end?.bottom ?? 10)
           const toolbarWidth = container.offsetWidth
-          const toolbarHeight = container.offsetHeight
-          const centeredLeft = (leftEdge + rightEdge - toolbarWidth) / 2
-          container.style.left = `${Math.max(10, Math.min(centeredLeft, window.innerWidth - toolbarWidth - 10))}px`
-          container.style.top = `${Math.max(10, selectionTop - toolbarHeight - 8)}px`
+          const hostRect = editorOverlayHost?.getBoundingClientRect()
+          const originLeft = hostRect?.left ?? -window.scrollX
+          const originTop = hostRect?.top ?? -window.scrollY
+          const horizontalScroll = editorOverlayHost ? 0 : window.scrollX
+          const availableWidth = hostRect && hostRect.width > 0
+            ? hostRect.width
+            : window.innerWidth
+          const centeredLeft = (
+            leftEdge - originLeft + rightEdge - originLeft - toolbarWidth
+          ) / 2
+          const minimumLeft = horizontalScroll + 10
+          const maximumLeft = horizontalScroll + availableWidth - toolbarWidth - 10
+          container.style.left = `${Math.max(
+            minimumLeft,
+            Math.min(centeredLeft, maximumLeft)
+          )}px`
+          container.style.top = `${selectionBottom - originTop + 8}px`
         } else {
           container.style.removeProperty("top")
-          syncTopToolbarBounds()
+          syncEditorToolbarBounds()
         }
 
         if (
@@ -572,7 +747,7 @@ export function selectionToolbarPlugin(
           })
         }
 
-        if (mode === "top") {
+        if (isExpandedEditorToolbarMode(mode)) {
           addBeforeButton.disabled = false
           addAfterButton.disabled = false
           moveUpButton.disabled = !moveBlocks("up")(state)
@@ -583,11 +758,11 @@ export function selectionToolbarPlugin(
             preferences.allowedUploadFileTypes
           )
 
-          for (const option of TOP_TOOLBAR_BLOCK_TYPE_OPTIONS) {
+          for (const option of EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS) {
             const selector = option.type === "heading"
               ? `[data-block-type="heading"][data-block-attrs='${JSON.stringify(option.attrs)}']`
               : `[data-block-type="${option.type}"]`
-            const button = topControls.querySelector(selector) as HTMLElement | null
+            const button = editorControls.querySelector(selector) as HTMLElement | null
             button?.classList.toggle(
               "active",
               isToolbarBlockTypeActive(state, option)
@@ -628,7 +803,7 @@ export function selectionToolbarPlugin(
         const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
         if (linkPopup) linkPopup.style.display = "none"
 
-        // Preserve selections for the always-visible top toolbar. Floating
+        // Preserve selections for the always-visible editor toolbar. Floating
         // text selections keep their established outside-click behavior.
         if (currentMode === "floating" && container.style.display === "flex") {
           const { selection } = editorView.state
@@ -643,11 +818,11 @@ export function selectionToolbarPlugin(
       }
       // Use capture phase to catch clicks anywhere in the app
       document.addEventListener("mousedown", handleOutsideClick, true)
-      window.addEventListener("resize", syncTopToolbarBounds)
-      const resizeObserver = typeof ResizeObserver === "undefined" || !topToolbarHost
+      window.addEventListener("resize", syncEditorToolbarBounds)
+      const resizeObserver = typeof ResizeObserver === "undefined" || !editorToolbarHost
         ? null
-        : new ResizeObserver(syncTopToolbarBounds)
-      resizeObserver?.observe(topToolbarHost)
+        : new ResizeObserver(syncEditorToolbarBounds)
+      resizeObserver?.observe(editorToolbarHost)
 
       update()
 
@@ -656,7 +831,7 @@ export function selectionToolbarPlugin(
         destroy() {
           destroyed = true
           document.removeEventListener("mousedown", handleOutsideClick, true)
-          window.removeEventListener("resize", syncTopToolbarBounds)
+          window.removeEventListener("resize", syncEditorToolbarBounds)
           resizeObserver?.disconnect()
           container.remove()
         }
@@ -665,14 +840,14 @@ export function selectionToolbarPlugin(
   })
 }
 
-function createTopToolbarButton(
+function createEditorToolbarButton(
   title: string,
   icon: string,
   run: () => void
 ): HTMLButtonElement {
   const button = document.createElement("button")
   button.type = "button"
-  button.className = "toolbar-button top-toolbar-button"
+  button.className = "toolbar-button editor-toolbar-button"
   button.title = title
   button.setAttribute("aria-label", title)
   button.innerHTML = icon
@@ -682,6 +857,10 @@ function createTopToolbarButton(
     run()
   })
   return button
+}
+
+function isExpandedEditorToolbarMode(mode: EditorToolbarMode): boolean {
+  return mode === "top" || mode === "bottom"
 }
 
 function createToolbarGroup(className: string, label: string): HTMLDivElement {

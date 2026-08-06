@@ -61,7 +61,7 @@ describe("workspace upload configuration", () => {
     const legacyToolbarRoot = await tempWorkspace();
     await writeConfig(legacyToolbarRoot, { editor: { inlineToolbar: "sticky" } });
     await expect(loadWorkspaceSettings(legacyToolbarRoot)).resolves.toMatchObject({
-      editor: { inlineToolbar: "top" }
+      editor: { inlineToolbar: "bottom" }
     });
 
     const disabledRoot = await tempWorkspace();
@@ -101,7 +101,7 @@ describe("workspace upload configuration", () => {
         highlightMisspellings: true,
         inlineReplacements: false,
         emojiSuggestions: false,
-        inlineToolbar: "top"
+        inlineToolbar: "bottom"
       }
     });
     const persisted = JSON.parse(
@@ -117,7 +117,7 @@ describe("workspace upload configuration", () => {
         highlightMisspellings: true,
         inlineReplacements: false,
         emojiSuggestions: false,
-        inlineToolbar: "top"
+        inlineToolbar: "bottom"
       }
     });
     expect(persisted).toEqual({
@@ -164,7 +164,7 @@ describe("workspace upload configuration", () => {
       },
       {
         source: JSON.stringify({ editor: { inlineToolbar: "sometimes" } }),
-        message: /editor\.inlineToolbar must be floating, top, or none/u
+        message: /editor\.inlineToolbar must be floating, top, bottom, or none/u
       },
       {
         source: JSON.stringify({ editor: { spellcheck: false } }),

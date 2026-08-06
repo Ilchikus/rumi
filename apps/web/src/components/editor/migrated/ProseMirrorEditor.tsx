@@ -1,7 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
-import type { InlineToolbarMode } from "@rumi/contracts"
+import type { EditorToolbarMode } from "@rumi/contracts"
 import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh"
 import { cn } from "../../../lib/utils"
 import type { Node as ProseMirrorNode } from "prosemirror-model"
@@ -17,6 +17,7 @@ import { schema } from "./schema"
 import { buildKeymap } from "./keymap"
 import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
 import { structuralCaretPlugin } from "./plugins/structuralCaret"
+import { mermaidModePlugin } from "./plugins/mermaidMode"
 import { buildInputRules } from "./inputrules"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { taskListPlugin } from "./plugins/taskList"
@@ -28,7 +29,10 @@ import {
 import { linkPlugin } from "./plugins/linkPlugin"
 import { atMentionPlugin, FileItem } from "./plugins/atMention"
 import { blockDragHandlePlugin } from "./plugins/blockDragHandle"
-import { multiBlockSelectionPlugin } from "./plugins/multiBlockSelection"
+import {
+  multiBlockSelectionPlugin,
+  selectEveryBlock
+} from "./plugins/multiBlockSelection"
 import { tableEditing, columnResizing } from "prosemirror-tables"
 import { codeBlockNodeView } from "./plugins/codeBlockView"
 import { codeHighlightPlugin } from "./plugins/codeHighlight"
@@ -51,6 +55,7 @@ import { setMigratedEditorPlatform } from "./platform"
 
 export interface RumiBlockEditorHandle {
   focus: () => void
+  selectAllBlocks: () => boolean
   getMarkdown: () => string
   markClean: (markdown: string) => void
   activeDocumentKey: () => string | null
@@ -80,7 +85,7 @@ export interface RumiBlockEditorProps {
   highlightMisspellings?: boolean
   inlineReplacements?: boolean
   emojiSuggestions?: boolean
-  inlineToolbar?: InlineToolbarMode
+  editorToolbar?: EditorToolbarMode
   allowedUploadFileTypes?: readonly string[]
   readOnly?: boolean
   onDirty: () => void
@@ -101,7 +106,7 @@ function ProseMirrorEditor(
     highlightMisspellings = false,
     inlineReplacements = true,
     emojiSuggestions = true,
-    inlineToolbar = "floating",
+    editorToolbar = "floating",
     allowedUploadFileTypes = [],
     readOnly = false,
     onDirty
@@ -176,6 +181,7 @@ function ProseMirrorEditor(
         }),
         inactiveBlockSelectionPlugin(),
         structuralCaretPlugin(),
+        mermaidModePlugin(),
         multiBlockSelectionPlugin(schema),
         buildKeymap(schema),
         keymap(baseKeymap),
@@ -184,7 +190,7 @@ function ProseMirrorEditor(
         taskListPlugin(schema),
         blockDragHandlePlugin(schema),
         slashCommandsPlugin(schema),
-        selectionToolbarPlugin(schema, inlineToolbar, allowedUploadFileTypes),
+        selectionToolbarPlugin(schema, editorToolbar, allowedUploadFileTypes),
         linkPlugin(schema),
         atMentionPlugin(schema, getFiles),
         columnResizing(),
@@ -269,15 +275,21 @@ function ProseMirrorEditor(
     const view = viewRef.current
     if (view) {
       setSelectionToolbarPreferences(view, {
-        mode: inlineToolbar,
+        mode: editorToolbar,
         allowedUploadFileTypes
       })
     }
-  }, [allowedUploadFileTypes, inlineToolbar])
+  }, [allowedUploadFileTypes, editorToolbar])
 
   useImperativeHandle(ref, () => ({
     focus() {
       viewRef.current?.focus()
+    },
+    selectAllBlocks() {
+      const view = viewRef.current
+      if (!view || !selectEveryBlock(view.state, view.dispatch)) return false
+      view.focus()
+      return true
     },
     getMarkdown() {
       return viewRef.current ? serializeMarkdown(viewRef.current.state.doc) : contentRef.current

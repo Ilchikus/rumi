@@ -123,7 +123,7 @@ describe("structural caret navigation", () => {
     expect(state().selection).toBeInstanceOf(TextSelection)
     expect(state().selection.$from.parent.type).toBe(schema.nodes.mermaid)
     expect(state().selection.$from.parentOffset).toBe(0)
-    expect(state().doc.nodeAt(mermaidPos)?.attrs.mode).toBe("split")
+    expect(state().doc.nodeAt(mermaidPos)?.attrs.mode).toBe("edit")
   })
 
   it("keeps distinct positions between adjacent special blocks", () => {
@@ -180,7 +180,7 @@ describe("structural caret deletion history", () => {
   it("keeps Mermaid source edits in the same ProseMirror history", () => {
     const code = "graph TD; A-->B"
     const mermaid = schema.nodes.mermaid!.create(
-      { mode: "split" },
+      { mode: "edit" },
       schema.text(code)
     )
     const doc = schema.nodes.doc!.create(null, mermaid)

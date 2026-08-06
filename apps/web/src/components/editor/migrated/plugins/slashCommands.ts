@@ -252,7 +252,7 @@ export function createCommands(schema: Schema): SlashCommand[] {
     B -->|Yes| C[Result 1]
     B -->|No| D[Result 2]`
         const mermaid = schema.nodes.mermaid.create(
-          { mode: "split" },
+          { mode: "view" },
           schema.text(defaultCode)
         )
         const tr = state.tr.replaceWith($from.before(), $from.after(), mermaid)

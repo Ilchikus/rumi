@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { WorkspaceSettings } from "@rumi/contracts";
+import type { EditorToolbarMode, WorkspaceSettings } from "@rumi/contracts";
 
 export const WORKSPACE_CONFIG_PATH = ".rumi/config.json";
 export const DEFAULT_ASSET_FILE_SIZE_MB = 50;
@@ -139,7 +139,7 @@ function workspaceSettingsFromConfig(config: Record<string, unknown>): Workspace
     ? requireBoolean(editor.emojiSuggestions, "editor.emojiSuggestions")
     : DEFAULT_WORKSPACE_SETTINGS.editor.emojiSuggestions;
   const inlineToolbar = "inlineToolbar" in editor
-    ? requireInlineToolbarMode(editor.inlineToolbar)
+    ? requireEditorToolbarMode(editor.inlineToolbar)
     : DEFAULT_WORKSPACE_SETTINGS.editor.inlineToolbar;
 
   return {
@@ -236,11 +236,16 @@ function requireBoolean(value: unknown, setting: string): boolean {
   return value;
 }
 
-function requireInlineToolbarMode(value: unknown): "floating" | "top" | "none" {
-  if (value === "sticky") return "top";
-  if (value === "floating" || value === "top" || value === "none") return value;
+function requireEditorToolbarMode(value: unknown): EditorToolbarMode {
+  if (value === "sticky") return "bottom";
+  if (
+    value === "floating"
+    || value === "top"
+    || value === "bottom"
+    || value === "none"
+  ) return value;
   throw new Error(
-    `Invalid ${WORKSPACE_CONFIG_PATH}: editor.inlineToolbar must be floating, top, or none`
+    `Invalid ${WORKSPACE_CONFIG_PATH}: editor.inlineToolbar must be floating, top, bottom, or none`
   );
 }
 

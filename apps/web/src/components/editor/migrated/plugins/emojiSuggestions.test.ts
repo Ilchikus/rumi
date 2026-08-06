@@ -8,6 +8,7 @@ import type { EditorView } from "prosemirror-view";
 import { describe, expect, it } from "vitest";
 import { serializeMarkdown } from "../markdown";
 import { schema } from "../schema";
+import { searchEmoji } from "../../../emoji/emojiCatalog";
 import {
   emojiSuggestionsPlugin,
   emojiSuggestionsPluginKey,
@@ -158,7 +159,7 @@ describe("colon emoji suggestions", () => {
 });
 
 function createHarness(initialDoc = paragraph("")) {
-  const plugin = emojiSuggestionsPlugin(schema);
+  const plugin = emojiSuggestionsPlugin(schema, { searchEmoji });
   let composing = false;
   let state = EditorState.create({
     doc: initialDoc.type === schema.nodes.doc

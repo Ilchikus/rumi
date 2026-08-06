@@ -134,6 +134,12 @@ interface MoveDestination {
   reason?: string;
 }
 
+interface InitialSidebarExpansion {
+  workspaceKey: string | null;
+  restored: boolean;
+  paths: Set<string>;
+}
+
 export function Sidebar({
   workspaceName,
   workspaceKey,
@@ -161,10 +167,19 @@ export function Sidebar({
 }: SidebarProps): ReactElement {
   const shortcutPlatform = appShortcutPlatform();
   const labels = shortcutLabels(shortcutPlatform);
-  const initializedExpansionScope = useRef<string | null>(null);
-  const restoredExpansionScope = useRef<string | null>(null);
+  const initialExpansionRef = useRef<InitialSidebarExpansion | null>(null);
+  if (!initialExpansionRef.current) {
+    initialExpansionRef.current = initialSidebarExpansion(tree, workspaceKey);
+  }
+  const initialExpansion = initialExpansionRef.current;
+  const initializedExpansionScope = useRef<string | null>(initialExpansion.workspaceKey);
+  const restoredExpansionScope = useRef<string | null>(
+    initialExpansion.restored ? initialExpansion.workspaceKey : null
+  );
   const initialSelectionScope = useRef<string | null>(null);
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+    () => initialExpansion.paths
+  );
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [floatingMenu, setFloatingMenu] = useState<FloatingMenu | null>(null);
@@ -1538,6 +1553,25 @@ function sidebarContainerPaths(tree: WorkspaceNode): Set<string> {
 
   visit(tree);
   return paths;
+}
+
+function initialSidebarExpansion(
+  tree: WorkspaceNode | null,
+  workspaceKey: string
+): InitialSidebarExpansion {
+  if (!tree || !workspaceKey) {
+    return { workspaceKey: null, restored: false, paths: new Set() };
+  }
+
+  const availablePaths = sidebarContainerPaths(tree);
+  const savedPaths = readSidebarExpandedPaths(browserStorage(), workspaceKey);
+  return {
+    workspaceKey,
+    restored: savedPaths !== null,
+    paths: savedPaths
+      ? new Set([...savedPaths].filter((path) => availablePaths.has(path)))
+      : new Set((tree.children ?? []).filter(isContainerNode).map((node) => node.path))
+  };
 }
 
 function moveDestinationsForTree(tree: WorkspaceNode, node: WorkspaceNode): MoveDestination[] {

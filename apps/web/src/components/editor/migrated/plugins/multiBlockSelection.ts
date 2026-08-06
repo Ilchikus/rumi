@@ -291,6 +291,24 @@ export const selectAllBlocksInStages: Command = (state, dispatch) => {
   return true
 }
 
+export const selectEveryBlock: Command = (state, dispatch) => {
+  const selectedBlocks = topLevelBlocks(state).map((block) => block.pos)
+  if (selectedBlocks.length === 0) return false
+
+  if (dispatch) {
+    const transaction = state.tr
+      .setMeta(multiBlockSelectionKey, {
+        selectedBlocks,
+        anchorBlock: selectedBlocks[0] ?? null
+      })
+      .setMeta("multiBlockKeep", true)
+      .setSelection(NodeSelection.create(state.doc, selectedBlocks[0]))
+    dispatch(transaction.scrollIntoView())
+  }
+
+  return true
+}
+
 export function clearMultiBlockSelection(view: EditorView) {
   const tr = view.state.tr.setMeta(multiBlockSelectionKey, {
     selectedBlocks: [],

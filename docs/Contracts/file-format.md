@@ -81,10 +81,11 @@ every page in the workspace.
 `editor.emojiSuggestions` controls the caret-anchored selector opened by a valid `:` prose trigger.
 Both default to `true`. Replacement symbols and selected emoji are stored as literal UTF-8 Markdown
 text; opening, pasting, or externally reconciling content does not invoke either typing feature.
-`editor.inlineToolbar` accepts `floating`, `top`, or `none`. It defaults to `floating`; `top` keeps
-the expanded formatting bar fixed near the viewport bottom and aligned to the editor column, while
-`none` hides it. The former
-`sticky` value is read as `top` for compatibility and is normalized on the next settings save.
+`editor.inlineToolbar` is presented as **Editor toolbar** in Settings and accepts `floating`, `top`,
+`bottom`, or `none`. It defaults to `floating`; `top` fixes the expanded formatting bar below the
+workspace header, `bottom` fixes it above the viewport's bottom safe-area inset, and both align to
+the editor column. `none` hides it. The former `sticky` value is read as `bottom` for compatibility
+and is normalized on the next settings save.
 Unknown editor settings, invalid toolbar modes, and non-boolean values for boolean settings are
 rejected.
 

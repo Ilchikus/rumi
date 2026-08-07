@@ -18,7 +18,7 @@ import { buildKeymap, inlineCodeBoundaryPlugin } from "./keymap"
 import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
 import { structuralCaretPlugin } from "./plugins/structuralCaret"
 import { mermaidModePlugin } from "./plugins/mermaidMode"
-import { buildInputRules } from "./inputrules"
+import { buildInputRules, inlineCodeInputSessionPlugin } from "./inputrules"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { taskListPlugin } from "./plugins/taskList"
 import { slashCommandsPlugin } from "./plugins/slashCommands"
@@ -173,6 +173,7 @@ function ProseMirrorEditor(
       doc,
       plugins: [
         collapsibleHeadingsPlugin(),
+        inlineCodeInputSessionPlugin(schema),
         buildInputRules(schema),
         inlineReplacementsPlugin(schema, inlineReplacements),
         emojiSuggestionsPlugin(schema, {

@@ -61,6 +61,19 @@ describe("live editor Markdown round trips", () => {
     expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
   })
 
+  it("keeps escaped backticks literal and code ending in a backslash durable", () => {
+    const literals = parseMarkdown("\\` first \\` second\n", schema)
+    const trailingBackslash = parseMarkdown("`path\\`\n", schema)
+
+    expect(literals.firstChild?.textContent).toBe("` first ` second")
+    expect(literals.firstChild?.content.content.every(node => node.marks.length === 0)).toBe(true)
+    expect(serializeMarkdown(literals)).toBe("\\` first \\` second\n")
+    expect(trailingBackslash.firstChild?.firstChild?.text).toBe("path\\")
+    expect(trailingBackslash.firstChild?.firstChild?.marks.map(mark => mark.type.name))
+      .toContain("code")
+    expect(serializeMarkdown(trailingBackslash)).toBe("`path\\`\n")
+  })
+
   it("distinguishes no selected database view from a stable view ID named table", () => {
     const implicit = parseMarkdown([
       "```db",

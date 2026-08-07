@@ -27,13 +27,18 @@ canonical workspace path through one action surface.
   the adjacent block in that direction. Retain Shift-Mod-Up/Down document-edge behavior.
 - Rename the paragraph block choice from **Text** to **Paragraph** and let friendly aliases such as
   `p`, `text`, `h2`, and `heading 2` focus the expected Change type or slash-command result.
-- Copy adjacent paragraph blocks to plain-text destinations with one line per paragraph so Google
-  Sheets does not insert blank rows. Preserve exact Rumi structure through the private clipboard
-  flavor and semantic paragraph structure through HTML.
+- Copy adjacent paragraph blocks with one line per paragraph in both plain text and portable HTML
+  so normal and plain-text Google Sheets paste do not insert blank rows. Preserve exact Rumi
+  structure through the private clipboard flavor. Native text selections copy only selected text
+  and inline marks; list and checkbox syntax remains exclusive to explicit block selections.
 - Preserve inline-code formatting when normal paste replaces the complete contents of one inline
   code span. Make the inline-code mark non-inclusive so typing after a completed backtick shortcut
-  occurs outside the mark. At the closing boundary, Left explicitly enters the code mark and keeps
-  subsequent typing inside it until Right exits.
+  occurs outside the mark. A typed opening backtick starts an action-scoped pending session rather
+  than searching backward through the paragraph. Closing within that uninterrupted session creates
+  the durable code mark; caret movement, navigation, blur, paste, or another structural action
+  cancels it and leaves literal backticks that serialize escaped. Mod-Z immediately after closure
+  restores both literal delimiters. At a durable closing boundary, Left explicitly enters the code
+  mark in one keypress and keeps subsequent typing inside it until Right exits.
 - Treat `http://`, `https://`, `www.`, and bare domain destinations as URL paste. Normal paste over
   highlighted text retains the highlight as the link label; normal paste at a caret inserts the
   clipboard text as both label and stored destination. Render scheme-less web destinations through
@@ -70,10 +75,11 @@ editor, with current-page action wiring in the web shell.
       direction reversal, and document-edge extension.
 - [x] Block-type presentation tests for Paragraph naming and friendly Change type aliases.
 - [x] Slash-command tests for Paragraph creation and friendly aliases.
-- [x] Clipboard serialization tests for adjacent paragraphs and list continuity.
+- [x] Clipboard serialization tests for adjacent paragraphs, list continuity, and text selections
+      inside task items.
 - [x] Paste transaction tests for inline-code replacement, generic domains, and explicit plain-text
       URL paste.
-- [x] Inline-code input/boundary tests.
+- [x] Inline-code input/session, escaped-source, undo, and boundary tests.
 - [x] Current-page action and shortcut tests for copied URL/path values and availability guards.
 - [x] Sidebar child-creation matrix coverage.
 - [x] List-type conversion indentation coverage.
@@ -84,8 +90,8 @@ editor, with current-page action wiring in the web shell.
 
 - Pointer and keyboard block selections can grow and shrink without losing their anchor.
 - Paragraph and heading type queries use the names users naturally type.
-- Sheets receives adjacent paragraphs without empty rows, while Rumi and rich clipboard structure
-  remain intact.
+- Sheets receives adjacent paragraphs without empty rows, Rumi structure remains intact, and text
+  selections do not acquire their containing list or checkbox syntax.
 - Normal and plain-text paste have distinct, predictable URL and inline-code behavior.
 - The open page's public URL and canonical relative path can be copied from both the File actions
   menu and documented shortcuts.
@@ -96,7 +102,7 @@ editor, with current-page action wiring in the web shell.
 Verified on 2026-08-07:
 
 - focused editor, clipboard, link, current-page action, and application-shortcut coverage passed
-- `corepack pnpm check` passed with 70 test files and 550 tests, typecheck, the production web
+- `corepack pnpm check` passed with 70 test files and 559 tests, typecheck, the production web
   build, and the bundled server build
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
 - user browser QA remains pending before merge

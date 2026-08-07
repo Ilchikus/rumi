@@ -507,6 +507,7 @@ describe("live editor shared history and structural insertion shortcuts", () => 
 
   it("uses ArrowLeft and ArrowRight to enter and exit an inline-code boundary", () => {
     const keymapPlugin = buildKeymap(schema)
+    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
     const code = schema.marks.code!.create()
     const paragraph = schema.nodes.paragraph!.create(
       null,
@@ -516,14 +517,18 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     let state = EditorState.create({
       doc,
       selection: TextSelection.create(doc, 6),
-      plugins: [inlineCodeBoundaryPlugin(schema), keymapPlugin]
+      plugins: [boundaryPlugin, keymapPlugin]
     })
     const view = {
       get state() { return state },
       dispatch(transaction: Transaction) { state = state.apply(transaction) }
     } as unknown as EditorView
 
-    expect(applyKey(keymapPlugin, view, keyboardEvent("ArrowLeft"))).toBe(true)
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(true)
     expect(state.selection.from).toBe(6)
     expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
 
@@ -532,7 +537,11 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     view.dispatch(state.tr.insertText("more"))
     expect(serializeMarkdown(state.doc)).toBe("`value!more`\n")
 
-    expect(applyKey(keymapPlugin, view, keyboardEvent("ArrowRight"))).toBe(true)
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowRight")
+    )).toBe(true)
     expect(state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
     view.dispatch(state.tr.insertText(" after"))
     expect(serializeMarkdown(state.doc)).toBe("`value!more` after\n")

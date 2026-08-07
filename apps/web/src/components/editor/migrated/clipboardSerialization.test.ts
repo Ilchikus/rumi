@@ -1,4 +1,5 @@
 import { Slice } from "prosemirror-model"
+import { EditorState, TextSelection } from "prosemirror-state"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown } from "./markdown"
 import { schema } from "./schema"
@@ -80,6 +81,25 @@ describe("portable editor clipboard serialization", () => {
       "Second paragraph",
       "Third paragraph"
     ].join("\n"))
+    expect(serializeClipboardHtml(slice)).toBe([
+      "<div>First paragraph</div>",
+      "<div>Second paragraph</div>",
+      "<div>Third paragraph</div>"
+    ].join(""))
+  })
+
+  it("copies a native task-item text selection without block syntax", () => {
+    const doc = parseMarkdown("- [ ] Copy only this\n", schema)
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6, 10)
+    })
+    const slice = state.selection.content()
+
+    expect(serializeClipboardText(slice, { includeBlockSyntax: false })).toBe("only")
+    expect(serializeClipboardHtml(slice, { includeBlockSyntax: false })).toBe("only")
+    expect(serializeClipboardText(slice)).toBe("- [ ] only")
+    expect(serializeClipboardHtml(slice)).toContain('type="checkbox"')
   })
 
   it("round-trips the exact private Rumi slice", () => {

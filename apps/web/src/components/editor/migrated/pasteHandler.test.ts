@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model"
 import { EditorState, NodeSelection, TextSelection, type Transaction } from "prosemirror-state"
-import type { EditorView } from "prosemirror-view"
+import { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { setMigratedEditorPlatform } from "./platform"
@@ -24,6 +24,7 @@ import {
   normalizePastedTables,
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
+import { inlineCodeBoundaryPlugin } from "./keymap"
 
 function stateWithSelection(markdown: string, from: number, to = from): EditorState {
   const doc = parseMarkdown(markdown, schema)
@@ -614,6 +615,44 @@ describe("live editor external rich paste normalization", () => {
   })
 })
 
+describe("live editor inline-code boundary affinity", () => {
+  it("moves the browser caret inside and outside the code DOM in one keypress", () => {
+    const code = schema.marks.code!.create()
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("value", [code]))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
+    const host = document.createElement("div")
+    document.body.append(host)
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 6),
+        plugins: [boundaryPlugin]
+      })
+    })
+    const key = (value: string) => new KeyboardEvent("keydown", { key: value })
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      key("ArrowLeft")
+    )).toBe(true)
+    expect(view.state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).not.toBeNull()
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      key("ArrowRight")
+    )).toBe(true)
+    expect(view.state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
+    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).toBeNull()
+
+    view.destroy()
+    host.remove()
+  })
+})
+
 describe("live editor copy", () => {
   function clipboardEvent() {
     const data = new Map<string, string>()
@@ -653,7 +692,7 @@ describe("live editor copy", () => {
     expect(handled).toBe(true)
     expect(wasPrevented()).toBe(true)
     expect(data.get("text/html")).toBe(
-      "<h1>Heading</h1><p>Body with <strong>bold</strong></p>" +
+      "<h1>Heading</h1><div>Body with <strong>bold</strong></div>" +
       '<ul><li><input type="checkbox" checked disabled>Done</li></ul>'
     )
     expect(data.get("text/plain")).toBe(
@@ -661,6 +700,27 @@ describe("live editor copy", () => {
     )
     expect(parseRumiClipboardSlice(data.get(RUMI_SLICE_MIME) ?? "", schema)
       ?.content.childCount).toBe(3)
+  })
+
+  it("copies selected task text without its checkbox block syntax", () => {
+    const doc = parseMarkdown("- [ ] Copy only this\n", schema)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6, 10)
+    })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const { data, event } = clipboardEvent()
+    const plugin = pasteHandlerPlugin(schema)
+
+    expect(plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)).toBe(true)
+    expect(data.get("text/plain")).toBe("only")
+    expect(data.get("text/html")).toBe("only")
+    expect(data.get("text/html")).not.toContain("checkbox")
+    expect(parseRumiClipboardSlice(data.get(RUMI_SLICE_MIME) ?? "", schema)
+      ?.content.firstChild?.textContent).toBe("only")
   })
 
   it("copies an unordered marquee-style block selection in document order from an empty cursor", () => {
@@ -686,7 +746,7 @@ describe("live editor copy", () => {
     const plugin = pasteHandlerPlugin(schema)
 
     expect(plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)).toBe(true)
-    expect(data.get("text/html")).toBe("<p>One</p><p>Three</p>")
+    expect(data.get("text/html")).toBe("<div>One</div><div>Three</div>")
     expect(data.get("text/plain")).toBe("One\nThree")
     expect(data.get("text/html")).not.toContain("Two")
   })
@@ -712,7 +772,7 @@ describe("live editor copy", () => {
     const plugin = pasteHandlerPlugin(schema)
 
     expect(plugin.props.handleDOMEvents?.cut?.call(plugin, view, event)).toBe(true)
-    expect(data.get("text/html")).toBe("<p>One</p><p>Three</p>")
+    expect(data.get("text/html")).toBe("<div>One</div><div>Three</div>")
     expect(Array.from(
       { length: state.doc.childCount },
       (_, index) => state.doc.child(index).textContent

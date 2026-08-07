@@ -369,7 +369,8 @@
     color: hsl(var(--foreground));
   }
 
-  .rumi-prosemirror :not(pre) > code {
+  .rumi-prosemirror :not(pre) > code,
+  .rumi-prosemirror .rumi-inline-code-pending {
     border-radius: 0.25rem;
     background: hsl(var(--muted));
     padding: 0.08rem 0.25rem;

@@ -181,7 +181,7 @@ function serializeCodeHtml(value: string, language: string | null): string {
 function serializeBlockHtml(node: ProseMirrorNode): string {
   switch (node.type.name) {
     case "paragraph":
-      return `<p>${serializeInlineHtml(node)}</p>`
+      return `<div>${serializeInlineHtml(node)}</div>`
     case "heading": {
       const level = Math.max(1, Math.min(6, Number(node.attrs.level) || 1))
       return `<h${level}>${serializeInlineHtml(node)}</h${level}>`
@@ -245,6 +245,34 @@ function serializeFragmentHtml(fragment: Fragment): string {
   }
 
   return html
+}
+
+function textSelectionBlocks(fragment: Fragment): ProseMirrorNode[] {
+  const blocks: ProseMirrorNode[] = []
+
+  const collect = (node: ProseMirrorNode) => {
+    if (node.isTextblock) {
+      blocks.push(node)
+      return
+    }
+    node.forEach(collect)
+  }
+
+  fragment.forEach(collect)
+  return blocks
+}
+
+function serializeTextSelectionHtml(fragment: Fragment): string {
+  const blocks = textSelectionBlocks(fragment)
+  if (blocks.length === 0) return escapeHtml(fragment.textBetween(0, fragment.size, "\n"))
+  if (blocks.length === 1) return serializeInlineHtml(blocks[0]!)
+  return blocks.map((block) => `<div>${serializeInlineHtml(block)}</div>`).join("")
+}
+
+function serializeTextSelectionText(fragment: Fragment): string {
+  const blocks = textSelectionBlocks(fragment)
+  if (blocks.length === 0) return fragment.textBetween(0, fragment.size, "\n")
+  return blocks.map(serializeInlineText).join("\n").replace(/\n+$/u, "")
 }
 
 function serializeInlineText(parent: ProseMirrorNode): string {
@@ -316,11 +344,27 @@ function clipboardBlockSeparator(
   return "\n\n"
 }
 
-export function serializeClipboardHtml(slice: Slice): string {
-  return serializeFragmentHtml(slice.content)
+export interface ClipboardSerializationOptions {
+  includeBlockSyntax?: boolean
 }
 
-export function serializeClipboardText(slice: Slice): string {
+export function serializeClipboardHtml(
+  slice: Slice,
+  options: ClipboardSerializationOptions = {}
+): string {
+  return options.includeBlockSyntax === false
+    ? serializeTextSelectionHtml(slice.content)
+    : serializeFragmentHtml(slice.content)
+}
+
+export function serializeClipboardText(
+  slice: Slice,
+  options: ClipboardSerializationOptions = {}
+): string {
+  if (options.includeBlockSyntax === false) {
+    return serializeTextSelectionText(slice.content)
+  }
+
   const nodes = fragmentChildren(slice.content)
   let text = ""
 

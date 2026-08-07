@@ -270,9 +270,12 @@ function writePortableClipboard(
   if (!clipboard || (selection.empty && !blockSlice)) return false
 
   const slice = blockSlice ?? selection.content()
+  const serializationOptions = {
+    includeBlockSyntax: Boolean(blockSlice) || !(selection instanceof TextSelection)
+  }
   clipboard.clearData()
-  clipboard.setData("text/html", serializeClipboardHtml(slice))
-  clipboard.setData("text/plain", serializeClipboardText(slice))
+  clipboard.setData("text/html", serializeClipboardHtml(slice, serializationOptions))
+  clipboard.setData("text/plain", serializeClipboardText(slice, serializationOptions))
   try {
     clipboard.setData(RUMI_SLICE_MIME, serializeRumiClipboardSlice(slice))
   } catch {

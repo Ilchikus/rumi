@@ -1,5 +1,6 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { keymap } from "prosemirror-keymap"
+import { undoInputRule } from "prosemirror-inputrules"
 import { Schema } from "prosemirror-model"
 import { Command, NodeSelection, Plugin, TextSelection } from "prosemirror-state"
 import {
@@ -214,6 +215,40 @@ export function exitInlineCodeAtEnd(schema: Schema): Command {
 
 export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
   return new Plugin({
+    props: {
+      handleKeyDown(view, event) {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false
+
+        const command = event.key === "ArrowLeft"
+          ? enterInlineCodeAtEnd(schema)
+          : event.key === "ArrowRight"
+            ? exitInlineCodeAtEnd(schema)
+            : null
+        if (!command) return false
+
+        const position = view.state.selection.from
+        const handled = command(view.state, view.dispatch.bind(view))
+        if (!handled || typeof view.domAtPos !== "function") return handled
+
+        const side = event.key === "ArrowLeft" ? -1 : 1
+        const domPosition = view.domAtPos(position, side)
+        const ownerDocument = domPosition.node.ownerDocument ?? view.dom.ownerDocument
+        ownerDocument.getSelection()?.collapse(domPosition.node, domPosition.offset)
+        return true
+      },
+      handleDOMEvents: {
+        blur(view) {
+          const code = schema.marks.code
+          if (!code?.isInSet(view.state.storedMarks ?? [])) return false
+          view.dispatch(
+            view.state.tr
+              .removeStoredMark(code)
+              .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+          )
+          return false
+        }
+      }
+    },
     appendTransaction(transactions, oldState, newState) {
       const code = schema.marks.code
       const { selection } = newState
@@ -360,7 +395,7 @@ function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
   // History
-  keys["Mod-z"] = undoEditorChange
+  keys["Mod-z"] = chainCommands(undoInputRule, undoEditorChange)
   keys["Shift-Mod-z"] = redoEditorChange
   if (!mac) keys["Mod-y"] = redoEditorChange
 
@@ -384,8 +419,6 @@ function buildKeymap(schema: Schema) {
   if (schema.marks.code) {
     keys["Mod-e"] = toggleInlineMark(schema.marks.code)
     keys["Mod-E"] = toggleInlineMark(schema.marks.code)
-    keys["ArrowLeft"] = enterInlineCodeAtEnd(schema)
-    keys["ArrowRight"] = exitInlineCodeAtEnd(schema)
   }
   if (schema.marks.highlight) {
     keys["Mod-Shift-h"] = toggleInlineMark(schema.marks.highlight)

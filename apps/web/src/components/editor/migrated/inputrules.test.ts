@@ -1,15 +1,24 @@
-import { EditorState, type Transaction } from "prosemirror-state"
+import { EditorState, TextSelection, type Plugin, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
-import { buildInputRules } from "./inputrules"
+import {
+  buildInputRules,
+  inlineCodeInputSessionKey,
+  inlineCodeInputSessionPlugin
+} from "./inputrules"
+import { buildKeymap } from "./keymap"
 import { serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
 
-function typeText(text: string): EditorState {
-  const inputRulesPlugin = buildInputRules(schema)
+function createTypingHarness() {
+  const plugins = [
+    inlineCodeInputSessionPlugin(schema),
+    buildInputRules(schema),
+    buildKeymap(schema)
+  ]
   let state = EditorState.create({
     doc: schema.nodes.doc!.create(null, schema.nodes.paragraph!.create()),
-    plugins: [inputRulesPlugin]
+    plugins
   })
   const view = {
     get state() {
@@ -20,24 +29,82 @@ function typeText(text: string): EditorState {
       state = state.apply(transaction)
     }
   } as unknown as EditorView
-  const handleTextInput = inputRulesPlugin.props.handleTextInput
 
-  if (!handleTextInput) throw new Error("Input rules plugin has no text-input handler")
-
-  for (const character of text) {
-    const { from, to } = state.selection
-    const handled = handleTextInput.call(
-      inputRulesPlugin,
-      view,
-      from,
-      to,
-      character,
-      () => state.tr.insertText(character, from, to)
-    )
-    if (!handled) view.dispatch(state.tr.insertText(character, from, to))
+  function type(text: string) {
+    for (const character of text) {
+      const { from, to } = state.selection
+      let handled = false
+      for (const plugin of plugins) {
+        const handleTextInput = plugin.props.handleTextInput
+        if (!handleTextInput) continue
+        handled = Boolean(handleTextInput.call(
+          plugin,
+          view,
+          from,
+          to,
+          character,
+          () => state.tr.insertText(character, from, to)
+        ))
+        if (handled) break
+      }
+      if (!handled) view.dispatch(state.tr.insertText(character, from, to))
+    }
   }
 
-  return state
+  return {
+    get state() { return state },
+    plugins,
+    type,
+    dispatch(transaction: Transaction) { view.dispatch(transaction) },
+    blur() {
+      const sessionPlugin = plugins[0] as Plugin
+      sessionPlugin.props.handleDOMEvents?.blur?.call(
+        sessionPlugin,
+        view,
+        new Event("blur") as FocusEvent
+      )
+    },
+    key(key: string) {
+      const event = {
+        key,
+        code: key,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        preventDefault() {},
+        stopPropagation() {}
+      } as KeyboardEvent
+      for (const plugin of plugins) {
+        const handled = plugin.props.handleKeyDown?.call(plugin, view, event) ?? false
+        if (handled) return true
+      }
+      return false
+    },
+    undoShortcut() {
+      const keymapPlugin = plugins[2]!
+      return keymapPlugin.props.handleKeyDown?.call(
+        keymapPlugin,
+        view,
+        {
+          key: "z",
+          code: "KeyZ",
+          ctrlKey: true,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+          preventDefault() {},
+          stopPropagation() {}
+        } as KeyboardEvent
+      ) ?? false
+    }
+  }
+}
+
+function typeText(text: string): EditorState {
+  const harness = createTypingHarness()
+  harness.type(text)
+  return harness.state
 }
 
 describe("live editor task input rules", () => {
@@ -102,5 +169,69 @@ describe("live editor inline-code input rules", () => {
     expect(state.selection.$from.marks().map((mark) => mark.type.name)).not.toContain("code")
     state = state.apply(state.tr.insertText(" after"))
     expect(serializeMarkdown(state.doc)).toBe("`value` after\n")
+  })
+
+  it("keeps a pending opener action-scoped without a character limit", () => {
+    const harness = createTypingHarness()
+    const content = "x".repeat(600)
+
+    harness.type(`\`${content}\``)
+
+    expect(harness.state.doc.textContent).toBe(content)
+    expect(harness.state.doc.firstChild?.firstChild?.marks
+      .map((mark) => mark.type.name)).toContain("code")
+    expect(inlineCodeInputSessionKey.getState(harness.state)).toBeNull()
+  })
+
+  it("leaves interrupted backticks literal after caret movement", () => {
+    const harness = createTypingHarness()
+    harness.type("`old")
+    const end = harness.state.selection.from
+
+    harness.dispatch(harness.state.tr.setSelection(TextSelection.create(harness.state.doc, 2)))
+    harness.dispatch(harness.state.tr.setSelection(TextSelection.create(harness.state.doc, end)))
+    harness.type("`")
+
+    expect(harness.state.doc.textContent).toBe("`old`")
+    expect(harness.state.doc.firstChild?.firstChild?.marks).toHaveLength(0)
+    expect(serializeMarkdown(harness.state.doc)).toBe("\\`old\\`\n")
+  })
+
+  it("leaves interrupted backticks literal after blur", () => {
+    const harness = createTypingHarness()
+    harness.type("`old")
+    harness.blur()
+    harness.type("`")
+
+    expect(harness.state.doc.textContent).toBe("`old`")
+    expect(serializeMarkdown(harness.state.doc)).toBe("\\`old\\`\n")
+  })
+
+  it("cancels on navigation actions but continues through text deletion", () => {
+    const deleted = createTypingHarness()
+    deleted.type("`abc")
+    const cursor = deleted.state.selection.from
+    deleted.dispatch(deleted.state.tr.delete(cursor - 1, cursor))
+    expect(inlineCodeInputSessionKey.getState(deleted.state)).not.toBeNull()
+    deleted.type("`")
+    expect(serializeMarkdown(deleted.state.doc)).toBe("`ab`\n")
+
+    const navigated = createTypingHarness()
+    navigated.type("`old")
+    expect(navigated.key("ArrowLeft")).toBe(false)
+    expect(inlineCodeInputSessionKey.getState(navigated.state)).toBeNull()
+    navigated.type("`")
+    expect(serializeMarkdown(navigated.state.doc)).toBe("\\`old\\`\n")
+  })
+
+  it("undoes completed inline-code formatting back to escaped literal ticks", () => {
+    const harness = createTypingHarness()
+    harness.type("`value`")
+
+    expect(serializeMarkdown(harness.state.doc)).toBe("`value`\n")
+    expect(harness.undoShortcut()).toBe(true)
+    expect(harness.state.doc.textContent).toBe("`value`")
+    expect(harness.state.doc.firstChild?.firstChild?.marks).toHaveLength(0)
+    expect(serializeMarkdown(harness.state.doc)).toBe("\\`value\\`\n")
   })
 })

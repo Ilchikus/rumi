@@ -93,3 +93,14 @@ describe("live editor strikethrough input rules", () => {
     expect(serializeMarkdown(plainHyphens.doc)).toBe("--plain hyphens--\n")
   })
 })
+
+describe("live editor inline-code input rules", () => {
+  it("places subsequent typing outside a completed backtick shortcut", () => {
+    let state = typeText("`value`")
+
+    expect(schema.marks.code!.spec.inclusive).toBe(false)
+    expect(state.selection.$from.marks().map((mark) => mark.type.name)).not.toContain("code")
+    state = state.apply(state.tr.insertText(" after"))
+    expect(serializeMarkdown(state.doc)).toBe("`value` after\n")
+  })
+})

@@ -36,6 +36,7 @@ export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode
     .use(remarkParse)
     .use(remarkGfm)
     .parse(preprocessed) as Root
+  demoteImplicitSourceLinks(tree, preprocessed)
   normalizeTaskListItems(tree)
 
   const blocks: ProseMirrorNode[] = []
@@ -57,6 +58,36 @@ export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode
   }
 
   return schema.nodes.doc.create(null, blocks)
+}
+
+// GFM promotes literal http(s), www, and email patterns to link nodes. Rumi's
+// file is authoritative instead: only explicit Markdown source syntax creates
+// a durable link. Paste and editor actions therefore serialize a link mark as
+// [label](destination), while plain source text remains plain after reload.
+function demoteImplicitSourceLinks(node: Root | RootContent, source: string): void {
+  if (!("children" in node) || !Array.isArray(node.children)) return
+
+  node.children = node.children.map((child) => {
+    if (child.type === "link") {
+      const start = child.position?.start.offset
+      const end = child.position?.end.offset
+      const sourceText = typeof start === "number" && typeof end === "number"
+        ? source.slice(start, end)
+        : inlineMarkdownText(child.children)
+      const firstSourceCharacter = sourceText.trimStart()[0]
+
+      if (firstSourceCharacter !== "[" && firstSourceCharacter !== "<") {
+        return {
+          type: "text",
+          value: sourceText,
+          position: child.position
+        } as Text
+      }
+    }
+
+    demoteImplicitSourceLinks(child as RootContent, source)
+    return child
+  }) as typeof node.children
 }
 
 // Pre-process custom markdown syntax into HTML that can be parsed

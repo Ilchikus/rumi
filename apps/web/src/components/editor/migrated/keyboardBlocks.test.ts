@@ -22,6 +22,7 @@ import {
   extendBlockSelection,
   multiBlockSelectionKey,
   multiBlockSelectionPlugin,
+  selectBlock,
   selectAllBlocksInStages,
   selectEveryBlock
 } from "./plugins/multiBlockSelection"
@@ -104,17 +105,21 @@ describe("live editor keyboard block selection", () => {
       .map((pos) => state.doc.nodeAt(pos)?.textContent ?? "")
   }
 
-  it("adds one adjacent block with Shift-Arrow and preserves the selection", () => {
+  it("grows and shrinks an anchored block selection when Shift-Arrow reverses direction", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n\nFour\n", schema)
     const positions = blockPositions(EditorState.create({ doc }))
     let state = EditorState.create({
       doc,
       plugins: [multiBlockSelectionPlugin(schema)]
     })
-    state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
-      selectedBlocks: [positions[1]],
-      anchorBlock: positions[1]
-    }))
+    state = state.apply(
+      state.tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks: [positions[1]],
+          anchorBlock: positions[1]
+        })
+        .setSelection(NodeSelection.create(state.doc, positions[1]!))
+    )
 
     expect(extendBlockSelection("down")(state, (transaction) => {
       state = state.apply(transaction)
@@ -126,7 +131,46 @@ describe("live editor keyboard block selection", () => {
     expect(extendBlockSelection("up")(state, (transaction) => {
       state = state.apply(transaction)
     })).toBe(true)
-    expect(selectedText(state)).toEqual(["One", "Two", "Three"])
+    expect(selectedText(state)).toEqual(["Two"])
+    expect(state.doc.nodeAt(state.selection.from)?.textContent).toBe("Two")
+
+    expect(extendBlockSelection("up")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two"])
+    expect(state.doc.nodeAt(state.selection.from)?.textContent).toBe("One")
+
+    expect(extendBlockSelection("down")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["Two"])
+  })
+
+  it("toggles non-contiguous blocks and clears the native node highlight when the last block is removed", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n\nFour\n", schema)
+    const positions = blockPositions(EditorState.create({ doc }))
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, positions[0]! + 1),
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+
+    selectBlock(view, positions[0]!, "toggle")
+    selectBlock(view, positions[2]!, "toggle")
+    selectBlock(view, positions[3]!, "toggle")
+    expect(selectedText(state)).toEqual(["One", "Three", "Four"])
+
+    selectBlock(view, positions[2]!, "toggle")
+    expect(selectedText(state)).toEqual(["One", "Four"])
+
+    selectBlock(view, positions[0]!, "toggle")
+    selectBlock(view, positions[3]!, "toggle")
+    expect(selectedText(state)).toEqual([])
+    expect(state.selection).toBeInstanceOf(TextSelection)
   })
 
   it("extends a block selection to the document edge with Shift-Cmd-Arrow", () => {

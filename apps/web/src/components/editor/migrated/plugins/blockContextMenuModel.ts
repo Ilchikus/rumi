@@ -21,6 +21,23 @@ type BlockMenuTypingEvent = Pick<
   "altKey" | "ctrlKey" | "isComposing" | "key" | "metaKey"
 >
 
+type BlockHandleSelectionEvent = Pick<
+  MouseEvent,
+  "ctrlKey" | "metaKey" | "shiftKey"
+>
+
+export type BlockHandleSelectionMode = "preserve" | "shift" | "toggle" | "single"
+
+export function blockHandleSelectionMode(
+  selectedBlocks: readonly number[],
+  blockPos: number,
+  event: BlockHandleSelectionEvent
+): BlockHandleSelectionMode {
+  if (event.shiftKey) return "shift"
+  if (event.metaKey || event.ctrlKey) return "toggle"
+  return selectedBlocks.includes(blockPos) ? "preserve" : "single"
+}
+
 export function blockSelectionForHandleContextMenu(
   selectedBlocks: readonly number[],
   blockPos: number
@@ -90,22 +107,28 @@ export function matchingBlockTypeOptions(
 
   return BLOCK_TYPE_OPTIONS
     .map((option, index) => {
-      const label = option.label.toLowerCase()
-      const matchIndex = label.indexOf(normalizedQuery)
-      const rank = label === normalizedQuery
-        ? 0
-        : matchIndex === 0
-          ? 1
-          : 2
-      return { option, index, matchIndex, rank }
+      const matches = [option.label, ...option.aliases]
+        .map((value) => {
+          const candidate = value.toLowerCase()
+          const matchIndex = candidate.indexOf(normalizedQuery)
+          const rank = candidate === normalizedQuery
+            ? 0
+            : matchIndex === 0
+              ? 1
+              : 2
+          return { matchIndex, rank }
+        })
+        .filter((match) => match.matchIndex >= 0)
+        .sort((left, right) => left.rank - right.rank || left.matchIndex - right.matchIndex)
+      return { option, index, match: matches[0] }
     })
-    .filter(match => match.matchIndex >= 0)
+    .filter((entry) => entry.match)
     .sort((left, right) =>
-      left.rank - right.rank ||
-      left.matchIndex - right.matchIndex ||
+      left.match!.rank - right.match!.rank ||
+      left.match!.matchIndex - right.match!.matchIndex ||
       left.index - right.index
     )
-    .map(match => match.option)
+    .map((entry) => entry.option)
 }
 
 export function blockContextMenuPosition(

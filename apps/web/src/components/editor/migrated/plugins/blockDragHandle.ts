@@ -13,6 +13,7 @@ import type { BlockTypeOption } from "./blockTypePresentation"
 import { listDropIndent } from "../listDropIndent"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockHandleSelectionMode,
   blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
@@ -1134,31 +1135,12 @@ class BlockDragHandleView {
       try {
         // All blocks support multi-block selection
         const pluginState = multiBlockSelectionKey.getState(this.view.state)
-        const isInCurrentSelection =
-          pluginState?.selectedBlocks.includes(block.pos) ?? false
-
-        if (isInCurrentSelection) {
-          // Block is part of current multi-selection - preserve selection
-          // Just focus without changing selection (allows dragging multi-selection)
-        } else if (e.shiftKey) {
-          selectBlock(this.view, block.pos, "shift")
-        } else if (e.metaKey || e.ctrlKey) {
-          selectBlock(this.view, block.pos, "toggle")
-        } else {
-          // Select and decorate the block in the same transaction. A second
-          // selection-only transaction would immediately clear the decoration.
-          const node = this.view.state.doc.nodeAt(block.pos)
-          if (node) {
-            const tr = this.view.state.tr
-              .setSelection(NodeSelection.create(this.view.state.doc, block.pos))
-              .setMeta(multiBlockSelectionKey, {
-                selectedBlocks: [block.pos],
-                anchorBlock: block.pos
-              })
-              .setMeta("multiBlockKeep", true)
-            this.view.dispatch(tr)
-          }
-        }
+        const mode = blockHandleSelectionMode(
+          pluginState?.selectedBlocks ?? [],
+          block.pos,
+          e
+        )
+        if (mode !== "preserve") selectBlock(this.view, block.pos, mode)
       } finally {
         this.selectingFromHandle = false
       }

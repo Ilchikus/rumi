@@ -1,32 +1,36 @@
-# Rumi to-do
+## Planned
 
-- Remove bookmark blocks from the editor for now.
-- Remove the bookmark slash command, block conversion, NodeView, schema node, styling, and automatic URL-to-bookmark conversion.
-- Convert existing bookmark nodes to portable Markdown links or plain URLs without losing their destinations.
-- Parse standalone URLs as normal paragraph content instead of bookmark blocks.
-- Paste a URL as a normal inline Markdown link with `Command-V` on macOS and `Control-V` on Windows and Linux.
-- When text is selected, use it as the pasted link label; otherwise use the URL as both label and destination.
-- Paste a URL as the same normal inline Markdown link while stripping rich clipboard formatting with `Command-Shift-V` on macOS and `Control-Shift-V` on Windows and Linux.
-- Preserve normal plain-text paste behavior when the clipboard is not a URL.
-- Store internal and external links using the same portable Markdown-link format while allowing different navigation behavior.
-- Move the block containing the cursor up with `Control-Shift-Up` on macOS, Windows, and Linux.
-- Move the block containing the cursor down with `Control-Shift-Down` on macOS, Windows, and Linux.
-- Move a multi-block selection together without changing its internal order.
-- Preserve the cursor or block selection after keyboard movement and scroll the moved content into view.
-- Keep keyboard block movement separate from list indentation and outdentation.
-- Press `Command-A` on macOS or `Control-A` on Windows and Linux once to select the entire block containing the cursor without opening its context menu.
-- Show the first `Select All` state as an active highlighted block selection rather than an inline text selection, allowing typing to replace the selected block.
-- Press `Command-A` on macOS or `Control-A` on Windows and Linux a second time to select every block in the document.
-- Preserve the two-stage `Select All` behavior for blocks with rich inline formatting, nested lists, embeds, and multi-block selections.
-- Use `Command-/` on macOS or `Control-/` on Windows and Linux to toggle the context menu for an existing block selection or the cursor's current block without expanding the selection.
-- Open global workspace search with `Command-K` on macOS and `Control-K` on Windows and Linux.
-- Search global page titles, paths, frontmatter, and Markdown body content and open results through normal client navigation.
-- Open find for the current page with `Command-F` on macOS and `Control-F` on Windows and Linux.
-- Search the current unsaved editor state rather than only the last saved Markdown.
-- Open current-page find and replace with `Command-Shift-F` on macOS and `Control-Shift-F` on Windows and Linux.
-- Use `Enter` and `Shift-Enter` to navigate to the next and previous current-page matches.
-- Use `Escape` to close search and restore focus and selection to the editor.
-- Highlight every current-page match and keep the active result visible.
-- Make replace-one and replace-all undoable editor transactions that preserve surrounding block structure and marks.
-- Add focused transaction tests and real-browser smoke coverage for paste, keyboard movement, global search, page find, and replacement.
-- Explore a workspace-global Tag property whose option catalog is stored at the application/workspace level; when the Tag property is added to an ordinary page or database schema, the same options should be available across every page in that workspace.
+- cmd+block selector to select several areas (like 3+2+4 with non-selected blocks in-between)
+- rename change/create block from text to paragraph; add friendly names for block for create/change (e.g. h2, heading 2 will both focus on heading 2)
+- add "Create page" for sidebar context menu for folders and databases
+- copy url and relative path: hotkey and wire up ui
+- drag-n-drop block into db:
+    - into page - append to it
+    - between rows - create new item
+- `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
+- paragraphs are pasted to google sheets with blank lines in-between, but lists are pasted just fine - fix paragraphs pls
+- cmd+click on block handle should toggle block selection state (now it's just toggling on but not off)
+- when shift+down on selected block, it adds next block to selection (which is correct). but on shift+up, it should remove selection of a block selected previously, and if only one block left in selection it should add block above (and vice versa).
+- inline code
+    - cmd+v onto fully highlighted inline code makes it plain text - it should preserve the formatting
+- i type something inside \`\`, and when inline text is closed, cursor should be placed outside of the inline code. to explicitly enter the space inside inline, user press left arrow and cursor is placed inside the inline code. right arrow - cursor out
+- URL paste:
+    - Cmd+V on highlighted text - text becomes anchor to url/domain from buffer
+    - Cmd+V on text cursor - inline url/domain with buffer contents same for link anchor and url
+    - Shift+Cmd+V - replaces highlighted text or pastes buffer as plain text
+
+> for links it's important to understand that buffer contains url: either contains http/https, [www](http://www)., or generic domain format domain.tld, sub.domain.tld, domain.com.tld etc.
+>
+
+## To think
+
+- Global tags
+- Blocks identations and grouping:
+    - paragraph, quote, code, heading etc - group under parent block
+        - probably just lines starting with `<tab>` in source file are treated as child blocks
+        - list items prob should be the child of whole list block but idk it's kinda hard
+
+## Archive
+
+
+www.

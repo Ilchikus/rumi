@@ -11,6 +11,7 @@ import {
 } from "./blockDragHandle"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockHandleSelectionMode,
   blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
@@ -40,6 +41,24 @@ function selectedBlocks(state: EditorState): number[] {
 }
 
 describe("selected-block handle menu trigger", () => {
+  it("lets the primary modifier remove a block that is already selected", () => {
+    expect(blockHandleSelectionMode([5, 10], 5, {
+      shiftKey: false,
+      metaKey: true,
+      ctrlKey: false
+    })).toBe("toggle")
+    expect(blockHandleSelectionMode([5, 10], 5, {
+      shiftKey: false,
+      metaKey: false,
+      ctrlKey: false
+    })).toBe("preserve")
+    expect(blockHandleSelectionMode([5], 10, {
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false
+    })).toBe("shift")
+  })
+
   it("keeps the marquee anchor attached to its document position while scrolling", () => {
     expect(areaSelectionBounds(
       { x: 200, y: 300, scrollLeft: 0, scrollTop: 0 },
@@ -520,7 +539,10 @@ describe("selected-block handle menu trigger", () => {
       "Heading 3",
       "Checkbox"
     ])
-    expect(matchingBlockTypeOptions("text")[0]?.label).toBe("Text")
+    expect(matchingBlockTypeOptions("text")[0]?.label).toBe("Paragraph")
+    expect(matchingBlockTypeOptions("p")[0]?.label).toBe("Paragraph")
+    expect(matchingBlockTypeOptions("h2")[0]?.label).toBe("Heading 2")
+    expect(matchingBlockTypeOptions("heading 2")[0]?.label).toBe("Heading 2")
     expect(shouldShowBlockMenuActionsForQuery(true, "l", 2)).toBe(false)
     expect(shouldShowBlockMenuActionsForQuery(true, "li", 2)).toBe(false)
     expect(shouldShowBlockMenuActionsForQuery(true, "list", 2)).toBe(false)

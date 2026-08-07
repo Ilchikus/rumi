@@ -20,7 +20,7 @@ import {
   normalizeExternalRichSlice,
   normalizePastedTables
 } from "../richClipboardNormalization"
-import { isLinkDestination, normalizeLinkHref } from "../linkHref"
+import { isLinkDestination, isWebLinkDestination } from "../linkHref"
 
 export { normalizePastedTables } from "../richClipboardNormalization"
 
@@ -63,7 +63,7 @@ export function createUrlPasteTransaction(
   const href = text.trim()
   const link = schema.marks.link
   const hasSelectedText = state.selection instanceof TextSelection && !state.selection.empty
-  const isExternalUrl = /^(?:https?:\/\/|www\.)[^\s<>"]+$/iu.test(href)
+  const isExternalUrl = isWebLinkDestination(href)
 
   if (
     !link ||
@@ -73,20 +73,75 @@ export function createUrlPasteTransaction(
     return null
   }
 
-  const normalizedHref = normalizeLinkHref(href)
-
   if (hasSelectedText) {
     const transaction = state.tr.addMark(
       state.selection.from,
       state.selection.to,
-      link.create({ href: normalizedHref })
+      link.create({ href })
     )
     return transaction.setSelection(TextSelection.create(transaction.doc, state.selection.to))
   }
 
   return state.tr.replaceSelectionWith(
-    schema.text(href, [link.create({ href: normalizedHref })]),
+    schema.text(href, [link.create({ href })]),
     false
+  )
+}
+
+export function createInlineCodePasteTransaction(
+  state: EditorState,
+  text: string,
+  schema: Schema = state.schema
+): Transaction | null {
+  const { selection } = state
+  const code = schema.marks.code
+  if (
+    !code ||
+    !text ||
+    /[\r\n]/u.test(text) ||
+    !(selection instanceof TextSelection) ||
+    selection.empty ||
+    selection.$from.parent !== selection.$to.parent ||
+    selection.$from.parent.type.spec.code
+  ) return null
+
+  const parent = selection.$from.parent
+  const parentStart = selection.$from.start()
+  let offset = 0
+  let runFrom: number | null = null
+  let runTo: number | null = null
+  let runMarks: readonly import("prosemirror-model").Mark[] = []
+  let matchingMarks: readonly import("prosemirror-model").Mark[] | null = null
+
+  const finishRun = () => {
+    if (selection.from === runFrom && selection.to === runTo) {
+      matchingMarks = runMarks
+    }
+    runFrom = null
+    runTo = null
+    runMarks = []
+  }
+
+  parent.forEach((node) => {
+    const from = parentStart + offset
+    const to = from + node.nodeSize
+    const hasCode = Boolean(code.isInSet(node.marks))
+
+    if (hasCode && runFrom === null) {
+      runFrom = from
+      runMarks = node.marks
+    }
+    if (hasCode) runTo = to
+    if (!hasCode && runFrom !== null) finishRun()
+    offset += node.nodeSize
+  })
+
+  if (runFrom !== null) finishRun()
+  if (!matchingMarks) return null
+  return state.tr.replaceWith(
+    selection.from,
+    selection.to,
+    schema.text(text, matchingMarks)
   )
 }
 
@@ -316,6 +371,19 @@ export function pasteHandlerPlugin(schema: Schema) {
           return true
         }
 
+        if (!plainTextPaste) {
+          const inlineCodeTransaction = createInlineCodePasteTransaction(
+            view.state,
+            text,
+            schema
+          )
+          if (inlineCodeTransaction) {
+            event.preventDefault()
+            view.dispatch(finishPasteTransaction(inlineCodeTransaction))
+            return true
+          }
+        }
+
         let exactSlice: Slice | null = null
         if (!plainTextPaste) {
           exactSlice = parseRumiClipboardSlice(
@@ -344,7 +412,9 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         // A URL is always pasted as a normal inline link. Handle this before
         // rich HTML so a browser-provided anchor cannot replace selected text.
-        const urlTransaction = createUrlPasteTransaction(view.state, text, schema)
+        const urlTransaction = plainTextPaste
+          ? null
+          : createUrlPasteTransaction(view.state, text, schema)
         if (urlTransaction) {
           event.preventDefault()
           view.dispatch(finishPasteTransaction(urlTransaction))

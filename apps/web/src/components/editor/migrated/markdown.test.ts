@@ -83,13 +83,24 @@ describe("live editor Markdown round trips", () => {
     expect(parseMarkdown(serializeMarkdown(explicit), schema).toJSON()).toEqual(explicit.toJSON())
   })
 
-  it("keeps standalone URLs as portable inline links", () => {
-    const parsed = parseMarkdown("https://rumi.md\n", schema)
+  it.each([
+    "https://rumi.md",
+    "www.rumi.md",
+    "example.com"
+  ])("keeps an implicit source destination as plain text: %s", (destination) => {
+    const parsed = parseMarkdown(`${destination}\n`, schema)
 
     expect(schema.nodes.bookmark).toBeUndefined()
     expect(parsed.firstChild?.type.name).toBe("paragraph")
+    expect(parsed.firstChild?.firstChild?.marks).toHaveLength(0)
+    expect(serializeMarkdown(parsed)).toBe(`${destination}\n`)
+  })
+
+  it("uses explicit Markdown source syntax as the durable link state", () => {
+    const parsed = parseMarkdown("[Rumi](www.rumi.md)\n", schema)
+
     expect(parsed.firstChild?.firstChild?.marks.map((mark) => mark.type.name)).toContain("link")
-    expect(serializeMarkdown(parsed)).toBe("[https://rumi.md](https://rumi.md)\n")
+    expect(serializeMarkdown(parsed)).toBe("[Rumi](www.rumi.md)\n")
   })
 
   it("renders workspace links whose file paths contain unescaped spaces", () => {

@@ -449,6 +449,7 @@ const marks: { [key: string]: MarkSpec } = {
   },
 
   code: {
+    inclusive: false,
     parseDOM: [{ tag: "code" }],
     toDOM() {
       return ["code", 0]

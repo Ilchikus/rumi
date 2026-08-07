@@ -33,6 +33,7 @@ The heading above verifies the smallest supported heading level.
 
 1. Install memory
 2. Install storage
+    1. yes
 3. Create the boot volume
 4. Create the data volume
 5. Boot the server
@@ -129,6 +130,3 @@ Content after the divider verifies that normal editing continues after an atomic
 ```db
 source: Tasks
 ```
-
-
----

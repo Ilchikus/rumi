@@ -72,6 +72,16 @@ describe("portable editor clipboard serialization", () => {
     ].join("\n"))
   })
 
+  it("exports adjacent paragraph blocks as adjacent rows without blank lines", () => {
+    const slice = completeSlice("First paragraph\n\nSecond paragraph\n\nThird paragraph\n")
+
+    expect(serializeClipboardText(slice)).toBe([
+      "First paragraph",
+      "Second paragraph",
+      "Third paragraph"
+    ].join("\n"))
+  })
+
   it("round-trips the exact private Rumi slice", () => {
     const slice = completeSlice("- [x] Exact task\n\n![[.assets/spec.pdf]]\n")
     const encoded = serializeRumiClipboardSlice(slice)

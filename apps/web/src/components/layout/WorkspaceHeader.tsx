@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
+import { Copy } from "@phosphor-icons/react/dist/csr/Copy";
 import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
+import { LinkSimple } from "@phosphor-icons/react/dist/csr/LinkSimple";
 import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
@@ -30,6 +32,10 @@ interface WorkspaceHeaderProps {
   onToggleSearch: () => void;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onMoveToTrash: (node: WorkspaceNode) => Promise<boolean>;
+  onCopyUrl: () => void;
+  onCopyRelativePath: () => void;
+  copyUrlShortcut: string;
+  copyRelativePathShortcut: string;
   onSeeRevisions: () => void;
 }
 
@@ -50,6 +56,10 @@ export function WorkspaceHeader({
   onToggleSearch,
   onMoveNode,
   onMoveToTrash,
+  onCopyUrl,
+  onCopyRelativePath,
+  copyUrlShortcut,
+  copyRelativePathShortcut,
   onSeeRevisions
 }: WorkspaceHeaderProps): ReactElement {
   const breadcrumbs = useMemo(
@@ -156,6 +166,25 @@ export function WorkspaceHeader({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {hasOpenPage && (
+                    <>
+                      <DropdownMenuItem onSelect={onCopyUrl}>
+                        <LinkSimple size={16} />
+                        Copy URL
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground" aria-hidden="true">
+                          {copyUrlShortcut}
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={onCopyRelativePath}>
+                        <Copy size={16} />
+                        Copy relative path
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground" aria-hidden="true">
+                          {copyRelativePathShortcut}
+                        </span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {hasOpenPage && canManageActiveNode && <DropdownMenuSeparator />}
                   {canManageActiveNode && activeNode && (
                     <>
                       <DropdownMenuItem onSelect={() => setMoveTarget(activeNode)}>
@@ -171,7 +200,7 @@ export function WorkspaceHeader({
                       </DropdownMenuItem>
                     </>
                   )}
-                  {canManageActiveNode && hasOpenPage && <DropdownMenuSeparator />}
+                  {(canManageActiveNode || hasOpenPage) && hasOpenPage && <DropdownMenuSeparator />}
                   {hasOpenPage && (
                     <DropdownMenuItem onSelect={onSeeRevisions}>
                       <ClockCounterClockwise size={16} />

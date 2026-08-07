@@ -307,6 +307,15 @@ function isListNode(node: ProseMirrorNode): boolean {
   return ["bullet_item", "numbered_item", "task_item"].includes(node.type.name)
 }
 
+function clipboardBlockSeparator(
+  previous: ProseMirrorNode,
+  next: ProseMirrorNode
+): string {
+  if (isListNode(previous) && isListNode(next)) return "\n"
+  if (previous.type.name === "paragraph" && next.type.name === "paragraph") return "\n"
+  return "\n\n"
+}
+
 export function serializeClipboardHtml(slice: Slice): string {
   return serializeFragmentHtml(slice.content)
 }
@@ -317,7 +326,7 @@ export function serializeClipboardText(slice: Slice): string {
 
   nodes.forEach((node, index) => {
     if (index > 0) {
-      text += isListNode(nodes[index - 1]!) && isListNode(node) ? "\n" : "\n\n"
+      text += clipboardBlockSeparator(nodes[index - 1]!, node)
     }
     text += serializeBlockText(node)
   })

@@ -330,33 +330,39 @@ export function extendBlockSelection(
 
     const positions: number[] = []
     state.doc.forEach((_node, pos) => positions.push(pos))
-    const edge = direction === "down" ? selected.at(-1)! : selected[0]!
-    const edgeIndex = positions.indexOf(edge)
-    if (edgeIndex < 0) return false
+    const anchor = pluginState?.anchorBlock !== null &&
+        pluginState?.anchorBlock !== undefined &&
+        positions.includes(pluginState.anchorBlock)
+      ? pluginState.anchorBlock
+      : selected[0]!
+    const active = state.selection instanceof NodeSelection &&
+        selected.includes(state.selection.from)
+      ? state.selection.from
+      : anchor
+    const anchorIndex = positions.indexOf(anchor)
+    const activeIndex = positions.indexOf(active)
+    if (anchorIndex < 0 || activeIndex < 0) return false
 
-    const added = direction === "down"
-      ? positions.slice(
-          edgeIndex + 1,
-          toDocumentBoundary ? positions.length : edgeIndex + 2
-        )
-      : positions.slice(
-          toDocumentBoundary ? 0 : Math.max(0, edgeIndex - 1),
-          edgeIndex
-        )
-    if (added.length === 0) return true
+    const targetIndex = toDocumentBoundary
+      ? direction === "down" ? positions.length - 1 : 0
+      : activeIndex + (direction === "down" ? 1 : -1)
+    if (targetIndex < 0 || targetIndex >= positions.length) return true
 
     if (dispatch) {
-      const selectedBlocks = [...new Set([...selected, ...added])]
-        .sort((left, right) => left - right)
-      const activePos = direction === "down"
-        ? selectedBlocks.at(-1)!
-        : selectedBlocks[0]!
+      const range = positions.slice(
+        Math.min(toDocumentBoundary ? activeIndex : anchorIndex, targetIndex),
+        Math.max(toDocumentBoundary ? activeIndex : anchorIndex, targetIndex) + 1
+      )
+      const selectedBlocks = toDocumentBoundary
+        ? [...new Set([...selected, ...range])].sort((left, right) => left - right)
+        : range
+      const activePos = positions[targetIndex]!
       dispatch(
         state.tr
           .setSelection(NodeSelection.create(state.doc, activePos))
           .setMeta(multiBlockSelectionKey, {
             selectedBlocks,
-            anchorBlock: pluginState?.anchorBlock ?? selected[0] ?? null
+            anchorBlock: anchor
           })
           .setMeta("multiBlockKeep", true)
           .scrollIntoView()
@@ -460,7 +466,13 @@ export function selectBlock(view: EditorView, blockPos: number, mode: "single" |
     const newBlocks = idx >= 0
       ? currentSelected.filter(p => p !== blockPos)
       : [...currentSelected, blockPos]
-    newState = { selectedBlocks: newBlocks, anchorBlock: blockPos }
+    const currentAnchor = pluginState?.anchorBlock ?? null
+    const anchorBlock = idx < 0
+      ? blockPos
+      : currentAnchor !== null && newBlocks.includes(currentAnchor)
+        ? currentAnchor
+        : newBlocks.at(-1) ?? null
+    newState = { selectedBlocks: newBlocks, anchorBlock }
   } else {
     // Single selection
     newState = { selectedBlocks: [blockPos], anchorBlock: blockPos }
@@ -468,6 +480,14 @@ export function selectBlock(view: EditorView, blockPos: number, mode: "single" |
 
   const tr = state.tr.setMeta(multiBlockSelectionKey, newState)
   tr.setMeta("multiBlockKeep", true)
+  const activeBlock = mode === "toggle" && !newState.selectedBlocks.includes(blockPos)
+    ? newState.anchorBlock
+    : blockPos
+  if (activeBlock !== null && state.doc.nodeAt(activeBlock)) {
+    tr.setSelection(NodeSelection.create(state.doc, activeBlock))
+  } else if (state.selection instanceof NodeSelection) {
+    tr.setSelection(TextSelection.near(state.doc.resolve(blockPos + 1)))
+  }
   view.dispatch(tr)
 }
 

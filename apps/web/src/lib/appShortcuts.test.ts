@@ -15,7 +15,7 @@ const baseEvent = {
   shiftKey: false
 };
 
-describe("browser-safe app shortcuts", () => {
+describe("application shortcuts", () => {
   it("opens create with Control-N on Mac without taking browser Command-N", () => {
     expect(appShortcutAction({
       ...baseEvent,
@@ -61,6 +61,62 @@ describe("browser-safe app shortcuts", () => {
     }, "linux")).toBe("toggle-sidebar");
   });
 
+  it("copies the open page URL with Shift-Command-C and its non-Mac equivalent", () => {
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "c",
+      code: "KeyC",
+      metaKey: true,
+      shiftKey: true
+    }, "mac")).toBe("copy-page-url");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "C",
+      code: "KeyC",
+      ctrlKey: true,
+      shiftKey: true
+    }, "linux")).toBe("copy-page-url");
+  });
+
+  it("copies the open page path with Shift-Command-P and ignores unsafe variants", () => {
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "p",
+      code: "KeyP",
+      metaKey: true,
+      shiftKey: true
+    }, "mac")).toBe("copy-page-relative-path");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "p",
+      code: "KeyP",
+      ctrlKey: true,
+      shiftKey: true
+    }, "linux")).toBe("copy-page-relative-path");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "p",
+      code: "KeyP",
+      metaKey: true
+    }, "mac")).toBeNull();
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "p",
+      code: "KeyP",
+      metaKey: true,
+      shiftKey: true,
+      repeat: true
+    }, "mac")).toBeNull();
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "p",
+      code: "KeyP",
+      metaKey: true,
+      shiftKey: true,
+      isComposing: true
+    }, "mac")).toBeNull();
+  });
+
   it("maps unmodified 1, 2, and 3 to create-menu focus positions", () => {
     expect(createMenuIndexForKey({ ...baseEvent, key: "1", code: "Digit1" })).toBe(0);
     expect(createMenuIndexForKey({ ...baseEvent, key: "2", code: "Digit2" })).toBe(1);
@@ -84,12 +140,16 @@ describe("browser-safe app shortcuts", () => {
     expect(shortcutLabels("mac")).toEqual({
       create: "⌃N",
       sidebar: "⌘S",
-      immediate: "⌘↵"
+      immediate: "⌘↵",
+      copyUrl: "⇧⌘C",
+      copyRelativePath: "⇧⌘P"
     });
     expect(shortcutLabels("linux")).toEqual({
       create: "Alt+N",
       sidebar: "Ctrl+S",
-      immediate: "Ctrl+Enter"
+      immediate: "Ctrl+Enter",
+      copyUrl: "Ctrl+Shift+C",
+      copyRelativePath: "Ctrl+Shift+P"
     });
   });
 });

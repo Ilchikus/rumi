@@ -19,6 +19,7 @@ import {
 import {
   createPlainTextPasteSlice,
   createCodeTextPasteTransaction,
+  createInlineCodePasteTransaction,
   createUrlPasteTransaction,
   normalizePastedTables,
   pasteHandlerPlugin
@@ -58,6 +59,20 @@ describe("live editor URL paste", () => {
     expect(transaction).not.toBeNull()
     expect(transaction!.doc.firstChild?.type.name).toBe("paragraph")
     expect(serializeMarkdown(transaction!.doc)).toBe("[https://rumi.md](https://rumi.md)\n")
+  })
+
+  it.each([
+    "www.rumi.md",
+    "example.com",
+    "docs.example.com.ua/guide?ready=true#start"
+  ])("pastes the scheme-less web destination %s as an inline link", (destination) => {
+    const state = stateWithSelection("", 1)
+    const transaction = createUrlPasteTransaction(state, destination, schema)
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.firstChild?.textContent).toBe(destination)
+    expect(transaction!.doc.firstChild?.firstChild?.marks[0]?.attrs.href).toBe(destination)
+    expect(serializeMarkdown(transaction!.doc)).toBe(`[${destination}](${destination})\n`)
   })
 
   it("uses selected text as the pasted link label", () => {
@@ -168,6 +183,74 @@ describe("live editor plain-text paste", () => {
       "soft_break",
       "text"
     ])
+  })
+
+  it("keeps URL and domain text literal for paste-as-plain-text", () => {
+    const plugin = pasteHandlerPlugin(schema)
+    let state = stateWithSelection("Replace me", 1, 11)
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const parsedPlain = plugin.props.clipboardTextParser?.call(
+      plugin,
+      "example.com",
+      state.selection.$from,
+      true,
+      view
+    ) ?? createPlainTextPasteSlice("example.com", schema)
+    const transformed = plugin.props.transformPasted?.call(plugin, parsedPlain, view, true) ?? parsedPlain
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) { return type === "text/plain" ? "example.com" : "" }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+
+    expect(plugin.props.handlePaste?.call(plugin, view, event, transformed)).toBe(false)
+    expect(state.doc.firstChild?.textContent).toBe("Replace me")
+
+    const pasted = state.apply(state.tr.replaceSelection(transformed))
+    expect(serializeMarkdown(pasted.doc)).toBe("example.com\n")
+    expect(parseMarkdown(serializeMarkdown(pasted.doc), schema).firstChild?.firstChild?.marks)
+      .toHaveLength(0)
+  })
+})
+
+describe("live editor inline-code paste", () => {
+  it("preserves inline code when normal paste replaces the complete marked range", () => {
+    const state = stateWithSelection("`before` after", 1, 7)
+    const transaction = createInlineCodePasteTransaction(state, "replacement", schema)
+
+    expect(transaction).not.toBeNull()
+    expect(serializeMarkdown(transaction!.doc)).toBe("`replacement` after\n")
+  })
+
+  it("does not claim a partial inline-code selection", () => {
+    const state = stateWithSelection("`before` after", 2, 7)
+
+    expect(createInlineCodePasteTransaction(state, "replacement", schema)).toBeNull()
+  })
+
+  it("routes a normal clipboard paste through inline-code preservation", () => {
+    const plugin = pasteHandlerPlugin(schema)
+    let state = stateWithSelection("`before` after", 1, 7)
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    const slice = createPlainTextPasteSlice("replacement", schema)
+    const event = {
+      clipboardData: {
+        files: [],
+        getData(type: string) { return type === "text/plain" ? "replacement" : "" }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+
+    expect(plugin.props.handlePaste?.call(plugin, view, event, slice)).toBe(true)
+    expect(serializeMarkdown(state.doc)).toBe("`replacement` after\n")
   })
 })
 
@@ -604,7 +687,7 @@ describe("live editor copy", () => {
 
     expect(plugin.props.handleDOMEvents?.copy?.call(plugin, view, event)).toBe(true)
     expect(data.get("text/html")).toBe("<p>One</p><p>Three</p>")
-    expect(data.get("text/plain")).toBe("One\n\nThree")
+    expect(data.get("text/plain")).toBe("One\nThree")
     expect(data.get("text/html")).not.toContain("Two")
   })
 

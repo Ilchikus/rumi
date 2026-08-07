@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
   inlineCodeBoundaryPlugin,
+  inlineCodeBoundaryPluginKey,
   insertLiteralNewlineInCode,
   removeEmptyParagraphBlock,
   resetEmptyFormattedBlock,
@@ -531,11 +532,41 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     )).toBe(true)
     expect(state.selection.from).toBe(6)
     expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 6 })
 
-    view.dispatch(state.tr.insertText("!"))
+    view.dispatch(
+      state.tr
+        .setSelection(TextSelection.create(state.doc, 6))
+        .removeStoredMark(code.type)
+    )
     expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
-    view.dispatch(state.tr.insertText("more"))
-    expect(serializeMarkdown(state.doc)).toBe("`value!more`\n")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 6 })
+
+    expect(boundaryPlugin.props.handleTextInput?.call(
+      boundaryPlugin,
+      view,
+      6,
+      6,
+      "!",
+      () => state.tr.insertText("!", 6, 6)
+    )).toBe(true)
+    expect(serializeMarkdown(state.doc)).toBe("`value!`\n")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 7 })
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(false)
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, 6)))
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toBeNull()
+
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, 7)))
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(true)
 
     expect(boundaryPlugin.props.handleKeyDown?.call(
       boundaryPlugin,
@@ -544,7 +575,7 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     )).toBe(true)
     expect(state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
     view.dispatch(state.tr.insertText(" after"))
-    expect(serializeMarkdown(state.doc)).toBe("`value!more` after\n")
+    expect(serializeMarkdown(state.doc)).toBe("`value!` after\n")
   })
 
   it.each(["code_block", "mermaid"])(

@@ -2,7 +2,7 @@
 import { keymap } from "prosemirror-keymap"
 import { undoInputRule } from "prosemirror-inputrules"
 import { Schema } from "prosemirror-model"
-import { Command, NodeSelection, Plugin, TextSelection } from "prosemirror-state"
+import { Command, NodeSelection, Plugin, PluginKey, TextSelection } from "prosemirror-state"
 import {
   setBlockType,
   chainCommands,
@@ -34,7 +34,16 @@ import { insertAdjacentParagraphCommand } from "./plugins/topToolbarActions"
 import { openSelectionToolbarLinkEditor } from "./plugins/selectionToolbar"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
+const INLINE_CODE_BOUNDARY_ENTER_META = "rumiInlineCodeBoundaryEnter"
 const INLINE_CODE_BOUNDARY_EXIT_META = "rumiInlineCodeBoundaryExit"
+const INLINE_CODE_BOUNDARY_CONTINUE_META = "rumiInlineCodeBoundaryContinue"
+
+interface InlineCodeBoundaryState {
+  position: number
+}
+
+export const inlineCodeBoundaryPluginKey =
+  new PluginKey<InlineCodeBoundaryState | null>("inlineCodeBoundary")
 
 // When cursor is on a horizontal_rule (NodeSelection), insert a paragraph after it (Enter)
 function exitHorizontalRuleEnter(schema: Schema): Command {
@@ -186,7 +195,11 @@ export function enterInlineCodeAtEnd(schema: Schema): Command {
       code.isInSet(selection.$from.nodeAfter?.marks ?? [])
     ) return false
 
-    dispatch?.(state.tr.addStoredMark(code.create()))
+    dispatch?.(
+      state.tr
+        .addStoredMark(code.create())
+        .setMeta(INLINE_CODE_BOUNDARY_ENTER_META, true)
+    )
     return true
   }
 }
@@ -214,10 +227,61 @@ export function exitInlineCodeAtEnd(schema: Schema): Command {
 }
 
 export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
-  return new Plugin({
+  return new Plugin<InlineCodeBoundaryState | null>({
+    key: inlineCodeBoundaryPluginKey,
+    state: {
+      init: () => null,
+      apply(transaction, boundary, _oldState, newState) {
+        if (transaction.getMeta(INLINE_CODE_BOUNDARY_EXIT_META)) return null
+        if (transaction.getMeta(INLINE_CODE_BOUNDARY_ENTER_META)) {
+          return { position: newState.selection.from }
+        }
+        if (!boundary) return null
+
+        const position = transaction.mapping.map(boundary.position, 1)
+        const { selection } = newState
+        if (
+          !(selection instanceof TextSelection) ||
+          !selection.empty ||
+          selection.from !== position
+        ) return null
+
+        return { position }
+      }
+    },
     props: {
       handleKeyDown(view, event) {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false
+
+        const boundary = inlineCodeBoundaryPluginKey.getState(view.state)
+        if (
+          event.key === "ArrowLeft" &&
+          boundary?.position === view.state.selection.from
+        ) {
+          // The first ArrowLeft chooses the code-side affinity without changing
+          // the document position. Let the second one move through the code.
+          return false
+        }
+
+        if (
+          event.key === "ArrowRight" &&
+          boundary?.position === view.state.selection.from
+        ) {
+          const code = schema.marks.code
+          if (!code) return false
+          view.dispatch(
+            view.state.tr
+              .removeStoredMark(code)
+              .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+          )
+
+          if (typeof view.domAtPos === "function") {
+            const domPosition = view.domAtPos(boundary.position, 1)
+            const ownerDocument = domPosition.node.ownerDocument ?? view.dom.ownerDocument
+            ownerDocument.getSelection()?.collapse(domPosition.node, domPosition.offset)
+          }
+          return true
+        }
 
         const command = event.key === "ArrowLeft"
           ? enterInlineCodeAtEnd(schema)
@@ -236,10 +300,41 @@ export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
         ownerDocument.getSelection()?.collapse(domPosition.node, domPosition.offset)
         return true
       },
+      handleTextInput(view, from, to, text) {
+        const boundary = inlineCodeBoundaryPluginKey.getState(view.state)
+        const code = schema.marks.code
+        if (
+          !boundary ||
+          !code ||
+          from !== boundary.position ||
+          to !== boundary.position ||
+          /[\r\n]/u.test(text)
+        ) return false
+
+        view.dispatch(
+          view.state.tr
+            .insertText(text, from, to)
+            .addMark(from, from + text.length, code.create())
+            .addStoredMark(code.create())
+            .setMeta(INLINE_CODE_BOUNDARY_CONTINUE_META, true)
+        )
+        return true
+      },
       handleDOMEvents: {
+        mousedown(view) {
+          const boundary = inlineCodeBoundaryPluginKey.getState(view.state)
+          const code = schema.marks.code
+          if (!boundary || !code) return false
+          view.dispatch(
+            view.state.tr
+              .removeStoredMark(code)
+              .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+          )
+          return false
+        },
         blur(view) {
           const code = schema.marks.code
-          if (!code?.isInSet(view.state.storedMarks ?? [])) return false
+          if (!code || !inlineCodeBoundaryPluginKey.getState(view.state)) return false
           view.dispatch(
             view.state.tr
               .removeStoredMark(code)
@@ -249,7 +344,7 @@ export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
         }
       }
     },
-    appendTransaction(transactions, oldState, newState) {
+    appendTransaction(transactions, _oldState, newState) {
       const code = schema.marks.code
       const { selection } = newState
       if (
@@ -257,7 +352,7 @@ export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
         transactions.some((transaction) =>
           transaction.getMeta(INLINE_CODE_BOUNDARY_EXIT_META)
         ) ||
-        !code.isInSet(oldState.storedMarks ?? []) ||
+        !inlineCodeBoundaryPluginKey.getState(newState) ||
         code.isInSet(newState.storedMarks ?? []) ||
         !(selection instanceof TextSelection) ||
         !selection.empty ||

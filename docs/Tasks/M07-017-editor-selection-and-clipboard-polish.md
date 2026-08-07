@@ -57,6 +57,10 @@ canonical workspace path through one action surface.
   types.
 - Add child creation to sidebar node menus: folders offer page, folder, and database; databases
   offer page only.
+- Let primary-modifier **New Page** from a sidebar folder/database menu skip the inline naming row,
+  open the created page, and select its default title. Apply the same immediate open/title selection
+  to primary-modifier click on a database view's **New** button while keeping ordinary creation in
+  the table's inline name editor.
 
 ## Out Of Scope
 
@@ -93,6 +97,11 @@ editor, with current-page action wiring in the web shell.
 - Sheets receives adjacent paragraphs without empty rows, Rumi structure remains intact, and text
   selections do not acquire their containing list or checkbox syntax.
 - Normal and plain-text paste have distinct, predictable URL and inline-code behavior.
+- A durable inline-code closing boundary has only two intentional caret states: outside, or inside
+  after one Left press; the next Left moves through the code text instead of consuming another
+  invisible boundary state.
+- Modified **New Page** actions from sidebar containers and database views open the created page with
+  its default title selected, while ordinary creation keeps the existing inline naming flow.
 - The open page's public URL and canonical relative path can be copied from both the File actions
   menu and documented shortcuts.
 - The installable server package passes its `0.1.15` release check.
@@ -101,8 +110,9 @@ editor, with current-page action wiring in the web shell.
 
 Verified on 2026-08-07:
 
-- focused editor, clipboard, link, current-page action, and application-shortcut coverage passed
-- `corepack pnpm check` passed with 70 test files and 559 tests, typecheck, the production web
+- focused editor, clipboard, link, modified-creation, current-page action, and application-shortcut
+  coverage passed
+- `corepack pnpm check` passed with 70 test files and 561 tests, typecheck, the production web
   build, and the bundled server build
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
 - user browser QA remains pending before merge

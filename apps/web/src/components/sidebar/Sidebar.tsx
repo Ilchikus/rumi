@@ -100,6 +100,14 @@ export function sidebarNodeCreateKinds(
   return [];
 }
 
+export function shouldCreatePageImmediately(
+  kind: SidebarCreateKind,
+  event: Parameters<typeof hasPrimaryModifier>[0],
+  platform: Parameters<typeof hasPrimaryModifier>[1]
+): boolean {
+  return kind === "page" && hasPrimaryModifier(event, platform);
+}
+
 const TREE_INDENT_PX = 20;
 const TREE_ROW_HEIGHT_PX = 32;
 const TREE_ROW_PADDING_PX = 14;
@@ -419,6 +427,7 @@ export function Sidebar({
         onOpenNode={onOpenNode}
         onToggleExpanded={toggleExpanded}
         onStartCreate={startCreate}
+        onCreateDefault={onCreateDefault}
         onStartRename={startRename}
         onRenameNode={onRenameNode}
         onMoveNode={requestMove}
@@ -547,6 +556,7 @@ export function Sidebar({
             }
           }}
           onCreate={startCreate}
+          onCreateDefault={onCreateDefault}
           onRename={startRename}
           onMove={requestMove}
           onConvert={requestConvert}
@@ -590,6 +600,7 @@ interface TreeNodeProps {
   onOpenNode: (node: WorkspaceNode) => void;
   onToggleExpanded: (path: string) => void;
   onStartCreate: (parentPath: string, kind: CreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
   onStartRename: (node: WorkspaceNode) => void;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode) => void;
@@ -611,6 +622,7 @@ function TreeNode({
   onOpenNode,
   onToggleExpanded,
   onStartCreate,
+  onCreateDefault,
   onStartRename,
   onRenameNode,
   onMoveNode,
@@ -727,6 +739,7 @@ function TreeNode({
       <NodeMenu
         node={node}
         onCreate={onStartCreate}
+        onCreateDefault={onCreateDefault}
         onRename={onStartRename}
         onMove={onMoveNode}
         onConvert={onConvertNode}
@@ -758,6 +771,7 @@ function TreeNode({
 function NodeMenu({
   node,
   onCreate,
+  onCreateDefault,
   onRename,
   onMove,
   onConvert,
@@ -765,6 +779,7 @@ function NodeMenu({
 }: {
   node: WorkspaceNode;
   onCreate: (parentPath: string, kind: CreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
   onConvert: (node: WorkspaceNode) => void;
@@ -788,6 +803,7 @@ function NodeMenu({
         <NodeMenuItems
           node={node}
           onCreate={onCreate}
+          onCreateDefault={onCreateDefault}
           onRename={onRename}
           onMove={onMove}
           onConvert={onConvert}
@@ -930,6 +946,7 @@ function FloatingSidebarMenu({
   menu,
   onOpenChange,
   onCreate,
+  onCreateDefault,
   onRename,
   onMove,
   onConvert,
@@ -938,6 +955,7 @@ function FloatingSidebarMenu({
   menu: FloatingMenu;
   onOpenChange: (open: boolean) => void;
   onCreate: (parentPath: string, kind: CreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
   onConvert: (node: WorkspaceNode) => void;
@@ -959,6 +977,7 @@ function FloatingSidebarMenu({
           <NodeMenuItems
             node={menu.node}
             onCreate={onCreate}
+            onCreateDefault={onCreateDefault}
             onRename={onRename}
             onMove={onMove}
             onConvert={onConvert}
@@ -988,6 +1007,7 @@ function FloatingSidebarMenu({
 function NodeMenuItems({
   node,
   onCreate,
+  onCreateDefault,
   onRename,
   onMove,
   onConvert,
@@ -995,19 +1015,47 @@ function NodeMenuItems({
 }: {
   node: WorkspaceNode;
   onCreate: (parentPath: string, kind: CreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
   onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   const createKinds = sidebarNodeCreateKinds(node.kind);
+  const platform = appShortcutPlatform();
+  const immediateCreationRef = useRef<CreateKind | null>(null);
 
   return (
     <>
       {createKinds.length > 0 && (
         <>
           {createKinds.map((kind) => (
-            <DropdownMenuItem key={kind} onSelect={() => onCreate(node.path, kind)}>
+            <DropdownMenuItem
+              key={kind}
+              onPointerDown={(event) => {
+                immediateCreationRef.current = shouldCreatePageImmediately(
+                  kind,
+                  event,
+                  platform
+                ) ? kind : null;
+              }}
+              onKeyDown={(event) => {
+                immediateCreationRef.current = event.key === "Enter" &&
+                  shouldCreatePageImmediately(kind, event, platform)
+                  ? kind
+                  : null;
+              }}
+              onSelect={() => {
+                if (immediateCreationRef.current === kind) {
+                  immediateCreationRef.current = null;
+                  void onCreateDefault(node.path, kind).catch(() => undefined);
+                  return;
+                }
+
+                immediateCreationRef.current = null;
+                onCreate(node.path, kind);
+              }}
+            >
               {kind === "page"
                 ? <NotePencil size={16} />
                 : kind === "folder"

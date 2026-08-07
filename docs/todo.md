@@ -9,7 +9,7 @@
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
-- [ ] paragraphs are pasted to google sheets with blank lines in-between, but lists are pasted just fine - fix paragraphs pls
+- [x] paragraphs are pasted to google sheets with blank lines in-between, but lists are pasted just fine - fix paragraphs pls
 - [x] cmd+click on block handle should toggle block selection state (now it's just toggling on but not off)
 - [x] when shift+down on selected block, it adds next block to selection (which is correct). but on shift+up, it should remove selection of a block selected previously, and if only one block left in selection it should add block above (and vice versa).
 - [ ] inline code
@@ -21,8 +21,8 @@
     - [ ] Shift+Cmd+V - replaces highlighted text or pastes buffer as plain text
 
 > for links it's important to understand that buffer contains url: either contains http/https, www., or generic domain format domain.tld, sub.domain.tld, domain.com.tld etc.
->
-- [ ] changing lists with identation to other list type resets ident - they need to be preserved
+> 
+- [x] changing lists with identation to other list type resets ident - they need to be preserved
 
 ## To think
 
@@ -38,3 +38,6 @@
     - alternatively consider another structure for 3D databases - md content can live inside prop. kinda like Notion i think - more structured but less file-first and compatible with Obsidian
 
 ## Archive
+
+
+`preserves` sdfsdfs

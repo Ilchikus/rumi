@@ -24,7 +24,10 @@ import {
   normalizePastedTables,
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
-import { inlineCodeBoundaryPlugin } from "./keymap"
+import {
+  inlineCodeBoundaryPlugin,
+  inlineCodeBoundaryPluginKey
+} from "./keymap"
 
 function stateWithSelection(markdown: string, from: number, to = from): EditorState {
   const doc = parseMarkdown(markdown, schema)
@@ -638,6 +641,7 @@ describe("live editor inline-code boundary affinity", () => {
       key("ArrowLeft")
     )).toBe(true)
     expect(view.state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    expect(inlineCodeBoundaryPluginKey.getState(view.state)).toEqual({ position: 6 })
     expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).not.toBeNull()
 
     expect(boundaryPlugin.props.handleKeyDown?.call(

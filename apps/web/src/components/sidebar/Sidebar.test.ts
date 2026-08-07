@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { sidebarNodeCreateKinds } from "./Sidebar";
+import {
+  shouldCreatePageImmediately,
+  sidebarNodeCreateKinds
+} from "./Sidebar";
 
 const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
@@ -27,6 +30,21 @@ describe("sidebar create-menu shortcuts", () => {
     expect(sidebarSource).toContain("itemRefs.current[index]?.focus()");
     expect(sidebarSource).toContain('event.key !== "Enter" || !hasPrimaryModifier(event, platform)');
     expect(sidebarSource).toContain("immediatePointerKindRef.current === option.kind");
+  });
+
+  it("opens modified New Page actions from folder and database menus immediately", () => {
+    const commandClick = {
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false
+    };
+
+    expect(shouldCreatePageImmediately("page", commandClick, "mac")).toBe(true);
+    expect(shouldCreatePageImmediately("folder", commandClick, "mac")).toBe(false);
+    expect(shouldCreatePageImmediately("database", commandClick, "mac")).toBe(false);
+    expect(sidebarSource).toContain("void onCreateDefault(node.path, kind)");
+    expect(sidebarSource).toContain("onCreateDefault={onCreateDefault}");
   });
 
   it("opens default-named items with their complete title selected", () => {

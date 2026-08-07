@@ -1715,7 +1715,10 @@ export function App(): ReactElement {
     }
   }, [createDatabase, createFolder, createPage]);
 
-  const openRecordPath = useCallback(async (recordPath: string) => {
+  const openRecordPath = useCallback(async (
+    recordPath: string,
+    selectTitleAfterOpen = false
+  ) => {
     try {
       setSettingsOpen(false);
       setTrashOpen(false);
@@ -1727,12 +1730,15 @@ export function App(): ReactElement {
       setSelection({ nodePath: recordPath, openPath: nextPage.path, kind: "page" });
       saveStateRef.current = "idle";
       setSaveState("idle");
+      if (selectTitleAfterOpen) {
+        requestPageTitleSelection(nextPage.path);
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
       setSaveState("error");
     }
-  }, [loadPage]);
+  }, [loadPage, requestPageTitleSelection]);
 
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
     try {
@@ -3023,6 +3029,7 @@ export function App(): ReactElement {
                         parentPathForPage(page.path)
                       )}
                       onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
+                      onOpenCreatedRecord={(recordPath) => void openRecordPath(recordPath, true)}
                       onMessage={setMessage}
                     />
                   </Suspense>

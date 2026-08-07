@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { sidebarNodeCreateKinds } from "./Sidebar";
 
 const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
@@ -9,6 +10,12 @@ const editableTitleSource = readFileSync(
 );
 
 describe("sidebar create-menu shortcuts", () => {
+  it("offers three child types for folders and only pages for databases", () => {
+    expect(sidebarNodeCreateKinds("folder")).toEqual(["page", "folder", "database"]);
+    expect(sidebarNodeCreateKinds("database")).toEqual(["page"]);
+    expect(sidebarNodeCreateKinds("page")).toEqual([]);
+  });
+
   it("keeps the root create menu controlled by the browser shell", () => {
     expect(sidebarSource).toContain("<DropdownMenu open={open} onOpenChange={onOpenChange}>");
     expect(appSource).toContain('action === "open-create-menu"');

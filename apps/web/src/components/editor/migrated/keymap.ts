@@ -1,7 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { keymap } from "prosemirror-keymap"
 import { Schema } from "prosemirror-model"
-import { Command, NodeSelection, TextSelection } from "prosemirror-state"
+import { Command, NodeSelection, Plugin, TextSelection } from "prosemirror-state"
 import {
   setBlockType,
   chainCommands,
@@ -33,6 +33,7 @@ import { insertAdjacentParagraphCommand } from "./plugins/topToolbarActions"
 import { openSelectionToolbarLinkEditor } from "./plugins/selectionToolbar"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
+const INLINE_CODE_BOUNDARY_EXIT_META = "rumiInlineCodeBoundaryExit"
 
 // When cursor is on a horizontal_rule (NodeSelection), insert a paragraph after it (Enter)
 function exitHorizontalRuleEnter(schema: Schema): Command {
@@ -168,6 +169,70 @@ function getFlatListItemTypes(schema: Schema) {
     schema.nodes.numbered_item,
     schema.nodes.task_item
   ].filter(Boolean)
+}
+
+export function enterInlineCodeAtEnd(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    const code = schema.marks.code
+    if (
+      !code ||
+      !(selection instanceof TextSelection) ||
+      !selection.empty ||
+      selection.$from.parent.type.spec.code ||
+      code.isInSet(state.storedMarks ?? []) ||
+      !code.isInSet(selection.$from.nodeBefore?.marks ?? []) ||
+      code.isInSet(selection.$from.nodeAfter?.marks ?? [])
+    ) return false
+
+    dispatch?.(state.tr.addStoredMark(code.create()))
+    return true
+  }
+}
+
+export function exitInlineCodeAtEnd(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    const code = schema.marks.code
+    if (
+      !code ||
+      !(selection instanceof TextSelection) ||
+      !selection.empty ||
+      !code.isInSet(state.storedMarks ?? []) ||
+      !code.isInSet(selection.$from.nodeBefore?.marks ?? []) ||
+      code.isInSet(selection.$from.nodeAfter?.marks ?? [])
+    ) return false
+
+    dispatch?.(
+      state.tr
+        .removeStoredMark(code)
+        .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+    )
+    return true
+  }
+}
+
+export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
+  return new Plugin({
+    appendTransaction(transactions, oldState, newState) {
+      const code = schema.marks.code
+      const { selection } = newState
+      if (
+        !code ||
+        transactions.some((transaction) =>
+          transaction.getMeta(INLINE_CODE_BOUNDARY_EXIT_META)
+        ) ||
+        !code.isInSet(oldState.storedMarks ?? []) ||
+        code.isInSet(newState.storedMarks ?? []) ||
+        !(selection instanceof TextSelection) ||
+        !selection.empty ||
+        !code.isInSet(selection.$from.nodeBefore?.marks ?? []) ||
+        code.isInSet(selection.$from.nodeAfter?.marks ?? [])
+      ) return null
+
+      return newState.tr.addStoredMark(code.create())
+    }
+  })
 }
 
 export function splitFlatListItem(schema: Schema): Command {
@@ -319,6 +384,8 @@ function buildKeymap(schema: Schema) {
   if (schema.marks.code) {
     keys["Mod-e"] = toggleInlineMark(schema.marks.code)
     keys["Mod-E"] = toggleInlineMark(schema.marks.code)
+    keys["ArrowLeft"] = enterInlineCodeAtEnd(schema)
+    keys["ArrowRight"] = exitInlineCodeAtEnd(schema)
   }
   if (schema.marks.highlight) {
     keys["Mod-Shift-h"] = toggleInlineMark(schema.marks.highlight)

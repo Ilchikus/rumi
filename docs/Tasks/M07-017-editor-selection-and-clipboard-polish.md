@@ -20,7 +20,8 @@ canonical workspace path through one action surface.
 ## Scope
 
 - Let Command-click on macOS and Control-click on Windows/Linux add or remove any block handle from
-  an explicit selection, including non-contiguous selections.
+  an explicit selection, including non-contiguous selections. A subsequent Shift-Up/Down grows or
+  shrinks the most recently Command-selected group without discarding earlier selected groups.
 - Treat Shift-Up/Down on an explicit contiguous block selection like an anchored range: moving back
   toward the anchor removes the last selected block, while moving past a one-block selection adds
   the adjacent block in that direction. Retain Shift-Mod-Up/Down document-edge behavior.
@@ -31,7 +32,8 @@ canonical workspace path through one action surface.
   flavor and semantic paragraph structure through HTML.
 - Preserve inline-code formatting when normal paste replaces the complete contents of one inline
   code span. Make the inline-code mark non-inclusive so typing after a completed backtick shortcut
-  occurs outside the mark; native Left/Right navigation can still enter and leave it.
+  occurs outside the mark. At the closing boundary, Left explicitly enters the code mark and keeps
+  subsequent typing inside it until Right exits.
 - Treat `http://`, `https://`, `www.`, and bare domain destinations as URL paste. Normal paste over
   highlighted text retains the highlight as the link label; normal paste at a caret inserts the
   clipboard text as both label and stored destination. Render scheme-less web destinations through
@@ -46,12 +48,15 @@ canonical workspace path through one action surface.
   file remain text unless explicit Markdown link syntax marks them as links. Normal URL/domain
   paste writes that explicit syntax on save, while paste-as-plain-text remains literal.
 - Bump the distributable `@rumi-md/server` release candidate to `0.1.15`.
+- Preserve each flat list item's indentation when converting among bullet, numbered, and task list
+  types.
+- Add child creation to sidebar node menus: folders offer page, folder, and database; databases
+  offer page only.
 
 ## Out Of Scope
 
 - Dragging blocks into databases.
 - Current-page find and replace.
-- Sidebar create-page actions.
 - Global search behavior.
 - Changes to Markdown link syntax or application slug allocation.
 
@@ -70,6 +75,8 @@ editor, with current-page action wiring in the web shell.
       URL paste.
 - [x] Inline-code input/boundary tests.
 - [x] Current-page action and shortcut tests for copied URL/path values and availability guards.
+- [x] Sidebar child-creation matrix coverage.
+- [x] List-type conversion indentation coverage.
 - [x] Editor-interaction contract update.
 - [x] Full typecheck, tests, production build, and server-package release check.
 
@@ -89,7 +96,7 @@ editor, with current-page action wiring in the web shell.
 Verified on 2026-08-07:
 
 - focused editor, clipboard, link, current-page action, and application-shortcut coverage passed
-- `corepack pnpm check` passed with 70 test files and 544 tests, typecheck, the production web
+- `corepack pnpm check` passed with 70 test files and 550 tests, typecheck, the production web
   build, and the bundled server build
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
 - user browser QA remains pending before merge

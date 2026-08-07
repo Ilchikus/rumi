@@ -92,6 +92,14 @@ interface SidebarProps {
 export type SidebarCreateKind = "page" | "folder" | "database";
 type CreateKind = SidebarCreateKind;
 
+export function sidebarNodeCreateKinds(
+  kind: WorkspaceNode["kind"]
+): SidebarCreateKind[] {
+  if (kind === "folder") return ["page", "folder", "database"];
+  if (kind === "database") return ["page"];
+  return [];
+}
+
 const TREE_INDENT_PX = 20;
 const TREE_ROW_HEIGHT_PX = 32;
 const TREE_ROW_PADDING_PX = 14;
@@ -992,24 +1000,26 @@ function NodeMenuItems({
   onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
-  const isContainer = isContainerNode(node);
+  const createKinds = sidebarNodeCreateKinds(node.kind);
 
   return (
     <>
-      {isContainer && node.kind !== "database" && (
+      {createKinds.length > 0 && (
         <>
-          <DropdownMenuItem onSelect={() => onCreate(node.path, "page")}>
-            <NotePencil size={16} />
-            New Page
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onCreate(node.path, "folder")}>
-            <FolderPlus size={16} />
-            New Folder
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onCreate(node.path, "database")}>
-            <Table size={16} />
-            New Database
-          </DropdownMenuItem>
+          {createKinds.map((kind) => (
+            <DropdownMenuItem key={kind} onSelect={() => onCreate(node.path, kind)}>
+              {kind === "page"
+                ? <NotePencil size={16} />
+                : kind === "folder"
+                  ? <FolderPlus size={16} />
+                  : <Table size={16} />}
+              {kind === "page"
+                ? "New Page"
+                : kind === "folder"
+                  ? "New Folder"
+                  : "New Database"}
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuSeparator />
         </>
       )}

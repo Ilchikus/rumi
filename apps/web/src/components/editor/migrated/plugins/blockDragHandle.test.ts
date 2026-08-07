@@ -588,6 +588,29 @@ describe("selected-block handle menu trigger", () => {
     }
   )
 
+  it.each([
+    ["bullet_item", "numbered_item"],
+    ["numbered_item", "task_item"],
+    ["task_item", "bullet_item"]
+  ])("preserves indentation when changing %s to %s", (sourceType, targetType) => {
+    const sourceAttrs = sourceType === "task_item"
+      ? { indent: 2, checked: true }
+      : { indent: 2 }
+    const source = schema.nodes[sourceType]!.create(sourceAttrs, schema.text("Nested"))
+    const doc = schema.nodes.doc!.create(null, source)
+    const state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    const option = BLOCK_TYPE_OPTIONS.find(candidate => candidate.type === targetType)!
+
+    const transaction = createBlockTypeChangeTransaction(state, [0], option)
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.firstChild?.type.name).toBe(targetType)
+    expect(transaction!.doc.firstChild?.attrs.indent).toBe(2)
+  })
+
   it("converts structured block content into a valid text block", () => {
     const quote = schema.nodes.blockquote!.create(
       null,

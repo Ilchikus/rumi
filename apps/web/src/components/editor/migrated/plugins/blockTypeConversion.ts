@@ -89,6 +89,10 @@ function createBlockNodeForType(
 
   const inlineContent = sourceInlineContent(sourceNode, schema)
   const text = sourceText(sourceNode)
+  const sourceIndent = ["bullet_item", "numbered_item", "task_item"]
+    .includes(sourceNode.type.name)
+    ? Number(sourceNode.attrs.indent) || 0
+    : 0
 
   switch (option.type) {
     case "paragraph":
@@ -107,13 +111,13 @@ function createBlockNodeForType(
     }
     case "bullet_item":
       return splitInlineContentIntoLines(sourceNode, schema)
-        .map((line) => targetType.create({ indent: 0 }, line))
+        .map((line) => targetType.create({ indent: sourceIndent }, line))
     case "numbered_item":
       return splitInlineContentIntoLines(sourceNode, schema)
-        .map((line) => targetType.create({ indent: 0 }, line))
+        .map((line) => targetType.create({ indent: sourceIndent }, line))
     case "task_item":
       return splitInlineContentIntoLines(sourceNode, schema)
-        .map((line) => targetType.create({ indent: 0, checked: false }, line))
+        .map((line) => targetType.create({ indent: sourceIndent, checked: false }, line))
     case "table": {
       const tableHeader = schema.nodes.table_header
       const tableCell = schema.nodes.table_cell

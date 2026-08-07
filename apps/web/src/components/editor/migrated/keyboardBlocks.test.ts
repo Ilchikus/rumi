@@ -9,6 +9,7 @@ import { history } from "prosemirror-history"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
+  inlineCodeBoundaryPlugin,
   insertLiteralNewlineInCode,
   removeEmptyParagraphBlock,
   resetEmptyFormattedBlock,
@@ -144,6 +145,45 @@ describe("live editor keyboard block selection", () => {
       state = state.apply(transaction)
     })).toBe(true)
     expect(selectedText(state)).toEqual(["Two"])
+  })
+
+  it("preserves earlier groups while Shift extends the latest Cmd-selected block", () => {
+    const doc = parseMarkdown("One\n\nTwo\n\nThree\n\nFour\n\nFive\n", schema)
+    const positions = blockPositions(EditorState.create({ doc }))
+    let state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    state = state.apply(
+      state.tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks: [positions[0]],
+          anchorBlock: positions[0]
+        })
+        .setSelection(NodeSelection.create(state.doc, positions[0]!))
+    )
+
+    expect(extendBlockSelection("down")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two"])
+
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+    selectBlock(view, positions[3]!, "toggle")
+    expect(selectedText(state)).toEqual(["One", "Two", "Four"])
+
+    expect(extendBlockSelection("down")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two", "Four", "Five"])
+
+    expect(extendBlockSelection("up")(state, (transaction) => {
+      state = state.apply(transaction)
+    })).toBe(true)
+    expect(selectedText(state)).toEqual(["One", "Two", "Four"])
   })
 
   it("toggles non-contiguous blocks and clears the native node highlight when the last block is removed", () => {
@@ -463,6 +503,39 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     expect(selectionToolbarPluginKey.getState(state)).toMatchObject({
       linkEditorRequestRevision: 1
     })
+  })
+
+  it("uses ArrowLeft and ArrowRight to enter and exit an inline-code boundary", () => {
+    const keymapPlugin = buildKeymap(schema)
+    const code = schema.marks.code!.create()
+    const paragraph = schema.nodes.paragraph!.create(
+      null,
+      schema.text("value", [code])
+    )
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+      plugins: [inlineCodeBoundaryPlugin(schema), keymapPlugin]
+    })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+
+    expect(applyKey(keymapPlugin, view, keyboardEvent("ArrowLeft"))).toBe(true)
+    expect(state.selection.from).toBe(6)
+    expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+
+    view.dispatch(state.tr.insertText("!"))
+    expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    view.dispatch(state.tr.insertText("more"))
+    expect(serializeMarkdown(state.doc)).toBe("`value!more`\n")
+
+    expect(applyKey(keymapPlugin, view, keyboardEvent("ArrowRight"))).toBe(true)
+    expect(state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
+    view.dispatch(state.tr.insertText(" after"))
+    expect(serializeMarkdown(state.doc)).toBe("`value!more` after\n")
   })
 
   it.each(["code_block", "mermaid"])(

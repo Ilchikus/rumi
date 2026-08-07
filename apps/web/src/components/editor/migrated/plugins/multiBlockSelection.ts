@@ -349,13 +349,19 @@ export function extendBlockSelection(
     if (targetIndex < 0 || targetIndex >= positions.length) return true
 
     if (dispatch) {
-      const range = positions.slice(
+      const nextActiveRange = positions.slice(
         Math.min(toDocumentBoundary ? activeIndex : anchorIndex, targetIndex),
         Math.max(toDocumentBoundary ? activeIndex : anchorIndex, targetIndex) + 1
       )
+      const currentActiveRange = new Set(positions.slice(
+        Math.min(anchorIndex, activeIndex),
+        Math.max(anchorIndex, activeIndex) + 1
+      ))
+      const preservedBlocks = selected.filter((pos) => !currentActiveRange.has(pos))
       const selectedBlocks = toDocumentBoundary
-        ? [...new Set([...selected, ...range])].sort((left, right) => left - right)
-        : range
+        ? [...new Set([...selected, ...nextActiveRange])].sort((left, right) => left - right)
+        : [...new Set([...preservedBlocks, ...nextActiveRange])]
+            .sort((left, right) => left - right)
       const activePos = positions[targetIndex]!
       dispatch(
         state.tr

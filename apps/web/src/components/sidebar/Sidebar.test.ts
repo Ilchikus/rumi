@@ -45,6 +45,10 @@ describe("sidebar create-menu shortcuts", () => {
     expect(shouldCreatePageImmediately("database", commandClick, "mac")).toBe(false);
     expect(sidebarSource).toContain("void onCreateDefault(node.path, kind)");
     expect(sidebarSource).toContain("onCreateDefault={onCreateDefault}");
+    expect(appSource).toContain(
+      "refreshAfterMutation(\n        result.path,\n        selectTitleAfterCreate"
+    );
+    expect(appSource).toContain("window.setTimeout(() => {");
   });
 
   it("opens default-named items with their complete title selected", () => {

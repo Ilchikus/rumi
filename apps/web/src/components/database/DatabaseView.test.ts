@@ -220,6 +220,14 @@ describe("database table presentation", () => {
       "onOpenCreatedRecord={(recordPath) => void openRecordPath(recordPath, true)}"
     );
     expect(appSource).toContain("requestPageTitleSelection(nextPage.path)");
+
+    const createRecordSource = databaseViewSource.slice(
+      databaseViewSource.indexOf("const createRecord ="),
+      databaseViewSource.indexOf("const renameRecord =")
+    );
+    expect(createRecordSource.indexOf("(onOpenCreatedRecord ?? onOpenRecord)(created.path)"))
+      .toBeLessThan(createRecordSource.indexOf("const createdPage = await api.openPage"));
+    expect(createRecordSource).toContain("return;");
   });
 
   it("uses a plain wrapping record-name editor with the caret at the end", () => {

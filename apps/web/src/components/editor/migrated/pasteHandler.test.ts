@@ -25,6 +25,7 @@ import {
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
 import {
+  inlineCodeArrowRightTarget,
   inlineCodeBoundaryPlugin,
   inlineCodeBoundaryPluginKey
 } from "./keymap"
@@ -651,6 +652,44 @@ describe("live editor inline-code boundary affinity", () => {
     )).toBe(true)
     expect(view.state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
     expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).toBeNull()
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("skips the code-side typing-outside affinity on ArrowRight", () => {
+    const code = schema.marks.code!.create()
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("value", [code]))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
+    const host = document.createElement("div")
+    document.body.append(host)
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 6),
+        plugins: [boundaryPlugin]
+      })
+    })
+    const codeSide = view.domAtPos(6, -1)
+    document.getSelection()?.collapse(codeSide.node, codeSide.offset)
+
+    expect(inlineCodeArrowRightTarget(view.state, schema)).toBe(6)
+    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).not.toBeNull()
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      new KeyboardEvent("keydown", { key: "ArrowRight" })
+    )).toBe(true)
+    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).toBeNull()
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      new KeyboardEvent("keydown", { key: "ArrowRight" })
+    )).toBe(false)
+
+    view.dispatch(view.state.tr.insertText(" after"))
+    expect(serializeMarkdown(view.state.doc)).toBe("`value` after\n")
 
     view.destroy()
     host.remove()

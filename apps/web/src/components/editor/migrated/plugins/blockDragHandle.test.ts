@@ -6,6 +6,7 @@ import {
   AREA_SELECT_SCROLL_ZONE,
   areaSelectionBounds,
   areaSelectionScrollVelocity,
+  areaSelectionUpdate,
   blockDragHandleKey,
   blockDragHandlePlugin
 } from "./blockDragHandle"
@@ -78,6 +79,25 @@ describe("selected-block handle menu trigger", () => {
     expect(areaSelectionScrollVelocity(500, 0, 1000)).toBe(0)
     expect(areaSelectionScrollVelocity(950, 0, 1000)).toBe(12)
     expect(areaSelectionScrollVelocity(1100, 0, 1000)).toBe(24)
+  })
+
+  it("toggles a primary-modifier marquee against existing selected areas", () => {
+    expect(areaSelectionUpdate([0, 10], [20, 30], true, 10)).toEqual({
+      selectedBlocks: [0, 10, 20, 30],
+      anchorBlock: 20
+    })
+    expect(areaSelectionUpdate([0, 10, 20], [10, 30], true, 10)).toEqual({
+      selectedBlocks: [0, 20, 30],
+      anchorBlock: 30
+    })
+    expect(areaSelectionUpdate([0, 10], [], true, 10)).toEqual({
+      selectedBlocks: [0, 10],
+      anchorBlock: 10
+    })
+    expect(areaSelectionUpdate([0, 10], [20, 30], false, 10)).toEqual({
+      selectedBlocks: [20, 30],
+      anchorBlock: 20
+    })
   })
 
   it("preserves selection when the context-clicked handle belongs to it", () => {

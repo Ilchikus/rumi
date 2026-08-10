@@ -1607,20 +1607,33 @@ export function App(): ReactElement {
   }, []);
 
   const refreshAfterMutation = useCallback(
-    async (openPath?: string | null): Promise<PageDocument | null> => {
-      await loadTree();
+    async (
+      openPath?: string | null,
+      deferTreeRefresh = false
+    ): Promise<PageDocument | null> => {
+      if (!deferTreeRefresh) {
+        await loadTree();
+      }
 
       if (openPath) {
-        const nextPage = await loadPage(openPath);
-        pendingHistoryActionRef.current = "push";
-        setPage(nextPage);
-        setDraftBody(nextPage.markdownBody);
-        setSelection({
-          nodePath: openPath,
-          openPath: nextPage.path,
-          kind: pageKindToNodeKind(nextPage.kind)
-        });
-        return nextPage;
+        try {
+          const nextPage = await loadPage(openPath);
+          pendingHistoryActionRef.current = "push";
+          setPage(nextPage);
+          setDraftBody(nextPage.markdownBody);
+          setSelection({
+            nodePath: openPath,
+            openPath: nextPage.path,
+            kind: pageKindToNodeKind(nextPage.kind)
+          });
+          return nextPage;
+        } finally {
+          if (deferTreeRefresh) {
+            window.setTimeout(() => {
+              void loadTree().catch((error) => setMessage(errorMessage(error)));
+            }, 0);
+          }
+        }
       }
 
       return null;
@@ -1641,7 +1654,10 @@ export function App(): ReactElement {
       });
       showReservedSystemRouteToast(parentPath, name, "page");
       clearPageLoadCache();
-      const nextPage = await refreshAfterMutation(result.path);
+      const nextPage = await refreshAfterMutation(
+        result.path,
+        selectTitleAfterCreate
+      );
       if (selectTitleAfterCreate && nextPage) {
         requestPageTitleSelection(nextPage.path);
       }

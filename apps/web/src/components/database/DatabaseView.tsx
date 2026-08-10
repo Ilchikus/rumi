@@ -546,6 +546,12 @@ export function DatabaseView({
 
     try {
       const created = await api.createDatabaseRecord({ databasePath });
+      if (openCreatedRecord) {
+        setRecordNameEdit(null);
+        (onOpenCreatedRecord ?? onOpenRecord)(created.path);
+        return;
+      }
+
       const createdPage = await api.openPage(created.path);
       await load();
       const createdRecord: DatabaseRecord = {
@@ -564,15 +570,10 @@ export function DatabaseView({
           }
         : current
       );
-      if (openCreatedRecord) {
-        setRecordNameEdit(null);
-        (onOpenCreatedRecord ?? onOpenRecord)(created.path);
-      } else {
-        setRecordNameEdit({
-          path: created.path,
-          draft: createdRecord.title
-        });
-      }
+      setRecordNameEdit({
+        path: created.path,
+        draft: createdRecord.title
+      });
     } catch (error) {
       onMessage(errorMessage(error));
     } finally {

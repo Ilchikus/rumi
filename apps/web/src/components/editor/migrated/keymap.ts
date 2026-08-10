@@ -226,6 +226,43 @@ export function exitInlineCodeAtEnd(schema: Schema): Command {
   }
 }
 
+export function inlineCodeArrowRightTarget(state, schema: Schema): number | null {
+  const { selection } = state
+  const code = schema.marks.code
+  if (
+    !code ||
+    !(selection instanceof TextSelection) ||
+    !selection.empty ||
+    selection.$from.parent.type.spec.code
+  ) return null
+
+  const beforeHasCode = code.isInSet(selection.$from.nodeBefore?.marks ?? [])
+  const afterHasCode = code.isInSet(selection.$from.nodeAfter?.marks ?? [])
+  if (beforeHasCode && !afterHasCode) return selection.from
+
+  const nodeAfter = selection.$from.nodeAfter
+  if (!nodeAfter?.isText || nodeAfter.nodeSize !== 1 || !afterHasCode) return null
+
+  const target = selection.from + 1
+  const $target = state.doc.resolve(target)
+  return code.isInSet($target.nodeAfter?.marks ?? []) ? null : target
+}
+
+function browserCaretIsInsideInlineCode(view): boolean {
+  if (!view.dom?.ownerDocument) return false
+  const selection = view.dom.ownerDocument.getSelection()
+  const anchorNode = selection?.anchorNode
+  if (!anchorNode) return false
+  const element = anchorNode instanceof Element
+    ? anchorNode
+    : anchorNode.parentElement
+  return Boolean(
+    element &&
+    view.dom.contains(element) &&
+    element.closest("code")
+  )
+}
+
 export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
   return new Plugin<InlineCodeBoundaryState | null>({
     key: inlineCodeBoundaryPluginKey,
@@ -263,24 +300,34 @@ export function inlineCodeBoundaryPlugin(schema: Schema): Plugin {
           return false
         }
 
-        if (
-          event.key === "ArrowRight" &&
-          boundary?.position === view.state.selection.from
-        ) {
+        if (event.key === "ArrowRight") {
           const code = schema.marks.code
-          if (!code) return false
-          view.dispatch(
-            view.state.tr
-              .removeStoredMark(code)
-              .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+          const target = inlineCodeArrowRightTarget(view.state, schema)
+          const exitsCodeSide = target !== null && (
+            target !== view.state.selection.from ||
+            boundary?.position === view.state.selection.from ||
+            browserCaretIsInsideInlineCode(view)
           )
+          if (code && target !== null && exitsCodeSide) {
+            let transaction = view.state.tr
+            if (target !== view.state.selection.from) {
+              transaction = transaction.setSelection(
+                TextSelection.create(transaction.doc, target)
+              )
+            }
+            view.dispatch(
+              transaction
+                .removeStoredMark(code)
+                .setMeta(INLINE_CODE_BOUNDARY_EXIT_META, true)
+            )
 
-          if (typeof view.domAtPos === "function") {
-            const domPosition = view.domAtPos(boundary.position, 1)
-            const ownerDocument = domPosition.node.ownerDocument ?? view.dom.ownerDocument
-            ownerDocument.getSelection()?.collapse(domPosition.node, domPosition.offset)
+            if (typeof view.domAtPos === "function") {
+              const domPosition = view.domAtPos(target, 1)
+              const ownerDocument = domPosition.node.ownerDocument ?? view.dom.ownerDocument
+              ownerDocument.getSelection()?.collapse(domPosition.node, domPosition.offset)
+            }
+            return true
           }
-          return true
         }
 
         const command = event.key === "ArrowLeft"

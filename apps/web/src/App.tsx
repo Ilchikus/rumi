@@ -79,6 +79,7 @@ import {
 import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
 import { pageCopyValue, type PageCopyAction } from "./lib/pageCopyActions";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
+import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import {
@@ -1606,6 +1607,13 @@ export function App(): ReactElement {
     });
   }, []);
 
+  const insertPageIntoSidebar = useCallback((path: string) => {
+    setTree((currentTree) => currentTree
+      ? insertOptimisticWorkspacePage(currentTree, path)
+      : currentTree
+    );
+  }, []);
+
   const refreshAfterMutation = useCallback(
     async (
       openPath?: string | null,
@@ -1652,6 +1660,7 @@ export function App(): ReactElement {
         name,
         markdownBody: ""
       });
+      insertPageIntoSidebar(result.path);
       showReservedSystemRouteToast(parentPath, name, "page");
       clearPageLoadCache();
       const nextPage = await refreshAfterMutation(
@@ -1667,7 +1676,7 @@ export function App(): ReactElement {
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, refreshAfterMutation, requestPageTitleSelection]);
+  }, [api, clearPageLoadCache, insertPageIntoSidebar, refreshAfterMutation, requestPageTitleSelection]);
 
   const createFolder = useCallback(async (
     parentPath: string,
@@ -1755,6 +1764,11 @@ export function App(): ReactElement {
       setSaveState("error");
     }
   }, [loadPage, requestPageTitleSelection]);
+
+  const openCreatedRecordPath = useCallback((recordPath: string) => {
+    insertPageIntoSidebar(recordPath);
+    return openRecordPath(recordPath, true);
+  }, [insertPageIntoSidebar, openRecordPath]);
 
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
     try {
@@ -3045,7 +3059,7 @@ export function App(): ReactElement {
                         parentPathForPage(page.path)
                       )}
                       onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
-                      onOpenCreatedRecord={(recordPath) => void openRecordPath(recordPath, true)}
+                      onOpenCreatedRecord={(recordPath) => void openCreatedRecordPath(recordPath)}
                       onMessage={setMessage}
                     />
                   </Suspense>

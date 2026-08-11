@@ -1,6 +1,6 @@
+
+
 ## In progress
-
-
 
 ## Planned
 
@@ -26,9 +26,6 @@
     - alternatively consider another structure for 3D databases - md content can live inside prop. kinda like Notion i think - more structured but less file-first and compatible with Obsidian
 
 ## Archive
-
-
-
 
 - [x] cmd+block selector to select several areas (like 3+2+4 with non-selected blocks in-between)
 - [x] rename change/create block from text to paragraph; add friendly names for block for create/change (e.g. h2, heading 2 will both focus on heading 2)

@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-07"
-updated: "2026-08-10"
+updated: "2026-08-11"
 ---
 # M07-017 Editor Selection And Clipboard Polish
 
@@ -65,7 +65,9 @@ canonical workspace path through one action surface.
   to primary-modifier click on a database view's **New** button while keeping ordinary creation in
   the table's inline name editor. Load the created page before refreshing the sidebar tree, and open
   a database-created record before hydrating it back into the table, so navigation wins the first
-  visible update.
+  visible update. Project the canonical page path returned by either create command into the
+  in-memory sidebar tree immediately, keep runtime ordering, and reconcile it through the normal
+  authoritative tree refresh without introducing a second source of truth.
 
 ## Out Of Scope
 
@@ -91,6 +93,7 @@ editor, with current-page action wiring in the web shell.
 - [x] Inline-code input/session, escaped-source, undo, and boundary tests.
 - [x] Current-page action and shortcut tests for copied URL/path values and availability guards.
 - [x] Sidebar child-creation matrix coverage.
+- [x] Optimistic sidebar-tree insertion, ordering, deduplication, and missing-parent coverage.
 - [x] List-type conversion indentation coverage.
 - [x] Editor-interaction contract update.
 - [x] Full typecheck, tests, production build, and server-package release check.
@@ -106,20 +109,20 @@ editor, with current-page action wiring in the web shell.
 - A durable inline-code closing boundary has only two intentional caret states: outside, or inside
   after one Left press; the next Left moves through the code text instead of consuming another
   invisible boundary state, and Right crosses the closing edge without a typing-affinity stop.
-- Modified **New Page** actions from sidebar containers and database views open the created page with
-  its default title selected before sidebar/table hydration, while ordinary creation keeps the
-  existing inline naming flow.
+- Modified **New Page** actions from sidebar containers and database views add the returned page to
+  the current sidebar tree and open it with its default title selected before sidebar/table
+  hydration, while ordinary creation keeps the existing inline naming flow.
 - The open page's public URL and canonical relative path can be copied from both the File actions
   menu and documented shortcuts.
 - The installable server package passes its `0.1.15` release check.
 
 ## Verification
 
-Verified through 2026-08-10:
+Verified through 2026-08-11:
 
 - focused editor, clipboard, link, modified-creation ordering, multi-area selection, current-page
   action, and application-shortcut coverage passed
-- `corepack pnpm check` passed with 70 test files and 564 tests, typecheck, the production web
+- `corepack pnpm check` passed with 71 test files and 568 tests, typecheck, the production web
   build, and the bundled server build
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
 - user browser QA remains pending before merge

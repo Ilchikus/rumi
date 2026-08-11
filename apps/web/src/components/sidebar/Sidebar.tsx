@@ -302,6 +302,18 @@ export function Sidebar({
     }
   }, [updateExpandedPaths]);
 
+  const createDefault = useCallback((parentPath: string, kind: CreateKind) => {
+    setFloatingMenu(null);
+    setRenamingPath(null);
+    setCreateTarget(null);
+
+    if (parentPath) {
+      updateExpandedPaths((current) => new Set(current).add(parentPath));
+    }
+
+    return onCreateDefault(parentPath, kind);
+  }, [onCreateDefault, updateExpandedPaths]);
+
   const startRename = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
     setCreateTarget(null);
@@ -427,7 +439,7 @@ export function Sidebar({
         onOpenNode={onOpenNode}
         onToggleExpanded={toggleExpanded}
         onStartCreate={startCreate}
-        onCreateDefault={onCreateDefault}
+        onCreateDefault={createDefault}
         onStartRename={startRename}
         onRenameNode={onRenameNode}
         onMoveNode={requestMove}
@@ -464,7 +476,7 @@ export function Sidebar({
               open={rootCreateMenuOpen}
               onOpenChange={onRootCreateMenuOpenChange}
               onCreate={startCreate}
-              onCreateDefault={onCreateDefault}
+              onCreateDefault={createDefault}
             />
             <Button
               type="button"
@@ -556,7 +568,7 @@ export function Sidebar({
             }
           }}
           onCreate={startCreate}
-          onCreateDefault={onCreateDefault}
+          onCreateDefault={createDefault}
           onRename={startRename}
           onMove={requestMove}
           onConvert={requestConvert}

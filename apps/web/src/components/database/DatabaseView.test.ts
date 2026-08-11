@@ -217,8 +217,9 @@ describe("database table presentation", () => {
     expect(databaseViewSource).toContain("(onOpenCreatedRecord ?? onOpenRecord)(created.path)");
     expect(databaseViewSource).toContain("shouldOpenCreatedDatabaseRecord(event, shortcutPlatform)");
     expect(appSource).toContain(
-      "onOpenCreatedRecord={(recordPath) => void openRecordPath(recordPath, true)}"
+      "onOpenCreatedRecord={(recordPath) => void openCreatedRecordPath(recordPath)}"
     );
+    expect(appSource).toContain("insertPageIntoSidebar(recordPath)");
     expect(appSource).toContain("requestPageTitleSelection(nextPage.path)");
 
     const createRecordSource = databaseViewSource.slice(

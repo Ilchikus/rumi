@@ -14,7 +14,8 @@ import { history } from "prosemirror-history"
 import { baseKeymap } from "prosemirror-commands"
 import { keymap } from "prosemirror-keymap"
 import { schema } from "./schema"
-import { buildKeymap, inlineCodeBoundaryPlugin } from "./keymap"
+import { buildKeymap } from "./keymap"
+import { inlineCodeCaretPlugin } from "./inlineCodeCaret"
 import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
 import { structuralCaretPlugin } from "./plugins/structuralCaret"
 import { mermaidModePlugin } from "./plugins/mermaidMode"
@@ -184,7 +185,7 @@ function ProseMirrorEditor(
         structuralCaretPlugin(),
         mermaidModePlugin(),
         multiBlockSelectionPlugin(schema),
-        inlineCodeBoundaryPlugin(schema),
+        inlineCodeCaretPlugin(schema),
         buildKeymap(schema),
         keymap(baseKeymap),
         history(),

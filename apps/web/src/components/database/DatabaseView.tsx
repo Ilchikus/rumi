@@ -38,6 +38,10 @@ import type {
   QueryDatabaseResult,
   WorkspaceNode
 } from "@rumi/contracts";
+import {
+  appShortcutPlatform,
+  hasPrimaryModifier
+} from "../../lib/appShortcuts";
 import { cn } from "../../lib/utils";
 import { DatabaseOptionEditor } from "../editor/DatabaseOptionEditor";
 import {
@@ -132,12 +136,20 @@ export function databaseRecordTitleFromPath(recordPath: string): string {
   return fileName.replace(/\.md$/iu, "");
 }
 
+export function shouldOpenCreatedDatabaseRecord(
+  event: Parameters<typeof hasPrimaryModifier>[0],
+  platform: Parameters<typeof hasPrimaryModifier>[1]
+): boolean {
+  return hasPrimaryModifier(event, platform);
+}
+
 interface DatabaseViewBaseProps {
   api: RumiApiClient;
   databasePath: string;
   preferenceScope?: string;
   refreshRevision: number;
   onOpenRecord: (recordPath: string) => void;
+  onOpenCreatedRecord?: (recordPath: string) => void;
   onMessage: (message: string) => void;
   initialViewId?: string;
   onActiveViewChange?: (viewId: string) => void;
@@ -160,12 +172,14 @@ export function DatabaseView({
   preferenceScope = "",
   refreshRevision,
   onOpenRecord,
+  onOpenCreatedRecord,
   onMessage,
   variant = "original",
   embedSourceControl,
   initialViewId = "",
   onActiveViewChange
 }: DatabaseViewProps): ReactElement {
+  const shortcutPlatform = appShortcutPlatform();
   const [result, setResult] = useState<QueryDatabaseResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [creatingRecord, setCreatingRecord] = useState(false);
@@ -522,7 +536,7 @@ export function DatabaseView({
     });
   }, [visibleRecordPaths]);
 
-  const createRecord = useCallback(async () => {
+  const createRecord = useCallback(async (openCreatedRecord = false) => {
     if (creatingRecord) {
       return;
     }
@@ -532,6 +546,12 @@ export function DatabaseView({
 
     try {
       const created = await api.createDatabaseRecord({ databasePath });
+      if (openCreatedRecord) {
+        setRecordNameEdit(null);
+        (onOpenCreatedRecord ?? onOpenRecord)(created.path);
+        return;
+      }
+
       const createdPage = await api.openPage(created.path);
       await load();
       const createdRecord: DatabaseRecord = {
@@ -560,7 +580,15 @@ export function DatabaseView({
       recordMutationRef.current = false;
       setCreatingRecord(false);
     }
-  }, [api, creatingRecord, databasePath, load, onMessage]);
+  }, [
+    api,
+    creatingRecord,
+    databasePath,
+    load,
+    onMessage,
+    onOpenCreatedRecord,
+    onOpenRecord
+  ]);
 
   const renameRecord = useCallback(async (record: DatabaseRecord, requestedName: string) => {
     if (renamingRecordPath) return;
@@ -1341,7 +1369,14 @@ export function DatabaseView({
               />
             )}
             {variant === "embed" ? embedSourceControl : null}
-            <Button type="button" size="sm" onClick={() => void createRecord()} disabled={creatingRecord}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={(event) => void createRecord(
+                shouldOpenCreatedDatabaseRecord(event, shortcutPlatform)
+              )}
+              disabled={creatingRecord}
+            >
               <Plus size={15} />
               {creatingRecord ? "Creating" : "New"}
             </Button>

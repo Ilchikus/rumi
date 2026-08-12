@@ -99,10 +99,24 @@ interface SlashCommand {
 export function createCommands(schema: Schema): SlashCommand[] {
   const commands: SlashCommand[] = []
 
+  if (schema.nodes.paragraph) {
+    commands.push({
+      name: "Paragraph",
+      aliases: ["p", "text", "plain text"],
+      description: "Create a plain paragraph",
+      icon: BLOCK_TYPE_ICONS.text,
+      execute: (view) => {
+        const { state, dispatch } = view
+        setBlockType(schema.nodes.paragraph)(state, dispatch)
+        view.focus()
+      }
+    })
+  }
+
   if (schema.nodes.heading) {
     commands.push({
       name: "Heading 1",
-      aliases: ["h1", "heading1", "#"],
+      aliases: ["h1", "heading1", "heading 1", "#"],
       description: "Large section heading",
       icon: BLOCK_TYPE_ICONS.heading1,
       execute: (view) => {
@@ -113,7 +127,7 @@ export function createCommands(schema: Schema): SlashCommand[] {
     })
     commands.push({
       name: "Heading 2",
-      aliases: ["h2", "heading2", "##"],
+      aliases: ["h2", "heading2", "heading 2", "##"],
       description: "Medium section heading",
       icon: BLOCK_TYPE_ICONS.heading2,
       execute: (view) => {
@@ -124,7 +138,7 @@ export function createCommands(schema: Schema): SlashCommand[] {
     })
     commands.push({
       name: "Heading 3",
-      aliases: ["h3", "heading3", "###"],
+      aliases: ["h3", "heading3", "heading 3", "###"],
       description: "Small section heading",
       icon: BLOCK_TYPE_ICONS.heading3,
       execute: (view) => {

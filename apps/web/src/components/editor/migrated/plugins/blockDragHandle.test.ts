@@ -6,11 +6,13 @@ import {
   AREA_SELECT_SCROLL_ZONE,
   areaSelectionBounds,
   areaSelectionScrollVelocity,
+  areaSelectionUpdate,
   blockDragHandleKey,
   blockDragHandlePlugin
 } from "./blockDragHandle"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockHandleSelectionMode,
   blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
@@ -40,6 +42,24 @@ function selectedBlocks(state: EditorState): number[] {
 }
 
 describe("selected-block handle menu trigger", () => {
+  it("lets the primary modifier remove a block that is already selected", () => {
+    expect(blockHandleSelectionMode([5, 10], 5, {
+      shiftKey: false,
+      metaKey: true,
+      ctrlKey: false
+    })).toBe("toggle")
+    expect(blockHandleSelectionMode([5, 10], 5, {
+      shiftKey: false,
+      metaKey: false,
+      ctrlKey: false
+    })).toBe("preserve")
+    expect(blockHandleSelectionMode([5], 10, {
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false
+    })).toBe("shift")
+  })
+
   it("keeps the marquee anchor attached to its document position while scrolling", () => {
     expect(areaSelectionBounds(
       { x: 200, y: 300, scrollLeft: 0, scrollTop: 0 },
@@ -59,6 +79,25 @@ describe("selected-block handle menu trigger", () => {
     expect(areaSelectionScrollVelocity(500, 0, 1000)).toBe(0)
     expect(areaSelectionScrollVelocity(950, 0, 1000)).toBe(12)
     expect(areaSelectionScrollVelocity(1100, 0, 1000)).toBe(24)
+  })
+
+  it("toggles a primary-modifier marquee against existing selected areas", () => {
+    expect(areaSelectionUpdate([0, 10], [20, 30], true, 10)).toEqual({
+      selectedBlocks: [0, 10, 20, 30],
+      anchorBlock: 20
+    })
+    expect(areaSelectionUpdate([0, 10, 20], [10, 30], true, 10)).toEqual({
+      selectedBlocks: [0, 20, 30],
+      anchorBlock: 30
+    })
+    expect(areaSelectionUpdate([0, 10], [], true, 10)).toEqual({
+      selectedBlocks: [0, 10],
+      anchorBlock: 10
+    })
+    expect(areaSelectionUpdate([0, 10], [20, 30], false, 10)).toEqual({
+      selectedBlocks: [20, 30],
+      anchorBlock: 20
+    })
   })
 
   it("preserves selection when the context-clicked handle belongs to it", () => {
@@ -520,7 +559,10 @@ describe("selected-block handle menu trigger", () => {
       "Heading 3",
       "Checkbox"
     ])
-    expect(matchingBlockTypeOptions("text")[0]?.label).toBe("Text")
+    expect(matchingBlockTypeOptions("text")[0]?.label).toBe("Paragraph")
+    expect(matchingBlockTypeOptions("p")[0]?.label).toBe("Paragraph")
+    expect(matchingBlockTypeOptions("h2")[0]?.label).toBe("Heading 2")
+    expect(matchingBlockTypeOptions("heading 2")[0]?.label).toBe("Heading 2")
     expect(shouldShowBlockMenuActionsForQuery(true, "l", 2)).toBe(false)
     expect(shouldShowBlockMenuActionsForQuery(true, "li", 2)).toBe(false)
     expect(shouldShowBlockMenuActionsForQuery(true, "list", 2)).toBe(false)
@@ -565,6 +607,29 @@ describe("selected-block handle menu trigger", () => {
       expect(state.selection.$from.parentOffset).toBe(content.length)
     }
   )
+
+  it.each([
+    ["bullet_item", "numbered_item"],
+    ["numbered_item", "task_item"],
+    ["task_item", "bullet_item"]
+  ])("preserves indentation when changing %s to %s", (sourceType, targetType) => {
+    const sourceAttrs = sourceType === "task_item"
+      ? { indent: 2, checked: true }
+      : { indent: 2 }
+    const source = schema.nodes[sourceType]!.create(sourceAttrs, schema.text("Nested"))
+    const doc = schema.nodes.doc!.create(null, source)
+    const state = EditorState.create({
+      doc,
+      plugins: [multiBlockSelectionPlugin(schema)]
+    })
+    const option = BLOCK_TYPE_OPTIONS.find(candidate => candidate.type === targetType)!
+
+    const transaction = createBlockTypeChangeTransaction(state, [0], option)
+
+    expect(transaction).not.toBeNull()
+    expect(transaction!.doc.firstChild?.type.name).toBe(targetType)
+    expect(transaction!.doc.firstChild?.attrs.indent).toBe(2)
+  })
 
   it("converts structured block content into a valid text block", () => {
     const quote = schema.nodes.blockquote!.create(

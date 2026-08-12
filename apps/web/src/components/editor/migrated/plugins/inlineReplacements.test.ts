@@ -133,9 +133,9 @@ describe("inline replacements", () => {
 
     const codeMark = schema.marks.code!.create();
     const inline = createHarness(paragraph("code", [codeMark]));
-    inline.setCursor(5);
+    inline.setCursor(4);
     inline.type("->");
-    expect(inline.state.doc.textContent).toBe("code->");
+    expect(inline.state.doc.textContent).toBe("cod->e");
     expect(inline.state.doc.firstChild?.lastChild?.marks[0]?.type.name).toBe("code");
 
     const storedInline = createHarness();

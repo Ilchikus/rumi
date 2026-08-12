@@ -5,7 +5,7 @@ coverage/
 .vite/
 .turbo/
 .rumi/
-docs/.obsidian/
+/docs/
 
 .env
 .env.*

@@ -181,7 +181,7 @@ function serializeCodeHtml(value: string, language: string | null): string {
 function serializeBlockHtml(node: ProseMirrorNode): string {
   switch (node.type.name) {
     case "paragraph":
-      return `<p>${serializeInlineHtml(node)}</p>`
+      return `<div>${serializeInlineHtml(node)}</div>`
     case "heading": {
       const level = Math.max(1, Math.min(6, Number(node.attrs.level) || 1))
       return `<h${level}>${serializeInlineHtml(node)}</h${level}>`
@@ -247,6 +247,34 @@ function serializeFragmentHtml(fragment: Fragment): string {
   return html
 }
 
+function textSelectionBlocks(fragment: Fragment): ProseMirrorNode[] {
+  const blocks: ProseMirrorNode[] = []
+
+  const collect = (node: ProseMirrorNode) => {
+    if (node.isTextblock) {
+      blocks.push(node)
+      return
+    }
+    node.forEach(collect)
+  }
+
+  fragment.forEach(collect)
+  return blocks
+}
+
+function serializeTextSelectionHtml(fragment: Fragment): string {
+  const blocks = textSelectionBlocks(fragment)
+  if (blocks.length === 0) return escapeHtml(fragment.textBetween(0, fragment.size, "\n"))
+  if (blocks.length === 1) return serializeInlineHtml(blocks[0]!)
+  return blocks.map((block) => `<div>${serializeInlineHtml(block)}</div>`).join("")
+}
+
+function serializeTextSelectionText(fragment: Fragment): string {
+  const blocks = textSelectionBlocks(fragment)
+  if (blocks.length === 0) return fragment.textBetween(0, fragment.size, "\n")
+  return blocks.map(serializeInlineText).join("\n").replace(/\n+$/u, "")
+}
+
 function serializeInlineText(parent: ProseMirrorNode): string {
   let text = ""
   parent.forEach((node) => {
@@ -307,17 +335,42 @@ function isListNode(node: ProseMirrorNode): boolean {
   return ["bullet_item", "numbered_item", "task_item"].includes(node.type.name)
 }
 
-export function serializeClipboardHtml(slice: Slice): string {
-  return serializeFragmentHtml(slice.content)
+function clipboardBlockSeparator(
+  previous: ProseMirrorNode,
+  next: ProseMirrorNode
+): string {
+  if (isListNode(previous) && isListNode(next)) return "\n"
+  if (previous.type.name === "paragraph" && next.type.name === "paragraph") return "\n"
+  return "\n\n"
 }
 
-export function serializeClipboardText(slice: Slice): string {
+export interface ClipboardSerializationOptions {
+  includeBlockSyntax?: boolean
+}
+
+export function serializeClipboardHtml(
+  slice: Slice,
+  options: ClipboardSerializationOptions = {}
+): string {
+  return options.includeBlockSyntax === false
+    ? serializeTextSelectionHtml(slice.content)
+    : serializeFragmentHtml(slice.content)
+}
+
+export function serializeClipboardText(
+  slice: Slice,
+  options: ClipboardSerializationOptions = {}
+): string {
+  if (options.includeBlockSyntax === false) {
+    return serializeTextSelectionText(slice.content)
+  }
+
   const nodes = fragmentChildren(slice.content)
   let text = ""
 
   nodes.forEach((node, index) => {
     if (index > 0) {
-      text += isListNode(nodes[index - 1]!) && isListNode(node) ? "\n" : "\n\n"
+      text += clipboardBlockSeparator(nodes[index - 1]!, node)
     }
     text += serializeBlockText(node)
   })

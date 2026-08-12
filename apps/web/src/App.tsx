@@ -77,7 +77,9 @@ import {
   isSelectAllShortcut
 } from "./lib/appBrowserInteractions";
 import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
+import { pageCopyValue, type PageCopyAction } from "./lib/pageCopyActions";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
+import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import {
@@ -890,6 +892,30 @@ export function App(): ReactElement {
     [loadPage]
   );
 
+  const copyOpenPageReference = useCallback(
+    async (action: PageCopyAction) => {
+      if (!page || !selection) return;
+      const route = workspaceUrlForNode(
+        { path: selection.nodePath, kind: selection.kind },
+        tree
+      );
+      const value = pageCopyValue(action, {
+        origin: window.location.origin,
+        route,
+        relativePath: page.path
+      });
+
+      try {
+        if (!navigator.clipboard) throw new Error("Clipboard access is unavailable.");
+        await navigator.clipboard.writeText(value);
+        toast.success(action === "url" ? "Page URL copied" : "Relative path copied");
+      } catch (error) {
+        setMessage(errorMessage(error));
+      }
+    },
+    [page, selection, setMessage, tree]
+  );
+
   useEffect(() => {
     const handleResize = () => setViewportWidth(getViewportWidth());
     window.addEventListener("resize", handleResize);
@@ -966,9 +992,23 @@ export function App(): ReactElement {
       if (!action) return;
 
       if (action === "open-create-menu" && !tree) return;
+      if (
+        (action === "copy-page-url" || action === "copy-page-relative-path") &&
+        (!page || !selection || trashOpen || settingsOpen)
+      ) return;
 
       event.preventDefault();
       event.stopPropagation();
+
+      if (action === "copy-page-url") {
+        void copyOpenPageReference("url");
+        return;
+      }
+
+      if (action === "copy-page-relative-path") {
+        void copyOpenPageReference("relative-path");
+        return;
+      }
 
       if (action === "open-create-menu") {
         setRootCreateMenuOpen(true);
@@ -985,7 +1025,16 @@ export function App(): ReactElement {
 
     window.addEventListener("keydown", handleAppShortcut, true);
     return () => window.removeEventListener("keydown", handleAppShortcut, true);
-  }, [shortcutPlatform, sidebarCollapsed, tree]);
+  }, [
+    copyOpenPageReference,
+    page,
+    selection,
+    settingsOpen,
+    shortcutPlatform,
+    sidebarCollapsed,
+    trashOpen,
+    tree
+  ]);
 
   useEffect(() => {
     if (!isNarrow || sidebarCollapsed) {
@@ -1558,21 +1607,41 @@ export function App(): ReactElement {
     });
   }, []);
 
+  const insertPageIntoSidebar = useCallback((path: string) => {
+    setTree((currentTree) => currentTree
+      ? insertOptimisticWorkspacePage(currentTree, path)
+      : currentTree
+    );
+  }, []);
+
   const refreshAfterMutation = useCallback(
-    async (openPath?: string | null): Promise<PageDocument | null> => {
-      await loadTree();
+    async (
+      openPath?: string | null,
+      deferTreeRefresh = false
+    ): Promise<PageDocument | null> => {
+      if (!deferTreeRefresh) {
+        await loadTree();
+      }
 
       if (openPath) {
-        const nextPage = await loadPage(openPath);
-        pendingHistoryActionRef.current = "push";
-        setPage(nextPage);
-        setDraftBody(nextPage.markdownBody);
-        setSelection({
-          nodePath: openPath,
-          openPath: nextPage.path,
-          kind: pageKindToNodeKind(nextPage.kind)
-        });
-        return nextPage;
+        try {
+          const nextPage = await loadPage(openPath);
+          pendingHistoryActionRef.current = "push";
+          setPage(nextPage);
+          setDraftBody(nextPage.markdownBody);
+          setSelection({
+            nodePath: openPath,
+            openPath: nextPage.path,
+            kind: pageKindToNodeKind(nextPage.kind)
+          });
+          return nextPage;
+        } finally {
+          if (deferTreeRefresh) {
+            window.setTimeout(() => {
+              void loadTree().catch((error) => setMessage(errorMessage(error)));
+            }, 0);
+          }
+        }
       }
 
       return null;
@@ -1591,9 +1660,13 @@ export function App(): ReactElement {
         name,
         markdownBody: ""
       });
+      insertPageIntoSidebar(result.path);
       showReservedSystemRouteToast(parentPath, name, "page");
       clearPageLoadCache();
-      const nextPage = await refreshAfterMutation(result.path);
+      const nextPage = await refreshAfterMutation(
+        result.path,
+        selectTitleAfterCreate
+      );
       if (selectTitleAfterCreate && nextPage) {
         requestPageTitleSelection(nextPage.path);
       }
@@ -1603,7 +1676,7 @@ export function App(): ReactElement {
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, refreshAfterMutation, requestPageTitleSelection]);
+  }, [api, clearPageLoadCache, insertPageIntoSidebar, refreshAfterMutation, requestPageTitleSelection]);
 
   const createFolder = useCallback(async (
     parentPath: string,
@@ -1667,7 +1740,10 @@ export function App(): ReactElement {
     }
   }, [createDatabase, createFolder, createPage]);
 
-  const openRecordPath = useCallback(async (recordPath: string) => {
+  const openRecordPath = useCallback(async (
+    recordPath: string,
+    selectTitleAfterOpen = false
+  ) => {
     try {
       setSettingsOpen(false);
       setTrashOpen(false);
@@ -1679,12 +1755,20 @@ export function App(): ReactElement {
       setSelection({ nodePath: recordPath, openPath: nextPage.path, kind: "page" });
       saveStateRef.current = "idle";
       setSaveState("idle");
+      if (selectTitleAfterOpen) {
+        requestPageTitleSelection(nextPage.path);
+      }
       setMessage("");
     } catch (error) {
       setMessage(errorMessage(error));
       setSaveState("error");
     }
-  }, [loadPage]);
+  }, [loadPage, requestPageTitleSelection]);
+
+  const openCreatedRecordPath = useCallback((recordPath: string) => {
+    insertPageIntoSidebar(recordPath);
+    return openRecordPath(recordPath, true);
+  }, [insertPageIntoSidebar, openRecordPath]);
 
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
     try {
@@ -2844,6 +2928,10 @@ export function App(): ReactElement {
           onToggleSearch={() => setSearchOpen((open) => !open)}
           onMoveNode={moveNode}
           onMoveToTrash={deleteNode}
+          onCopyUrl={() => void copyOpenPageReference("url")}
+          onCopyRelativePath={() => void copyOpenPageReference("relative-path")}
+          copyUrlShortcut={shortcutLabel.copyUrl}
+          copyRelativePathShortcut={shortcutLabel.copyRelativePath}
           onSeeRevisions={() => setRevisionHistoryOpen(true)}
         />
 
@@ -2971,6 +3059,7 @@ export function App(): ReactElement {
                         parentPathForPage(page.path)
                       )}
                       onOpenRecord={(recordPath) => void openRecordPath(recordPath)}
+                      onOpenCreatedRecord={(recordPath) => void openCreatedRecordPath(recordPath)}
                       onMessage={setMessage}
                     />
                   </Suspense>

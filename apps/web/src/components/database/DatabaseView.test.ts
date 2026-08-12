@@ -12,7 +12,8 @@ import {
   databaseColumnStyle,
   databaseRecordTitleFromPath,
   databaseRecordMoveDestinations,
-  databaseRecordsForDisplay
+  databaseRecordsForDisplay,
+  shouldOpenCreatedDatabaseRecord
 } from "./DatabaseView";
 import {
   bumpDatabaseRefreshRevision,
@@ -20,6 +21,7 @@ import {
 } from "./databaseRefresh";
 
 const databaseViewSource = readFileSync(new URL("./DatabaseView.tsx", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
 
 describe("database table presentation", () => {
   it("uses a borderless, unrestricted-height horizontal scroll frame without a manual refresh action", () => {
@@ -197,6 +199,36 @@ describe("database table presentation", () => {
       (record) => record.path
     )).toEqual([records[24], ...records.slice(0, 19)]);
     expect(databaseRecordTitleFromPath("Projects/New Page.md")).toBe("New Page");
+  });
+
+  it("opens a newly created record on primary-modifier click", () => {
+    const commandClick = {
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false
+    };
+
+    expect(shouldOpenCreatedDatabaseRecord(commandClick, "mac")).toBe(true);
+    expect(shouldOpenCreatedDatabaseRecord(
+      { ...commandClick, metaKey: false },
+      "mac"
+    )).toBe(false);
+    expect(databaseViewSource).toContain("(onOpenCreatedRecord ?? onOpenRecord)(created.path)");
+    expect(databaseViewSource).toContain("shouldOpenCreatedDatabaseRecord(event, shortcutPlatform)");
+    expect(appSource).toContain(
+      "onOpenCreatedRecord={(recordPath) => void openCreatedRecordPath(recordPath)}"
+    );
+    expect(appSource).toContain("insertPageIntoSidebar(recordPath)");
+    expect(appSource).toContain("requestPageTitleSelection(nextPage.path)");
+
+    const createRecordSource = databaseViewSource.slice(
+      databaseViewSource.indexOf("const createRecord ="),
+      databaseViewSource.indexOf("const renameRecord =")
+    );
+    expect(createRecordSource.indexOf("(onOpenCreatedRecord ?? onOpenRecord)(created.path)"))
+      .toBeLessThan(createRecordSource.indexOf("const createdPage = await api.openPage"));
+    expect(createRecordSource).toContain("return;");
   });
 
   it("uses a plain wrapping record-name editor with the caret at the end", () => {

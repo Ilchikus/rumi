@@ -1,5 +1,6 @@
 export interface BlockTypeOption {
   label: string
+  aliases: string[]
   icon: string
   type: string
   attrs?: Record<string, unknown>
@@ -23,16 +24,16 @@ export const BLOCK_TYPE_ICONS = {
 // The handle's Change type menu is the canonical ordering, naming, and icon
 // source for block-type presentation throughout the editor.
 export const BLOCK_TYPE_OPTIONS: BlockTypeOption[] = [
-  { label: "Text", icon: BLOCK_TYPE_ICONS.text, type: "paragraph" },
-  { label: "Heading 1", icon: BLOCK_TYPE_ICONS.heading1, type: "heading", attrs: { level: 1 } },
-  { label: "Heading 2", icon: BLOCK_TYPE_ICONS.heading2, type: "heading", attrs: { level: 2 } },
-  { label: "Heading 3", icon: BLOCK_TYPE_ICONS.heading3, type: "heading", attrs: { level: 3 } },
-  { label: "Bullet List", icon: BLOCK_TYPE_ICONS.bulletList, type: "bullet_item" },
-  { label: "Numbered List", icon: BLOCK_TYPE_ICONS.numberedList, type: "numbered_item" },
-  { label: "Checkbox", icon: BLOCK_TYPE_ICONS.checkbox, type: "task_item" },
-  { label: "Quote", icon: BLOCK_TYPE_ICONS.quote, type: "blockquote" },
-  { label: "Code Block", icon: BLOCK_TYPE_ICONS.codeBlock, type: "code_block" },
-  { label: "Mermaid", icon: BLOCK_TYPE_ICONS.mermaid, type: "mermaid" },
-  { label: "Table", icon: BLOCK_TYPE_ICONS.table, type: "table" },
-  { label: "Divider", icon: BLOCK_TYPE_ICONS.divider, type: "horizontal_rule" }
+  { label: "Paragraph", aliases: ["p", "text", "plain text"], icon: BLOCK_TYPE_ICONS.text, type: "paragraph" },
+  { label: "Heading 1", aliases: ["h1", "heading1", "#"], icon: BLOCK_TYPE_ICONS.heading1, type: "heading", attrs: { level: 1 } },
+  { label: "Heading 2", aliases: ["h2", "heading2", "##"], icon: BLOCK_TYPE_ICONS.heading2, type: "heading", attrs: { level: 2 } },
+  { label: "Heading 3", aliases: ["h3", "heading3", "###"], icon: BLOCK_TYPE_ICONS.heading3, type: "heading", attrs: { level: 3 } },
+  { label: "Bullet List", aliases: ["bullet", "bullet item", "ul", "unordered", "list"], icon: BLOCK_TYPE_ICONS.bulletList, type: "bullet_item" },
+  { label: "Numbered List", aliases: ["numbered", "numbered item", "ol", "ordered", "number"], icon: BLOCK_TYPE_ICONS.numberedList, type: "numbered_item" },
+  { label: "Checkbox", aliases: ["task", "task item", "todo", "checklist"], icon: BLOCK_TYPE_ICONS.checkbox, type: "task_item" },
+  { label: "Quote", aliases: ["blockquote"], icon: BLOCK_TYPE_ICONS.quote, type: "blockquote" },
+  { label: "Code Block", aliases: ["code", "codeblock", "pre"], icon: BLOCK_TYPE_ICONS.codeBlock, type: "code_block" },
+  { label: "Mermaid", aliases: ["diagram", "flowchart", "sequence", "chart"], icon: BLOCK_TYPE_ICONS.mermaid, type: "mermaid" },
+  { label: "Table", aliases: ["grid"], icon: BLOCK_TYPE_ICONS.table, type: "table" },
+  { label: "Divider", aliases: ["hr", "line", "separator"], icon: BLOCK_TYPE_ICONS.divider, type: "horizontal_rule" }
 ]

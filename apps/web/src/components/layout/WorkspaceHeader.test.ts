@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceNode } from "@rumi/contracts";
@@ -54,6 +55,10 @@ describe("workspace address bar", () => {
         onToggleSearch: () => undefined,
         onMoveNode: async () => true,
         onMoveToTrash: async () => true,
+        onCopyUrl: () => undefined,
+        onCopyRelativePath: () => undefined,
+        copyUrlShortcut: "⇧⌘C",
+        copyRelativePathShortcut: "⇧⌘P",
         onSeeRevisions: () => undefined
       })
     );
@@ -71,6 +76,17 @@ describe("workspace address bar", () => {
     expect(markup).not.toContain(">History<");
     expect(markup).toContain("max-w-[820px]");
     expect(markup).not.toContain("max-w-[1120px]");
+  });
+
+  it("wires URL and relative-path actions into the current-page menu", () => {
+    const source = readFileSync(new URL("./WorkspaceHeader.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("Copy URL");
+    expect(source).toContain("Copy relative path");
+    expect(source).toContain("onCopyUrl");
+    expect(source).toContain("onCopyRelativePath");
+    expect(source).toContain("copyUrlShortcut");
+    expect(source).toContain("copyRelativePathShortcut");
   });
 
   it("shows Trash as the current address without treating it as a workspace file", () => {

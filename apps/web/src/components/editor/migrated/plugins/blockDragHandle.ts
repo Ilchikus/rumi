@@ -13,6 +13,7 @@ import type { BlockTypeOption } from "./blockTypePresentation"
 import { listDropIndent } from "../listDropIndent"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
+  blockHandleSelectionMode,
   blockSelectionForHandleContextMenu,
   blockContextMenuPosition,
   matchingBlockTypeOptions,
@@ -89,6 +90,35 @@ export function areaSelectionScrollVelocity(
   return 0
 }
 
+export function areaSelectionUpdate(
+  baseSelectedBlocks: readonly number[],
+  highlightedBlocks: readonly number[],
+  toggle: boolean,
+  baseAnchor: number | null
+): { selectedBlocks: number[]; anchorBlock: number | null } {
+  const base = new Set(baseSelectedBlocks)
+  const selected = toggle ? new Set(base) : new Set<number>()
+
+  for (const position of highlightedBlocks) {
+    if (toggle && selected.has(position)) selected.delete(position)
+    else selected.add(position)
+  }
+
+  const selectedBlocks = Array.from(selected).sort((a, b) => a - b)
+  const addedBlocks = highlightedBlocks
+    .filter((position) => !base.has(position) && selected.has(position))
+    .sort((a, b) => a - b)
+  const anchorBlock = toggle
+    ? addedBlocks[0] ?? (
+        baseAnchor !== null && selected.has(baseAnchor)
+          ? baseAnchor
+          : selectedBlocks.at(-1) ?? null
+      )
+    : selectedBlocks[0] ?? null
+
+  return { selectedBlocks, anchorBlock }
+}
+
 interface HandledBlock {
   pos: number
   node: PmNode
@@ -152,6 +182,9 @@ class BlockDragHandleView {
   private areaAutoScrollFrame: number | null = null
   private areaAutoScrollVelocity = 0
   private areaHighlightedBlocks: Set<number> = new Set()
+  private areaSelectionToggles: boolean = false
+  private areaSelectionBaseBlocks: number[] = []
+  private areaSelectionBaseAnchor: number | null = null
   private suppressWrapperClick: boolean = false
   private preserveSelectionThroughHandleClick: boolean = false
   private selectingFromHandle: boolean = false
@@ -851,8 +884,17 @@ class BlockDragHandleView {
     }
 
     // Blank ProseMirror canvas and the surrounding editor padding are marquee zones.
-    // Clear any existing multi-block selection first
-    this.clearBlockSelection()
+    // The primary modifier toggles this marquee against the existing selection,
+    // matching primary-modifier block-handle clicks.
+    const pluginState = multiBlockSelectionKey.getState(this.view.state)
+    this.areaSelectionToggles = e.metaKey || e.ctrlKey
+    this.areaSelectionBaseBlocks = this.areaSelectionToggles
+      ? [...(pluginState?.selectedBlocks ?? [])]
+      : []
+    this.areaSelectionBaseAnchor = this.areaSelectionToggles
+      ? pluginState?.anchorBlock ?? null
+      : null
+    if (!this.areaSelectionToggles) this.clearBlockSelection()
 
     // Start area selection
     e.preventDefault()
@@ -1006,11 +1048,29 @@ class BlockDragHandleView {
       currentPositions.some((pos, i) => pos !== newPositions[i])
 
     if (changed) {
+      const nextSelection = areaSelectionUpdate(
+        this.areaSelectionBaseBlocks,
+        newPositions,
+        this.areaSelectionToggles,
+        this.areaSelectionBaseAnchor
+      )
       // Update plugin state to trigger decorations (this makes highlighting survive ProseMirror re-renders)
-      const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
-        selectedBlocks: newPositions,
-        anchorBlock: newPositions[0] ?? null
-      })
+      const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, nextSelection)
+      if (this.areaSelectionToggles) {
+        if (
+          nextSelection.anchorBlock !== null &&
+          this.view.state.doc.nodeAt(nextSelection.anchorBlock)
+        ) {
+          tr.setSelection(NodeSelection.create(
+            this.view.state.doc,
+            nextSelection.anchorBlock
+          ))
+        } else if (this.view.state.selection instanceof NodeSelection) {
+          tr.setSelection(TextSelection.near(
+            this.view.state.doc.resolve(this.view.state.selection.from + 1)
+          ))
+        }
+      }
       tr.setMeta("multiBlockKeep", true)
       tr.setMeta("areaSelecting", true) // Flag to indicate we're in area selection mode
       this.view.dispatch(tr)
@@ -1038,11 +1098,21 @@ class BlockDragHandleView {
     this.areaSelectStart = null
     this.areaSelectPointer = null
     const hadBlocks = this.areaHighlightedBlocks.size > 0
+    const toggledExistingSelection = this.areaSelectionToggles
     this.areaHighlightedBlocks.clear()
+    this.areaSelectionToggles = false
+    this.areaSelectionBaseBlocks = []
+    this.areaSelectionBaseAnchor = null
 
     // Guard: only dispatch if view is valid
     try {
-      if (!hadBlocks && this.view && this.view.state && this.view.dom) {
+      if (
+        !hadBlocks &&
+        !toggledExistingSelection &&
+        this.view &&
+        this.view.state &&
+        this.view.dom
+      ) {
         const tr = this.view.state.tr.setMeta(multiBlockSelectionKey, {
           selectedBlocks: [],
           anchorBlock: null
@@ -1134,31 +1204,12 @@ class BlockDragHandleView {
       try {
         // All blocks support multi-block selection
         const pluginState = multiBlockSelectionKey.getState(this.view.state)
-        const isInCurrentSelection =
-          pluginState?.selectedBlocks.includes(block.pos) ?? false
-
-        if (isInCurrentSelection) {
-          // Block is part of current multi-selection - preserve selection
-          // Just focus without changing selection (allows dragging multi-selection)
-        } else if (e.shiftKey) {
-          selectBlock(this.view, block.pos, "shift")
-        } else if (e.metaKey || e.ctrlKey) {
-          selectBlock(this.view, block.pos, "toggle")
-        } else {
-          // Select and decorate the block in the same transaction. A second
-          // selection-only transaction would immediately clear the decoration.
-          const node = this.view.state.doc.nodeAt(block.pos)
-          if (node) {
-            const tr = this.view.state.tr
-              .setSelection(NodeSelection.create(this.view.state.doc, block.pos))
-              .setMeta(multiBlockSelectionKey, {
-                selectedBlocks: [block.pos],
-                anchorBlock: block.pos
-              })
-              .setMeta("multiBlockKeep", true)
-            this.view.dispatch(tr)
-          }
-        }
+        const mode = blockHandleSelectionMode(
+          pluginState?.selectedBlocks ?? [],
+          block.pos,
+          e
+        )
+        if (mode !== "preserve") selectBlock(this.view, block.pos, mode)
       } finally {
         this.selectingFromHandle = false
       }

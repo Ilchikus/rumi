@@ -339,6 +339,7 @@ function isEligibleTextPosition(
   if (!code) return true;
   if (state.storedMarks?.some((mark) => mark.type === code)) return false;
   if ($from.marks().some((mark) => mark.type === code)) return false;
+  if (from > $from.start() && state.doc.rangeHasMark(from - 1, from, code)) return false;
   return from === to || !state.doc.rangeHasMark(from, to, code);
 }
 

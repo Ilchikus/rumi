@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import {
+  shouldCreatePageImmediately,
+  sidebarNodeCreateKinds
+} from "./Sidebar";
 
 const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
@@ -9,6 +13,12 @@ const editableTitleSource = readFileSync(
 );
 
 describe("sidebar create-menu shortcuts", () => {
+  it("offers three child types for folders and only pages for databases", () => {
+    expect(sidebarNodeCreateKinds("folder")).toEqual(["page", "folder", "database"]);
+    expect(sidebarNodeCreateKinds("database")).toEqual(["page"]);
+    expect(sidebarNodeCreateKinds("page")).toEqual([]);
+  });
+
   it("keeps the root create menu controlled by the browser shell", () => {
     expect(sidebarSource).toContain("<DropdownMenu open={open} onOpenChange={onOpenChange}>");
     expect(appSource).toContain('action === "open-create-menu"');
@@ -20,6 +30,29 @@ describe("sidebar create-menu shortcuts", () => {
     expect(sidebarSource).toContain("itemRefs.current[index]?.focus()");
     expect(sidebarSource).toContain('event.key !== "Enter" || !hasPrimaryModifier(event, platform)');
     expect(sidebarSource).toContain("immediatePointerKindRef.current === option.kind");
+  });
+
+  it("opens modified New Page actions from folder and database menus immediately", () => {
+    const commandClick = {
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false
+    };
+
+    expect(shouldCreatePageImmediately("page", commandClick, "mac")).toBe(true);
+    expect(shouldCreatePageImmediately("folder", commandClick, "mac")).toBe(false);
+    expect(shouldCreatePageImmediately("database", commandClick, "mac")).toBe(false);
+    expect(sidebarSource).toContain("void onCreateDefault(node.path, kind)");
+    expect(sidebarSource).toContain("onCreateDefault={onCreateDefault}");
+    expect(sidebarSource).toContain(
+      "updateExpandedPaths((current) => new Set(current).add(parentPath))"
+    );
+    expect(appSource).toContain(
+      "refreshAfterMutation(\n        result.path,\n        selectTitleAfterCreate"
+    );
+    expect(appSource).toContain("insertPageIntoSidebar(result.path)");
+    expect(appSource).toContain("window.setTimeout(() => {");
   });
 
   it("opens default-named items with their complete title selected", () => {

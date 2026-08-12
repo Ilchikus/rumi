@@ -1,5 +1,9 @@
 export type AppShortcutPlatform = "mac" | "linux";
-export type AppShortcutAction = "open-create-menu" | "toggle-sidebar";
+export type AppShortcutAction =
+  | "open-create-menu"
+  | "toggle-sidebar"
+  | "copy-page-url"
+  | "copy-page-relative-path";
 
 interface KeyboardShortcutEvent {
   key: string;
@@ -27,10 +31,22 @@ export function appShortcutAction(
   event: KeyboardShortcutEvent,
   platform: AppShortcutPlatform
 ): AppShortcutAction | null {
-  if (event.repeat || event.isComposing || event.shiftKey) return null;
+  if (event.repeat || event.isComposing) return null;
 
   const isN = event.code === "KeyN" || event.key.toLocaleLowerCase() === "n";
   const isS = event.code === "KeyS" || event.key.toLocaleLowerCase() === "s";
+  const isC = event.code === "KeyC" || event.key.toLocaleLowerCase() === "c";
+  const isP = event.code === "KeyP" || event.key.toLocaleLowerCase() === "p";
+  const hasPrimaryModifier = platform === "mac"
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+
+  if (event.shiftKey && !event.altKey && hasPrimaryModifier) {
+    if (isC) return "copy-page-url";
+    if (isP) return "copy-page-relative-path";
+  }
+
+  if (event.shiftKey) return null;
 
   if (
     isN &&
@@ -80,8 +96,22 @@ export function shortcutLabels(platform: AppShortcutPlatform): {
   create: string;
   sidebar: string;
   immediate: string;
+  copyUrl: string;
+  copyRelativePath: string;
 } {
   return platform === "mac"
-    ? { create: "⌃N", sidebar: "⌘S", immediate: "⌘↵" }
-    : { create: "Alt+N", sidebar: "Ctrl+S", immediate: "Ctrl+Enter" };
+    ? {
+        create: "⌃N",
+        sidebar: "⌘S",
+        immediate: "⌘↵",
+        copyUrl: "⇧⌘C",
+        copyRelativePath: "⇧⌘P"
+      }
+    : {
+        create: "Alt+N",
+        sidebar: "Ctrl+S",
+        immediate: "Ctrl+Enter",
+        copyUrl: "Ctrl+Shift+C",
+        copyRelativePath: "Ctrl+Shift+P"
+      };
 }

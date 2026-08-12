@@ -1,5 +1,6 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { keymap } from "prosemirror-keymap"
+import { undoInputRule } from "prosemirror-inputrules"
 import { Schema } from "prosemirror-model"
 import { Command, NodeSelection, TextSelection } from "prosemirror-state"
 import {
@@ -295,7 +296,7 @@ function buildKeymap(schema: Schema) {
   const keys: { [key: string]: Command } = {}
 
   // History
-  keys["Mod-z"] = undoEditorChange
+  keys["Mod-z"] = chainCommands(undoInputRule, undoEditorChange)
   keys["Shift-Mod-z"] = redoEditorChange
   if (!mac) keys["Mod-y"] = redoEditorChange
 

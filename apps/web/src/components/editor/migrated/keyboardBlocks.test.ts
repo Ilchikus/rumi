@@ -9,6 +9,9 @@ import { history } from "prosemirror-history"
 import { describe, expect, it } from "vitest"
 import {
   buildKeymap,
+  inlineCodeArrowRightTarget,
+  inlineCodeBoundaryPlugin,
+  inlineCodeBoundaryPluginKey,
   insertLiteralNewlineInCode,
   removeEmptyParagraphBlock,
   resetEmptyFormattedBlock,
@@ -502,6 +505,114 @@ describe("live editor shared history and structural insertion shortcuts", () => 
     expect(selectionToolbarPluginKey.getState(state)).toMatchObject({
       linkEditorRequestRevision: 1
     })
+  })
+
+  it("uses ArrowLeft and ArrowRight to enter and exit an inline-code boundary", () => {
+    const keymapPlugin = buildKeymap(schema)
+    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
+    const code = schema.marks.code!.create()
+    const paragraph = schema.nodes.paragraph!.create(
+      null,
+      schema.text("value", [code])
+    )
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+      plugins: [boundaryPlugin, keymapPlugin]
+    })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(true)
+    expect(state.selection.from).toBe(6)
+    expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 6 })
+
+    view.dispatch(
+      state.tr
+        .setSelection(TextSelection.create(state.doc, 6))
+        .removeStoredMark(code.type)
+    )
+    expect(state.storedMarks?.map(mark => mark.type.name)).toContain("code")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 6 })
+
+    expect(boundaryPlugin.props.handleTextInput?.call(
+      boundaryPlugin,
+      view,
+      6,
+      6,
+      "!",
+      () => state.tr.insertText("!", 6, 6)
+    )).toBe(true)
+    expect(serializeMarkdown(state.doc)).toBe("`value!`\n")
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toEqual({ position: 7 })
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(false)
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, 6)))
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toBeNull()
+
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, 7)))
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowLeft")
+    )).toBe(true)
+
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowRight")
+    )).toBe(true)
+    expect(state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
+    view.dispatch(state.tr.insertText(" after"))
+    expect(serializeMarkdown(state.doc)).toBe("`value!` after\n")
+  })
+
+  it("moves ArrowRight over the final code character directly outside", () => {
+    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
+    const code = schema.marks.code!.create()
+    const paragraph = schema.nodes.paragraph!.create(
+      null,
+      schema.text("value", [code])
+    )
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 5),
+      plugins: [boundaryPlugin]
+    })
+    const view = {
+      get state() { return state },
+      dispatch(transaction: Transaction) { state = state.apply(transaction) }
+    } as unknown as EditorView
+
+    expect(inlineCodeArrowRightTarget(state, schema)).toBe(6)
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowRight")
+    )).toBe(true)
+    expect(state.selection.from).toBe(6)
+    expect(inlineCodeBoundaryPluginKey.getState(state)).toBeNull()
+    expect(boundaryPlugin.props.handleKeyDown?.call(
+      boundaryPlugin,
+      view,
+      keyboardEvent("ArrowRight")
+    )).toBe(false)
+
+    view.dispatch(state.tr.insertText(" after"))
+    expect(serializeMarkdown(state.doc)).toBe("`value` after\n")
   })
 
   it.each(["code_block", "mermaid"])(

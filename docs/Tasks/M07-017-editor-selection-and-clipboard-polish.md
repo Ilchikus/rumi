@@ -108,9 +108,7 @@ editor, with current-page action wiring in the web shell.
 - Normal and plain-text paste have distinct, predictable URL and inline-code behavior.
 - A durable inline-code closing boundary has only two intentional caret states: outside, or inside
   after one Left press; the next Left moves through the code text instead of consuming another
-  invisible boundary state, and Right crosses the closing edge without a typing-affinity stop. The
-  stored code mark is that state, and the browser caret is drawn on its side of the code element in
-  text, at the ordinary caret height, without placeholder elements in the document.
+  invisible boundary state, and Right crosses the closing edge without a typing-affinity stop.
 - Modified **New Page** actions from sidebar containers and database views add the returned page to
   the current sidebar tree and open it with its default title selected before sidebar/table
   hydration, while ordinary creation keeps the existing inline naming flow.

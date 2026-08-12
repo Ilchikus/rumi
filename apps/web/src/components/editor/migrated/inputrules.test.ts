@@ -51,10 +51,29 @@ function createTypingHarness() {
     }
   }
 
+  function replaceText(from: number, to: number, text: string) {
+    let handled = false
+    for (const plugin of plugins) {
+      const handleTextInput = plugin.props.handleTextInput
+      if (!handleTextInput) continue
+      handled = Boolean(handleTextInput.call(
+        plugin,
+        view,
+        from,
+        to,
+        text,
+        () => state.tr.insertText(text, from, to)
+      ))
+      if (handled) break
+    }
+    if (!handled) view.dispatch(state.tr.insertText(text, from, to))
+  }
+
   return {
     get state() { return state },
     plugins,
     type,
+    replaceText,
     dispatch(transaction: Transaction) { view.dispatch(transaction) },
     blur() {
       const sessionPlugin = plugins[0] as Plugin
@@ -181,6 +200,30 @@ describe("live editor inline-code input rules", () => {
     expect(harness.state.doc.firstChild?.firstChild?.marks
       .map((mark) => mark.type.name)).toContain("code")
     expect(inlineCodeInputSessionKey.getState(harness.state)).toBeNull()
+  })
+
+  it("keeps pending inline code through a browser-normalized double space", () => {
+    const harness = createTypingHarness()
+    harness.type("`value ")
+    const cursor = harness.state.selection.from
+
+    harness.replaceText(cursor - 1, cursor, ". ")
+    expect(inlineCodeInputSessionKey.getState(harness.state)).not.toBeNull()
+    harness.type("`")
+
+    expect(serializeMarkdown(harness.state.doc)).toBe("`value. `\n")
+  })
+
+  it("keeps pending inline code when macOS inserts punctuation before its space", () => {
+    const harness = createTypingHarness()
+    harness.type("`value ")
+    const cursor = harness.state.selection.from
+
+    harness.dispatch(harness.state.tr.insertText(".", cursor - 1, cursor - 1))
+    expect(inlineCodeInputSessionKey.getState(harness.state)).not.toBeNull()
+    harness.type("`")
+
+    expect(serializeMarkdown(harness.state.doc)).toBe("`value. `\n")
   })
 
   it("leaves interrupted backticks literal after caret movement", () => {

@@ -10,7 +10,7 @@
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
-- [ ] i type something inside \`, and when inline text is closed, cursor should be placed outside of the inline code. to explicitly enter the space inside inline, user press left arrow and cursor is placed inside the inline code. right arrow - cursor out
+- [ ] [Inline-code caret boundary](Tasks/xxx-inline-code-caret-boundary.md)
 
 ## To think
 

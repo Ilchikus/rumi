@@ -1,5 +1,5 @@
 ---
-status: doing
+status: done
 type: feature
 milestone: M07
 owner_layer: editor
@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-07"
-updated: "2026-08-11"
+updated: "2026-08-12"
 ---
 # M07-017 Editor Selection And Clipboard Polish
 
@@ -39,9 +39,9 @@ canonical workspace path through one action surface.
   than searching backward through the paragraph. Closing within that uninterrupted session creates
   the durable code mark; caret movement, navigation, blur, paste, or another structural action
   cancels it and leaves literal backticks that serialize escaped. Mod-Z immediately after closure
-  restores both literal delimiters. At a durable closing boundary, Left explicitly enters the code
-  mark in one keypress and keeps subsequent typing inside it until Right exits. Right from the final
-  code character moves directly outside instead of stopping at a code-side caret that types outside.
+  restores both literal delimiters. Custom durable-boundary arrow handling is deferred to
+  [Inline Code Caret Boundary](xxx-inline-code-caret-boundary.md); navigation currently remains
+  browser-native.
 - Treat `http://`, `https://`, `www.`, and bare domain destinations as URL paste. Normal paste over
   highlighted text retains the highlight as the link label; normal paste at a caret inserts the
   clipboard text as both label and stored destination. Render scheme-less web destinations through
@@ -90,7 +90,7 @@ editor, with current-page action wiring in the web shell.
       inside task items.
 - [x] Paste transaction tests for inline-code replacement, generic domains, and explicit plain-text
       URL paste.
-- [x] Inline-code input/session, escaped-source, undo, and boundary tests.
+- [x] Inline-code input/session, escaped-source, and undo tests.
 - [x] Current-page action and shortcut tests for copied URL/path values and availability guards.
 - [x] Sidebar child-creation matrix coverage.
 - [x] Optimistic sidebar-tree insertion, ordering, deduplication, and missing-parent coverage.
@@ -106,9 +106,6 @@ editor, with current-page action wiring in the web shell.
 - Sheets receives adjacent paragraphs without empty rows, Rumi structure remains intact, and text
   selections do not acquire their containing list or checkbox syntax.
 - Normal and plain-text paste have distinct, predictable URL and inline-code behavior.
-- A durable inline-code closing boundary has only two intentional caret states: outside, or inside
-  after one Left press; the next Left moves through the code text instead of consuming another
-  invisible boundary state, and Right crosses the closing edge without a typing-affinity stop.
 - Modified **New Page** actions from sidebar containers and database views add the returned page to
   the current sidebar tree and open it with its default title selected before sidebar/table
   hydration, while ordinary creation keeps the existing inline naming flow.
@@ -118,11 +115,12 @@ editor, with current-page action wiring in the web shell.
 
 ## Verification
 
-Verified through 2026-08-11:
+Verified through 2026-08-12:
 
 - focused editor, clipboard, link, modified-creation ordering, multi-area selection, current-page
   action, and application-shortcut coverage passed
-- `corepack pnpm check` passed with 71 test files and 568 tests, typecheck, the production web
+- `corepack pnpm check` passed with 71 test files and 566 tests, typecheck, the production web
   build, and the bundled server build
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
-- user browser QA remains pending before merge
+- user browser QA approved the current release scope; durable inline-code boundary navigation was
+  removed and captured as a deferred research task

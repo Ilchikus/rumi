@@ -24,11 +24,6 @@ import {
   normalizePastedTables,
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
-import {
-  inlineCodeArrowRightTarget,
-  inlineCodeBoundaryPlugin,
-  inlineCodeBoundaryPluginKey
-} from "./keymap"
 
 function stateWithSelection(markdown: string, from: number, to = from): EditorState {
   const doc = parseMarkdown(markdown, schema)
@@ -616,83 +611,6 @@ describe("live editor external rich paste normalization", () => {
     expect(linkParagraph.textContent).toBe("Open Example next")
     expect(linkText?.marks.map(mark => mark.type.name)).toEqual(["link"])
     expect(explicitText?.marks.map(mark => mark.type.name)).toContain("underline")
-  })
-})
-
-describe("live editor inline-code boundary affinity", () => {
-  it("moves the browser caret inside and outside the code DOM in one keypress", () => {
-    const code = schema.marks.code!.create()
-    const paragraph = schema.nodes.paragraph!.create(null, schema.text("value", [code]))
-    const doc = schema.nodes.doc!.create(null, paragraph)
-    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
-    const host = document.createElement("div")
-    document.body.append(host)
-    const view = new EditorView(host, {
-      state: EditorState.create({
-        doc,
-        selection: TextSelection.create(doc, 6),
-        plugins: [boundaryPlugin]
-      })
-    })
-    const key = (value: string) => new KeyboardEvent("keydown", { key: value })
-
-    expect(boundaryPlugin.props.handleKeyDown?.call(
-      boundaryPlugin,
-      view,
-      key("ArrowLeft")
-    )).toBe(true)
-    expect(view.state.storedMarks?.map(mark => mark.type.name)).toContain("code")
-    expect(inlineCodeBoundaryPluginKey.getState(view.state)).toEqual({ position: 6 })
-    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).not.toBeNull()
-
-    expect(boundaryPlugin.props.handleKeyDown?.call(
-      boundaryPlugin,
-      view,
-      key("ArrowRight")
-    )).toBe(true)
-    expect(view.state.storedMarks?.map(mark => mark.type.name) ?? []).not.toContain("code")
-    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).toBeNull()
-
-    view.destroy()
-    host.remove()
-  })
-
-  it("skips the code-side typing-outside affinity on ArrowRight", () => {
-    const code = schema.marks.code!.create()
-    const paragraph = schema.nodes.paragraph!.create(null, schema.text("value", [code]))
-    const doc = schema.nodes.doc!.create(null, paragraph)
-    const boundaryPlugin = inlineCodeBoundaryPlugin(schema)
-    const host = document.createElement("div")
-    document.body.append(host)
-    const view = new EditorView(host, {
-      state: EditorState.create({
-        doc,
-        selection: TextSelection.create(doc, 6),
-        plugins: [boundaryPlugin]
-      })
-    })
-    const codeSide = view.domAtPos(6, -1)
-    document.getSelection()?.collapse(codeSide.node, codeSide.offset)
-
-    expect(inlineCodeArrowRightTarget(view.state, schema)).toBe(6)
-    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).not.toBeNull()
-    expect(boundaryPlugin.props.handleKeyDown?.call(
-      boundaryPlugin,
-      view,
-      new KeyboardEvent("keydown", { key: "ArrowRight" })
-    )).toBe(true)
-    expect(document.getSelection()?.anchorNode?.parentElement?.closest("code")).toBeNull()
-    expect(boundaryPlugin.props.handleKeyDown?.call(
-      boundaryPlugin,
-      view,
-      new KeyboardEvent("keydown", { key: "ArrowRight" })
-    )).toBe(false)
-
-    view.dispatch(view.state.tr.insertText(" after"))
-    expect(serializeMarkdown(view.state.doc)).toBe("`value` after\n")
-
-    view.destroy()
-    host.remove()
   })
 })
 

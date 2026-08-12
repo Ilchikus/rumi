@@ -39,6 +39,25 @@ function validInlineCodeInputSession(
   return state.doc.resolve(session.openerPos).parent === selection.$from.parent
 }
 
+function transactionChangesOnlyPendingInlineCode(
+  transaction: import("prosemirror-state").Transaction,
+  session: InlineCodeInputSession
+): boolean {
+  if (transaction.steps.length !== 1) return false
+
+  let changed = false
+  let staysWithinSession = true
+  transaction.steps[0]!.getMap().forEach((oldStart, oldEnd) => {
+    changed = true
+    if (
+      oldStart < session.openerPos + 1 ||
+      oldEnd > session.cursorPos
+    ) staysWithinSession = false
+  })
+
+  return changed && staysWithinSession
+}
+
 export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
   return new Plugin<InlineCodeInputSession | null>({
     key: inlineCodeInputSessionKey,
@@ -73,9 +92,12 @@ export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
         const likelyDeletion =
           newState.doc.content.size < oldState.doc.content.size &&
           newState.selection.from <= session.cursorPos
+        const localizedBrowserReplacement =
+          transactionChangesOnlyPendingInlineCode(transaction, session) &&
+          newState.selection.from === transaction.mapping.map(session.cursorPos, 1)
         return uiEvent !== "paste" &&
           uiEvent !== "cut" &&
-          likelyDeletion &&
+          (likelyDeletion || localizedBrowserReplacement) &&
           validInlineCodeInputSession(newState, next)
           ? next
           : null
@@ -122,8 +144,9 @@ export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
 
         if (!session) return false
         if (
-          from !== session.cursorPos ||
-          to !== session.cursorPos ||
+          from < session.openerPos + 1 ||
+          from > to ||
+          to > session.cursorPos ||
           /[\r\n]/u.test(text)
         ) {
           view.dispatch(

@@ -124,3 +124,5 @@ Verified through 2026-08-12:
 - `corepack pnpm check:server-package` verified the installable `@rumi-md/server@0.1.15`
 - user browser QA approved the current release scope; durable inline-code boundary navigation was
   removed and captured as a deferred research task
+- npm published `@rumi-md/server@0.1.15` from merged `main`; the public registry reports it as
+  `latest`, its shasum matches the published tarball, and a clean registry install reports `0.1.15`

@@ -1,6 +1,6 @@
 {
   "name": "@rumi-md/server",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "File-native Rumi workspace server and command-line interface",
   "license": "MIT",
   "type": "module",
@@ -46,6 +46,7 @@
     "commander": "^12.1.0",
     "fastify": "^5.10.0",
     "pino-pretty": "^13.1.2",
+    "saxes": "^6.0.0",
     "yaml": "^2.6.1"
   },
   "devDependencies": {

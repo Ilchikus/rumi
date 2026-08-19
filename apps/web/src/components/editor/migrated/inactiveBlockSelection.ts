@@ -20,7 +20,8 @@ const INACTIVE_BOUNDARY_BLOCKS = new Set(["file_embed"])
 
 export function createCaretlessBlankBlockDeletionTransaction(
   state: EditorState,
-  blockPos: number
+  blockPos: number,
+  options: { scrollIntoView?: boolean } = {}
 ): Transaction | null {
   const block = state.doc.nodeAt(blockPos)
   if (
@@ -44,7 +45,7 @@ export function createCaretlessBlankBlockDeletionTransaction(
   } else {
     return null
   }
-  return transaction.scrollIntoView()
+  return options.scrollIntoView === false ? transaction : transaction.scrollIntoView()
 }
 
 export function transactionLeavesEditorInactive(

@@ -45,7 +45,7 @@ const selectionToolbar = readFileSync(
 );
 
 describe("editor layout contracts", () => {
-  it("uses Tailwind neutral-100 code surfaces and a borderless Mermaid overlay switcher", () => {
+  it("uses the shared Neutral 100 subtle surface for code and Mermaid editing", () => {
     const codeBlockRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror pre"
@@ -60,13 +60,18 @@ describe("editor layout contracts", () => {
       editorStyles,
       ".prosemirror-editor .ProseMirror pre.mermaid-editor"
     );
+    const mermaidErrorRule = cssRule(editorStyles, ".mermaid-error");
 
     expect(codeBlockView).toContain(
-      'this.dom.classList.add("code-block-wrapper", "bg-neutral-100")'
+      'this.dom.classList.add("code-block-wrapper", "bg-surface-subtle")'
     );
     expect(mermaidNodeView).toContain(
-      'this.dom.classList.toggle("bg-neutral-100", !isView)'
+      'this.dom.classList.toggle("bg-surface-subtle", !isView)'
     );
+    expect(sharedStyles).toContain("--surface-subtle: 0 0% 96.1%;");
+    expect(sharedStyles).toContain("--muted: var(--surface-subtle);");
+    expect(editorStyles).toContain("background-color: hsl(var(--surface-subtle));");
+    expect(sharedStyles).toContain("background: hsl(var(--surface-subtle));");
     expect(codeBlockRule).not.toContain("background");
     expect(mermaidBlockRule).not.toContain("border:");
     expect(mermaidBlockRule).not.toContain("background");
@@ -79,6 +84,10 @@ describe("editor layout contracts", () => {
       '.mermaid-block-wrapper[data-mode="view"]:hover .mermaid-toolbar'
     );
     expect(mermaidEditorRule).toContain("overflow: hidden;");
+    expect(mermaidErrorRule).toContain(
+      "background: hsl(var(--surface-subtle));"
+    );
+    expect(mermaidErrorRule).toContain("color: hsl(var(--destructive));");
   });
 
   it("uses flush five-pixel paragraph spacing and tighter flush list spacing", () => {
@@ -214,6 +223,15 @@ describe("editor layout contracts", () => {
     expect(migratedEditor).toContain("tableEditing()");
   });
 
+  it("keeps editor overlays outside block area-selection gestures", () => {
+    expect(selectionToolbar).toContain(
+      'container.dataset.rumiAreaSelectionExclude = ""'
+    );
+    expect(blockDragHandle).toContain(
+      '"[data-rumi-area-selection-exclude], [data-rumi-editor-overlay]"'
+    );
+  });
+
   it("constrains embedded database views to editor width before their table scrolls", () => {
     const embedRule = cssRule(
       editorStyles,
@@ -264,7 +282,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror th\s*,/u);
   });
 
-  it("uses neutral unchecked task boxes and the original blue checked state", () => {
+  it("uses neutral unchecked task boxes and the Sky 600 checked state", () => {
     const nestedTaskRule = cssRule(
       editorStyles,
       '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]'
@@ -284,19 +302,41 @@ describe("editor layout contracts", () => {
     expect(checkedTaskRule).toContain("background-color: #0284c7;");
   });
 
-  it("uses sky 600 links and semibold typed mention links", () => {
+  it("uses Sky 600 semibold links and matching link icons", () => {
     const linkRule = cssRule(editorStyles, ".prosemirror-editor .ProseMirror a");
-    const mentionRule = cssRule(
+    const iconRule = cssRule(
       editorStyles,
-      '.prosemirror-editor .ProseMirror a[data-mention="true"]'
+      ".prosemirror-editor .ProseMirror .rumi-link-icon::before"
     );
 
     expect(linkRule).toContain("color: #0284c7;");
+    expect(linkRule).toContain("font-weight: 600;");
     expect(linkRule).toContain("text-decoration: underline;");
-    expect(mentionRule).toContain("font-weight: 600;");
-    expect(editorStyles).toContain('a[data-mention-kind="folder"]');
-    expect(editorStyles).toContain('a[data-mention-kind="database"]');
-    expect(editorStyles).toContain('a[data-mention-kind="page"]');
+    expect(iconRule).toContain("background-color: #0284c7;");
+    expect(editorStyles).not.toContain(".rumi-link-icon-selected::before");
+    expect(editorStyles).toContain(".rumi-link-icon::before");
+    expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="folder"]');
+    expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="database"]');
+    expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="page"]');
+  });
+
+  it("uses rose 700 text for inline code without tinting code blocks", () => {
+    const inlineCodeRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror :not(pre) > code"
+    );
+    const codeBlockRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror pre code"
+    );
+    const sharedInlineCodeRule = cssRule(
+      sharedStyles,
+      ".rumi-prosemirror :not(pre) > code,\n  .rumi-prosemirror .rumi-inline-code-pending"
+    );
+
+    expect(inlineCodeRule).toContain("color: #be123c;");
+    expect(sharedInlineCodeRule).toContain("color: #be123c;");
+    expect(codeBlockRule).not.toContain("color: #be123c;");
   });
 
   it("keeps the mention picker on current colors and applies pointer selections", () => {
@@ -407,12 +447,38 @@ describe("editor layout contracts", () => {
     expect(migratedEditor).toContain("setSelectionToolbarPreferences(view");
   });
 
-  it("uses modifier-aware link text and a Phosphor external-link affordance", () => {
+  it("uses modifier-aware link text and a Phosphor external-link atom", () => {
+    const markerRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .rumi-link-icon"
+    );
+    const iconRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .rumi-link-icon::before"
+    );
+    const internalVariantRule = cssRule(
+      editorStyles,
+      '.prosemirror-editor .ProseMirror .rumi-link-icon[data-link-type="internal"]'
+    );
+
     expect(editorStyles).toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover");
-    expect(editorStyles).toContain('a[data-external-link="true"]::after');
+    expect(markerRule).toContain("height: 0;");
+    expect(markerRule).toContain("line-height: 0;");
+    expect(markerRule).toContain("width: 1.2em;");
+    expect(iconRule).toContain("width: 1.2em;");
+    expect(internalVariantRule).toContain("--rumi-link-icon: var(--mention-icon);");
+    expect(markerRule).toContain("M128,24h0A104,104");
+    expect(markerRule).not.toContain("M128,20A108,108");
+    expect(editorStyles).not.toContain('a[data-mention="true"]::before');
+    expect(editorStyles).toContain(".rumi-link-boundary-caret");
+    expect(editorStyles).toContain(".rumi-link-icon-selected::after");
     expect(editorStyles).toContain("cursor: text;");
     expect(editorStyles).toContain("cursor: pointer;");
-    expect(editorStyles).toContain("M224,104a8,8");
+    expect(editorStyles).not.toContain('a[data-external-link="true"]::after');
+    expect(editorSchema).toContain("link_marker");
+    expect(editorSchema).not.toContain("external_link_marker");
+    expect(editorSchema).not.toContain("internal_link_marker");
+    expect(editorSchema).toContain("atom: true");
   });
 });
 

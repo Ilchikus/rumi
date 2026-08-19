@@ -99,7 +99,35 @@ describe("WorkspaceRuntime", () => {
     expect(asset.data).toEqual(bytes);
     expect(events.map((entry) => entry.event.name)).toEqual(["asset.changed", "asset.changed"]);
     await expect(runtime.readAsset("Idea.md")).rejects.toThrow(/not a readable workspace asset/);
-    await expect(runtime.saveAsset("script.svg", Buffer.from("<svg/>"))).rejects.toThrow(/Unsupported asset type/);
+
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'
+    );
+    const savedSvg = await runtime.saveAsset("diagram.svg", svg);
+    await expect(runtime.readAsset(savedSvg.path)).resolves.toMatchObject({
+      fileName: "diagram.svg",
+      contentType: "image/svg+xml",
+      data: svg
+    });
+    await expect(runtime.saveAsset(
+      "script.svg",
+      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+    )).rejects.toThrow(/complete static SVG/u);
+  });
+
+  it("validates the complete streamed SVG before publishing it", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const beginning = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg"><desc>${"x".repeat(5000)}</desc>`
+    );
+    const activeEnding = Buffer.from("<script>alert(1)</script></svg>");
+
+    await expect(runtime.saveAssetStream(
+      "late-script.svg",
+      byteSource(beginning, activeEnding)
+    )).rejects.toThrow(/complete static SVG/u);
+    await expect(fs.readdir(path.join(root, ".assets"))).resolves.toEqual([]);
   });
 
   it("enforces workspace-specific upload types, size limits, and file signatures", async () => {
@@ -310,6 +338,140 @@ describe("WorkspaceRuntime", () => {
     expect(page.version).toHaveLength(64);
     expect(page.contentHash).toBe(page.version);
     expect(page.frontmatterHash).toHaveLength(64);
+  });
+
+  it("persists versioned shared image widths without changing Markdown", async () => {
+    const root = await tempWorkspace();
+    const markdown = "![Diagram](.assets/diagram.png)";
+    await fs.writeFile(path.join(root, "Idea.md"), markdown, "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const events: RumiEventEnvelope[] = [];
+    runtime.events.subscribe((event) => events.push(event));
+    const opened = await runtime.openPage("Idea.md");
+
+    expect(opened.presentation).toEqual({ images: {} });
+    expect(opened.presentationVersion).toHaveLength(64);
+    const saved = await runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png",
+      widthPx: 480,
+      basePresentationVersion: opened.presentationVersion!
+    });
+
+    expect(saved).toMatchObject({
+      status: "saved",
+      presentation: { images: { ".assets/diagram.png": { widthPx: 480 } } },
+      events: [{
+        name: "page.changed",
+        path: "Idea.md",
+        changedBy: "image-presentation",
+        affects: ["presentation"]
+      }]
+    });
+    await expect(fs.readFile(path.join(root, "Idea.md"), "utf8")).resolves.toBe(markdown);
+    await expect(
+      fs.readFile(path.join(root, ".rumi", "presentation.json"), "utf8")
+    ).resolves.toContain('"widthPx": 480');
+    expect(events.at(-1)?.event).toMatchObject({ changedBy: "image-presentation" });
+    if (saved.status !== "saved") throw new Error("Expected image width to save");
+
+    const aligned = await runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png",
+      alignment: "center",
+      basePresentationVersion: saved.presentationVersion
+    });
+    expect(aligned).toMatchObject({
+      status: "saved",
+      presentation: {
+        images: { ".assets/diagram.png": { widthPx: 480, alignment: "center" } }
+      }
+    });
+    await expect(fs.readFile(path.join(root, "Idea.md"), "utf8")).resolves.toBe(markdown);
+    await expect(
+      fs.readFile(path.join(root, ".rumi", "presentation.json"), "utf8")
+    ).resolves.toContain('"alignment": "center"');
+
+    await expect(runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png",
+      widthPx: 640,
+      basePresentationVersion: opened.presentationVersion!
+    })).resolves.toMatchObject({
+      status: "conflict",
+      presentation: { images: { ".assets/diagram.png": { widthPx: 480 } } }
+    });
+    await expect(runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png",
+      widthPx: 1
+    })).rejects.toThrow(/96 to 2400 pixels/u);
+    await expect(runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png"
+    })).rejects.toThrow(/width or alignment/u);
+
+    const reopenedRuntime = await WorkspaceRuntime.open({ rootPath: root });
+    await expect(reopenedRuntime.openPage("Idea.md")).resolves.toMatchObject({
+      presentation: {
+        images: { ".assets/diagram.png": { widthPx: 480, alignment: "center" } }
+      }
+    });
+  });
+
+  it("moves and restores page presentation with workspace paths", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Idea.md"), "![](.assets/diagram.png)", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.updateImagePresentation({
+      path: "Idea.md",
+      imageSrc: ".assets/diagram.png",
+      widthPx: 360
+    });
+
+    await runtime.renameNode({ path: "Idea.md", newName: "Plan" });
+    await expect(runtime.openPage("Plan.md")).resolves.toMatchObject({
+      presentation: { images: { ".assets/diagram.png": { widthPx: 360 } } }
+    });
+
+    const deleted = await runtime.deleteNode({ path: "Plan.md" });
+    await expect(runtime.openTrashPage(deleted.trashItem.id)).resolves.toMatchObject({
+      page: { presentation: { images: { ".assets/diagram.png": { widthPx: 360 } } } }
+    });
+    await runtime.restoreTrashItem({ id: deleted.trashItem.id });
+    await expect(runtime.openPage("Plan.md")).resolves.toMatchObject({
+      presentation: { images: { ".assets/diagram.png": { widthPx: 360 } } }
+    });
+  });
+
+  it("keeps companion-page presentation through folder renames and collision restores", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.createFolder({
+      parentPath: "",
+      name: "Projects",
+      markdownBody: "![](.assets/diagram.png)"
+    });
+    await runtime.updateImagePresentation({
+      path: "Projects/Projects.index.md",
+      imageSrc: ".assets/diagram.png",
+      widthPx: 540
+    });
+
+    await runtime.renameNode({ path: "Projects", newName: "Plans" });
+    await expect(runtime.openPage("Plans")).resolves.toMatchObject({
+      path: "Plans/Plans.index.md",
+      presentation: { images: { ".assets/diagram.png": { widthPx: 540 } } }
+    });
+
+    const deleted = await runtime.deleteNode({ path: "Plans", recursive: true });
+    await fs.mkdir(path.join(root, "Plans"));
+    const restored = await runtime.restoreTrashItem({ id: deleted.trashItem.id });
+    expect(restored.path).toBe("Plans (1)");
+    await expect(runtime.openPage("Plans (1)")).resolves.toMatchObject({
+      path: "Plans (1)/Plans (1).index.md",
+      presentation: { images: { ".assets/diagram.png": { widthPx: 540 } } }
+    });
   });
 
   it("opens a folder through its index companion", async () => {
@@ -787,6 +949,44 @@ describe("WorkspaceRuntime", () => {
     );
     await expect(fs.readFile(path.join(root, "New.md"), "utf8")).resolves.toBe("# Existing");
     await expect(fs.readFile(path.join(root, "New (1).md"), "utf8")).resolves.toBe("# Old");
+  });
+
+  it("repairs Markdown image and file links after a Rumi-controlled asset rename", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, "Notes"));
+    await fs.writeFile(
+      path.join(root, "Notes", "References.md"),
+      [
+        "![Diagram](../.assets/diagram.svg)",
+        "[Download](../.assets/diagram.svg#source)",
+        "`![Example](../.assets/diagram.svg)`"
+      ].join("\n"),
+      "utf8"
+    );
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.saveAsset(
+      "diagram.svg",
+      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>')
+    );
+    await runtime.updateImagePresentation({
+      path: "Notes/References.md",
+      imageSrc: "../.assets/diagram.svg",
+      widthPx: 420
+    });
+
+    await runtime.renameNode({ path: ".assets/diagram.svg", newName: "renamed.svg" });
+    await runtime.flushBackgroundTasks();
+
+    await expect(
+      fs.readFile(path.join(root, "Notes", "References.md"), "utf8")
+    ).resolves.toBe([
+      "![Diagram](../.assets/renamed.svg)",
+      "[Download](../.assets/renamed.svg#source)",
+      "`![Example](../.assets/diagram.svg)`"
+    ].join("\n"));
+    await expect(runtime.openPage("Notes/References.md")).resolves.toMatchObject({
+      presentation: { images: { "../.assets/renamed.svg": { widthPx: 420 } } }
+    });
   });
 
   it("repairs references in a document that moves during the background scan", async () => {
@@ -1752,6 +1952,34 @@ describe("WorkspaceRuntime", () => {
         affects: ["tree"]
       }
     ]);
+  });
+
+  it("repairs Markdown references after an externally observed asset rename", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".assets"));
+    await fs.writeFile(
+      path.join(root, ".assets", "before.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>',
+      "utf8"
+    );
+    await fs.writeFile(path.join(root, "Reference.md"), "![](.assets/before.svg)", "utf8");
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await runtime.reconcileWorkspace();
+
+    await fs.rename(
+      path.join(root, ".assets", "before.svg"),
+      path.join(root, ".assets", "after.svg")
+    );
+    const result = await runtime.reconcileWorkspace();
+    await runtime.flushBackgroundTasks();
+
+    expect(result.events).toContainEqual(expect.objectContaining({
+      name: "asset.changed",
+      previousPath: ".assets/before.svg",
+      path: ".assets/after.svg"
+    }));
+    await expect(fs.readFile(path.join(root, "Reference.md"), "utf8"))
+      .resolves.toBe("![](.assets/after.svg)");
   });
 });
 

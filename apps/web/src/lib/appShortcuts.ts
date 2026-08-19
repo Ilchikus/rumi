@@ -5,6 +5,11 @@ export type AppShortcutAction =
   | "copy-page-url"
   | "copy-page-relative-path";
 
+export interface CreateMenuNumberAction {
+  index: number;
+  action: "focus" | "create-and-open";
+}
+
 interface KeyboardShortcutEvent {
   key: string;
   code?: string;
@@ -79,6 +84,27 @@ export function createMenuIndexForKey(event: KeyboardShortcutEvent): number | nu
 
   const digit = event.code?.match(/^Digit([1-3])$/)?.[1] ?? event.key.match(/^[1-3]$/)?.[0];
   return digit ? Number(digit) - 1 : null;
+}
+
+export function createMenuNumberAction(
+  event: KeyboardShortcutEvent,
+  previousIndex: number | null
+): CreateMenuNumberAction | null {
+  if (
+    event.repeat ||
+    event.isComposing ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  ) return null;
+
+  const digit = event.code?.match(/^Digit([1-3])$/)?.[1] ?? event.key.match(/^[1-3]$/)?.[0];
+  if (!digit) return null;
+
+  const index = Number(digit) - 1;
+  if (previousIndex !== index) return { index, action: "focus" };
+  return { index, action: "create-and-open" };
 }
 
 export function hasPrimaryModifier(

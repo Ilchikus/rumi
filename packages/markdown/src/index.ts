@@ -2,6 +2,7 @@ import { parse, stringify } from "yaml";
 import type { FrontmatterRecord } from "@rumi/contracts";
 
 export {
+  rewriteMarkdownReferenceTarget,
   rewriteMarkdownReferences,
   type RewrittenReferences
 } from "./references";

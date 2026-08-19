@@ -7,7 +7,7 @@ coverage:
   - ui-smoke
   - docs
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-08-19
 ---
 # M07-007 Application Shell Address Bar
 
@@ -20,8 +20,11 @@ Make workspace navigation and current-file actions feel like one calm, centered 
 - The sidebar identifies the workspace by its root-folder name without a redundant `Workspace`
   label or manual refresh control.
 - The uploaded Rumi SVG is the visible workspace mark and cache-refreshed browser favicon.
-- The borderless application header centers a neutral-100 address bar to the same width as the
-  current editor canvas.
+- The borderless, transparent application header overlays the editor canvas instead of reserving a
+  white shell row, allowing page content to extend and scroll beneath it. It centers a Neutral 100
+  address bar to the same width as the current editor canvas. The bar consumes the system-wide
+  `surface-subtle` token shared with fenced code, editable Mermaid source, inline code, and its
+  loading placeholder.
 - The address bar contains navigable root-to-item breadcrumbs, a Command-K search affordance, and
   an empty-space search target.
 - A compact current-item menu sits outside the address bar at the header's right and exposes Move
@@ -41,6 +44,8 @@ Make workspace navigation and current-file actions feel like one calm, centered 
 - [x] Runtime coverage for root companion discovery, tree hiding, and root-page opening.
 - [x] Component coverage for nested breadcrumbs, Trash, the neutral address bar, Command-K hint,
   and the external current-item action trigger.
+- [x] Shared Neutral 100 subtle-surface token coverage across the address bar and editor code
+  surfaces.
 - [x] Focused diff coverage for replacements, repeated lines, empty files, line-ending
   normalization, and large documents.
 - [x] Typecheck and production build.

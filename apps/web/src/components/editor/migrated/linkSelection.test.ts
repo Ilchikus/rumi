@@ -57,4 +57,61 @@ describe("linkRangeAtSelection", () => {
 
     expect(linkRangeAtSelection(state)).toBeNull()
   })
+
+  it("resolves the link from either side of its external-link atom", () => {
+    const link = schema.marks.link!.create({ href: "https://example.com" })
+    const marker = schema.nodes.link_marker!.create({
+      href: "https://example.com",
+      linkType: "external"
+    })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, [
+        marker,
+        schema.text("linked", [link]),
+        schema.text(" plain")
+      ])
+    )
+
+    for (const position of [1, 2, 8]) {
+      const state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, position)
+      })
+      expect(linkRangeAtSelection(state)).toEqual({
+        from: 2,
+        to: 8,
+        href: "https://example.com"
+      })
+    }
+  })
+
+  it("resolves the link from either side of its leading internal-link atom", () => {
+    const link = schema.marks.link!.create({ href: "Notes.md" })
+    const marker = schema.nodes.link_marker!.create({
+      href: "Notes.md",
+      linkType: "internal",
+      mentionKind: "page"
+    })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, [
+        marker,
+        schema.text("linked", [link]),
+        schema.text(" plain")
+      ])
+    )
+
+    for (const position of [1, 2, 8]) {
+      const state = EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, position)
+      })
+      expect(linkRangeAtSelection(state)).toEqual({
+        from: 2,
+        to: 8,
+        href: "Notes.md"
+      })
+    }
+  })
 })

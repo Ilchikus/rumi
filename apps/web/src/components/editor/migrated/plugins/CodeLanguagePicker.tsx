@@ -32,6 +32,7 @@ export const CODE_LANGUAGE_OPTIONS: readonly CodeLanguageOption[] = [
   { value: "java", label: "Java" },
   { value: "cpp", label: "C++", keywords: "cpp c" },
   { value: "ruby", label: "Ruby", keywords: "rb" },
+  { value: "php", label: "PHP" },
   { value: "yaml", label: "YAML", keywords: "yml" },
   { value: "xml", label: "XML" }
 ];

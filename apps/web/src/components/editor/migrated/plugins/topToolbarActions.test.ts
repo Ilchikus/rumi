@@ -1,11 +1,18 @@
-import { EditorState, TextSelection } from "prosemirror-state"
-import { describe, expect, it } from "vitest"
+import { EditorState, TextSelection, type Transaction } from "prosemirror-state"
+import type { EditorView } from "prosemirror-view"
+import { describe, expect, it, vi } from "vitest"
 import { schema } from "../schema"
+import {
+  inactiveBlockSelectionKey,
+  inactiveBlockSelectionPlugin,
+  transactionLeavesEditorInactive
+} from "../inactiveBlockSelection"
 import {
   allowedMediaAccept,
   createAdjacentParagraphTransaction,
   createDeleteToolbarBlocksTransaction,
-  createUploadedMediaTransaction
+  createUploadedMediaTransaction,
+  deleteToolbarBlocks
 } from "./topToolbarActions"
 import {
   multiBlockSelectionKey,
@@ -19,7 +26,7 @@ describe("top toolbar block actions", () => {
     const secondPos = first.nodeSize
     let state = EditorState.create({
       doc: schema.nodes.doc!.create(null, [first, second]),
-      plugins: [multiBlockSelectionPlugin(schema)]
+      plugins: [inactiveBlockSelectionPlugin(), multiBlockSelectionPlugin(schema)]
     })
     state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
       selectedBlocks: [0, secondPos],
@@ -61,12 +68,14 @@ describe("top toolbar block actions", () => {
     let state = EditorState.create({
       doc,
       selection: TextSelection.create(doc, secondPos + 1),
-      plugins: [multiBlockSelectionPlugin(schema)]
+      plugins: [inactiveBlockSelectionPlugin(), multiBlockSelectionPlugin(schema)]
     })
 
     const cursorDeletion = createDeleteToolbarBlocksTransaction(state)
     expect(cursorDeletion?.doc.childCount).toBe(1)
     expect(cursorDeletion?.doc.child(0).textContent).toBe("One")
+    expect(transactionLeavesEditorInactive(cursorDeletion!)).toBe(true)
+    expect(cursorDeletion?.scrolledIntoView).toBe(false)
 
     state = state.apply(state.tr.setMeta(multiBlockSelectionKey, {
       selectedBlocks: [0, secondPos],
@@ -76,5 +85,25 @@ describe("top toolbar block actions", () => {
     expect(selectionDeletion?.doc.childCount).toBe(1)
     expect(selectionDeletion?.doc.firstChild?.type).toBe(schema.nodes.paragraph)
     expect(selectionDeletion?.doc.firstChild?.textContent).toBe("")
+    expect(transactionLeavesEditorInactive(selectionDeletion!)).toBe(true)
+    expect(selectionDeletion?.scrolledIntoView).toBe(false)
+
+    let dispatched: Transaction | null = null
+    const focus = vi.fn()
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        dispatched = transaction
+        state = state.apply(transaction)
+      },
+      focus
+    } as unknown as EditorView
+
+    expect(deleteToolbarBlocks(view)).toBe(true)
+    expect(transactionLeavesEditorInactive(dispatched!)).toBe(true)
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+    expect(focus).not.toHaveBeenCalled()
   })
 })

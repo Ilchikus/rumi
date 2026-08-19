@@ -177,7 +177,7 @@ Recommended initial layout:
 - 320-pixel preferred width, capped to the narrow viewport;
 - mirrored query row at the top;
 - compact result grid using native emoji glyphs;
-- visible focused state using the existing neutral/sky editor menu palette;
+- visible focused state using the existing neutral/blue editor menu palette;
 - focused emoji name in a compact footer or tooltip;
 - empty state reading `No emoji found`;
 - recent results before the catalog only when the query is empty.

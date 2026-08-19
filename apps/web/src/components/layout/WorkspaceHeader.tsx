@@ -82,12 +82,15 @@ export function WorkspaceHeader({
   };
 
   return (
-    <header className="min-h-14 shrink-0 py-2.5">
-      <div className={EDITOR_ADDRESS_BAR_CONTAINER_CLASS}>
+    <header
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 min-h-14 bg-transparent py-2.5"
+      data-rumi-workspace-header=""
+    >
+      <div className={`${EDITOR_ADDRESS_BAR_CONTAINER_CLASS} pointer-events-auto`}>
         <div className="relative">
           <div
             data-rumi-address-bar=""
-            className="flex h-9 w-full min-w-0 items-center gap-1 rounded-lg bg-neutral-100 px-2 text-sm text-muted-foreground transition-colors hover:bg-neutral-200/70"
+            className="flex h-9 w-full min-w-0 items-center gap-1 rounded-lg bg-surface-subtle px-2 text-sm text-muted-foreground transition-colors hover:bg-neutral-200/70"
             onClick={(event) => {
               if (event.target === event.currentTarget) onToggleSearch();
             }}

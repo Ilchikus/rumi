@@ -9,6 +9,7 @@ describe("code language picker", () => {
     ]);
     expect(filterCodeLanguages("shell").map((option) => option.value)).toEqual(["bash"]);
     expect(filterCodeLanguages("c++").map((option) => option.value)).toEqual(["cpp"]);
+    expect(filterCodeLanguages("php").map((option) => option.value)).toEqual(["php"]);
   });
 
   it("keeps plain text available in the unfiltered menu", () => {

@@ -35,6 +35,7 @@ import type {
   SaveAssetResult,
   SearchWorkspaceRequest,
   SetDatabaseRecordPagePropertyVisibilityRequest,
+  UpdateImagePresentationRequest,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -391,6 +392,13 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     try {
       const asset = await runtime.readAsset(request.query.path);
       reply.header("content-type", asset.contentType);
+      reply.header("x-content-type-options", "nosniff");
+      if (asset.contentType === "image/svg+xml") {
+        reply.header(
+          "content-security-policy",
+          "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+        );
+      }
       reply.header("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(asset.fileName)}`);
       return reply.send(asset.data);
     } catch {
@@ -492,6 +500,21 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     request.log.info({ path: result.path, version: result.version }, "page.save.ok");
     return result;
   });
+
+  server.put<{ Body: UpdateImagePresentationRequest }>(
+    "/api/page/image-presentation",
+    async (request, reply) => {
+      request.log.info(
+        { path: request.body.path, imageSrc: request.body.imageSrc },
+        "page.image-presentation.update"
+      );
+      const result = await runtime.updateImagePresentation(request.body);
+      if (result.status === "conflict") {
+        return reply.status(409).send(result);
+      }
+      return result;
+    }
+  );
 
   server.get<{ Querystring: { path?: string } }>("/api/revisions", async (request, reply) => {
     if (!request.query.path) {

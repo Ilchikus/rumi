@@ -381,6 +381,20 @@ export interface PageDatabaseContext {
   schemaVersion: string;
 }
 
+export const MIN_IMAGE_PRESENTATION_WIDTH_PX = 96;
+export const MAX_IMAGE_PRESENTATION_WIDTH_PX = 2400;
+
+export type ImageAlignment = "left" | "center" | "full";
+
+export interface ImagePresentation {
+  widthPx?: number;
+  alignment?: ImageAlignment;
+}
+
+export interface PagePresentation {
+  images: Record<string, ImagePresentation>;
+}
+
 export interface PageDocument {
   path: string;
   kind: PageDocumentKind;
@@ -389,8 +403,38 @@ export interface PageDocument {
   contentHash: string;
   frontmatterHash: string;
   version: string;
+  presentation?: PagePresentation;
+  presentationVersion?: string;
   database?: PageDatabaseContext;
 }
+
+export interface UpdateImagePresentationRequest {
+  path: string;
+  imageSrc: string;
+  widthPx?: number;
+  alignment?: ImageAlignment;
+  basePresentationVersion?: string;
+}
+
+export interface UpdateImagePresentationSavedResult {
+  status: "saved";
+  path: string;
+  presentation: PagePresentation;
+  presentationVersion: string;
+  events: RumiEvent[];
+}
+
+export interface UpdateImagePresentationConflictResult {
+  status: "conflict";
+  path: string;
+  presentation: PagePresentation;
+  currentPresentationVersion: string;
+  attemptedBasePresentationVersion?: string;
+}
+
+export type UpdateImagePresentationResult =
+  | UpdateImagePresentationSavedResult
+  | UpdateImagePresentationConflictResult;
 
 export type SavePageReason =
   | "editor-autosave"

@@ -3,6 +3,18 @@ export interface RewrittenReferences {
   referenceCount: number;
 }
 
+export function rewriteMarkdownReferenceTarget(
+  target: string,
+  previousPath: string,
+  nextPath: string,
+  sourcePath?: string
+): string | null {
+  const previous = normalizeReferencePath(previousPath);
+  const next = normalizeReferencePath(nextPath);
+  if (previous === null || next === null) return null;
+  return rewriteReferenceTarget(target, previous, next, sourcePath, true);
+}
+
 export function rewriteMarkdownReferences(
   markdown: string,
   previousPath: string,

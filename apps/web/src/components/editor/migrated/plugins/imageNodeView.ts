@@ -1,6 +1,11 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Node as PmNode } from "prosemirror-model"
 import { EditorView, NodeView } from "prosemirror-view"
+import {
+  MAX_IMAGE_PRESENTATION_WIDTH_PX,
+  MIN_IMAGE_PRESENTATION_WIDTH_PX
+} from "@rumi/contracts"
+import { IMAGE_PRESENTATION_TRANSACTION_META } from "../imagePresentation"
 import { workspaceAssetUrl } from "../platform"
 
 const ALIGN_LEFT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64Zm8,48H168a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16Zm176,24H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm-48,40H40a8,8,0,0,0,0,16H168a8,8,0,0,0,0-16Z"></path></svg>`
@@ -12,7 +17,12 @@ const DIRECT_SRC_REGEX = /^[a-zA-Z][a-zA-Z\d+\-.]*:/u
 export function imageNodeView(
   node: PmNode,
   view: EditorView,
-  getPos: () => number | undefined
+  getPos: () => number | undefined,
+  options: {
+    resizable?: boolean
+    onResize?: (imageSrc: string, widthPx: number) => void | Promise<void>
+    onAlignmentChange?: (imageSrc: string, alignment: "left" | "center" | "full") => void | Promise<void>
+  } = {}
 ): NodeView {
   let currentSrc = node.attrs.src as string
 
@@ -33,7 +43,7 @@ export function imageNodeView(
   // Main container
   const dom = document.createElement("figure")
   dom.className = "image-block"
-  dom.setAttribute("data-alignment", node.attrs.alignment || "center")
+  dom.setAttribute("data-alignment", node.attrs.alignment || "left")
 
   // Image wrapper for positioning
   const wrapper = document.createElement("div")
@@ -48,12 +58,89 @@ export function imageNodeView(
   wrapper.appendChild(img)
   loadImage(node.attrs.src)
 
+  const applyWidth = (widthPx: unknown) => {
+    const hasWidth = Number.isSafeInteger(widthPx) && node.attrs.alignment !== "full"
+    wrapper.style.width = hasWidth ? `${widthPx}px` : ""
+    img.style.width = hasWidth ? "100%" : ""
+  }
+  applyWidth(node.attrs.widthPx)
+
+  const resizeHandle = document.createElement("button")
+  resizeHandle.type = "button"
+  resizeHandle.className = "image-resize-handle"
+  resizeHandle.contentEditable = "false"
+  resizeHandle.title = "Resize image"
+  resizeHandle.setAttribute("aria-label", "Resize image")
+  resizeHandle.hidden = !options.resizable || node.attrs.alignment === "full"
+  wrapper.appendChild(resizeHandle)
+  let cancelActiveResize: (() => void) | null = null
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    if (!view.editable || !options.onResize) return
+    cancelActiveResize?.()
+    event.preventDefault()
+    event.stopPropagation()
+
+    const initialWidth = wrapper.getBoundingClientRect().width || img.getBoundingClientRect().width
+    if (!initialWidth) return
+    const startX = event.clientX
+    const centered = node.attrs.alignment !== "left"
+    let previewWidth = Math.round(initialWidth)
+    resizeHandle.classList.add("active")
+
+    const finish = (persist: boolean) => {
+      window.removeEventListener("pointermove", handleMove)
+      window.removeEventListener("pointerup", handleUp)
+      window.removeEventListener("pointercancel", handleCancel)
+      resizeHandle.classList.remove("active")
+      cancelActiveResize = null
+
+      if (!persist) {
+        applyWidth(node.attrs.widthPx)
+        return
+      }
+      const position = getPos()
+      const currentNode = position === undefined ? null : view.state.doc.nodeAt(position)
+      if (position === undefined || !currentNode || currentNode.type.name !== "image") return
+      if (currentNode.attrs.widthPx !== previewWidth) {
+        view.dispatch(
+          view.state.tr
+            .setNodeMarkup(position, undefined, { ...currentNode.attrs, widthPx: previewWidth })
+            .setMeta(IMAGE_PRESENTATION_TRANSACTION_META, true)
+            .setMeta("addToHistory", false)
+        )
+      }
+      void options.onResize(String(currentNode.attrs.src ?? ""), previewWidth)
+    }
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault()
+      const availableWidth = dom.parentElement?.clientWidth || MAX_IMAGE_PRESENTATION_WIDTH_PX
+      const maximumWidth = Math.max(
+        MIN_IMAGE_PRESENTATION_WIDTH_PX,
+        Math.min(MAX_IMAGE_PRESENTATION_WIDTH_PX, availableWidth)
+      )
+      const delta = (moveEvent.clientX - startX) * (centered ? 2 : 1)
+      previewWidth = Math.max(
+        MIN_IMAGE_PRESENTATION_WIDTH_PX,
+        Math.min(maximumWidth, Math.round(initialWidth + delta))
+      )
+      applyWidth(previewWidth)
+    }
+    const handleUp = () => finish(true)
+    const handleCancel = () => finish(false)
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp, { once: true })
+    window.addEventListener("pointercancel", handleCancel, { once: true })
+    cancelActiveResize = () => finish(false)
+  })
+
   // Toolbar (alignment controls)
   const toolbar = document.createElement("div")
   toolbar.className = "image-toolbar"
   toolbar.contentEditable = "false"
 
-  const alignments: Array<{ value: string; icon: string; title: string }> = [
+  const alignments: Array<{ value: "left" | "center" | "full"; icon: string; title: string }> = [
     { value: "left", icon: ALIGN_LEFT_SVG, title: "Align left" },
     { value: "center", icon: ALIGN_CENTER_SVG, title: "Center" },
     { value: "full", icon: ALIGN_FULL_SVG, title: "Full width" },
@@ -74,11 +161,15 @@ export function imageNodeView(
       const pos = getPos()
       if (pos === undefined) return
       view.dispatch(
-        view.state.tr.setNodeMarkup(pos, undefined, {
-          ...node.attrs,
-          alignment: value,
-        })
+        view.state.tr
+          .setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            alignment: value,
+          })
+          .setMeta(IMAGE_PRESENTATION_TRANSACTION_META, true)
+          .setMeta("addToHistory", false)
       )
+      void options.onAlignmentChange?.(String(node.attrs.src ?? ""), value)
     })
     toolbar.appendChild(btn)
   })
@@ -138,6 +229,9 @@ export function imageNodeView(
       if (toolbar.contains(event.target as Node)) {
         return true
       }
+      if (resizeHandle.contains(event.target as Node)) {
+        return true
+      }
       return false
     },
     ignoreMutation(mutation) {
@@ -145,13 +239,19 @@ export function imageNodeView(
       if (caption.contains(mutation.target)) {
         return true
       }
+      if (mutation.type === "attributes" && mutation.target === wrapper) {
+        return true
+      }
       return false
     },
     update(updatedNode) {
       if (updatedNode.type.name !== "image") return false
+      node = updatedNode
 
       // Update alignment
-      dom.setAttribute("data-alignment", updatedNode.attrs.alignment || "center")
+      dom.setAttribute("data-alignment", updatedNode.attrs.alignment || "left")
+      resizeHandle.hidden = !options.resizable || updatedNode.attrs.alignment === "full"
+      applyWidth(updatedNode.attrs.widthPx)
 
       // Update image
       if (updatedNode.attrs.src !== currentSrc) {
@@ -175,6 +275,9 @@ export function imageNodeView(
       }
 
       return true
+    },
+    destroy() {
+      cancelActiveResize?.()
     },
   }
 }

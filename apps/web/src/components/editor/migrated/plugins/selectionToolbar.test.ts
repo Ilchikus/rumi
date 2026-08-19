@@ -1,16 +1,77 @@
 // @vitest-environment jsdom
-import { EditorState, TextSelection } from "prosemirror-state"
+import { EditorState, NodeSelection, TextSelection } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { history } from "prosemirror-history"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { schema } from "../schema"
 import {
+  linkDestinationSuggestions,
   openSelectionToolbarLinkEditor,
   selectionToolbarPlugin,
   selectionToolbarPluginKey,
   setSelectionToolbarPreferences
 } from "./selectionToolbar"
-import { multiBlockSelectionPlugin } from "./multiBlockSelection"
+import {
+  multiBlockSelectionKey,
+  multiBlockSelectionPlugin
+} from "./multiBlockSelection"
+import { setMigratedEditorPlatform } from "../platform"
+import { linkPlugin } from "./linkPlugin"
+
+describe("link destination suggestions", () => {
+  const documents = [
+    { path: "archive/docs/todo.md", nodePath: "archive/docs/todo.md", title: "todo", kind: "page" as const },
+    { path: "docs/todo-roadmap.md", nodePath: "docs/todo-roadmap.md", title: "todo-roadmap", kind: "page" as const },
+    { path: "docs/todo.md", nodePath: "docs/todo.md", title: "todo", kind: "page" as const },
+    { path: "todo.md", nodePath: "todo.md", title: "todo", kind: "page" as const }
+  ]
+
+  it("ranks root path prefixes ahead of matching filenames elsewhere", () => {
+    expect(linkDestinationSuggestions(documents, "/docs/todo")).toEqual([
+      "/docs/todo.md",
+      "/docs/todo-roadmap.md",
+      "/archive/docs/todo.md"
+    ])
+  })
+
+  it("returns relative suggestions when the typed query is relative", () => {
+    expect(linkDestinationSuggestions(documents, "todo")[0]).toBe("todo.md")
+  })
+
+  it("prioritizes folder and database title matches and returns their companion paths", () => {
+    const structuralDocuments = [
+      {
+        path: "Milestones/Milestones.index.md",
+        nodePath: "Milestones",
+        title: "Milestones",
+        kind: "folder" as const
+      },
+      {
+        path: "Milestones/inner-page.md",
+        nodePath: "Milestones/inner-page.md",
+        title: "inner-page",
+        kind: "page" as const
+      },
+      {
+        path: "Events/Events.db.md",
+        nodePath: "Events",
+        title: "Events",
+        kind: "database" as const
+      },
+      {
+        path: "Events/inner.md",
+        nodePath: "Events/inner.md",
+        title: "inner",
+        kind: "page" as const
+      }
+    ]
+
+    expect(linkDestinationSuggestions(structuralDocuments, "milesto")[0])
+      .toBe("Milestones/Milestones.index.md")
+    expect(linkDestinationSuggestions(structuralDocuments, "event")[0])
+      .toBe("Events/Events.db.md")
+  })
+})
 
 describe("selection toolbar mode", () => {
   it("defaults to floating and accepts live mode changes through plugin state", () => {
@@ -130,6 +191,221 @@ describe("selection toolbar mode", () => {
     host.remove()
   })
 
+  it("clears the text highlight and closes the floating toolbar after formatting", () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Text"))
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1),
+        plugins: [selectionToolbarPlugin(schema, "floating")]
+      })
+    })
+    Object.defineProperty(view, "coordsAtPos", {
+      value: () => ({ left: 20, right: 20, top: 20, bottom: 40 })
+    })
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5))
+    )
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+
+    expect(toolbar.style.display).toBe("flex")
+    toolbar.querySelector<HTMLButtonElement>('[data-mark="bold"]')!.click()
+
+    expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+      .toBeDefined()
+    expect(view.state.selection.empty).toBe(true)
+    expect(view.state.selection.from).toBe(5)
+    expect(view.state.selection.to).toBe(5)
+    expect(toolbar.style.display).toBe("none")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it.each(["top", "bottom"] as const)(
+    "preserves the text highlight after formatting in %s mode",
+    (mode) => {
+      const host = document.createElement("div")
+      document.body.appendChild(host)
+      const doc = schema.nodes.doc!.create(
+        null,
+        schema.nodes.paragraph!.create(null, schema.text("Text"))
+      )
+      const view = new EditorView(host, {
+        state: EditorState.create({
+          doc,
+          selection: TextSelection.create(doc, 1, 5),
+          plugins: [selectionToolbarPlugin(schema, mode)]
+        })
+      })
+      const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+
+      toolbar.querySelector<HTMLButtonElement>('[data-mark="bold"]')!.click()
+
+      expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+        .toBeDefined()
+      expect(view.state.selection.from).toBe(1)
+      expect(view.state.selection.to).toBe(5)
+      expect(toolbar.style.display).toBe("flex")
+
+      view.destroy()
+      host.remove()
+    }
+  )
+
+  it("clears a floating block highlight and toolbar after formatting", () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("Text"))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const plugins = [
+      multiBlockSelectionPlugin(schema),
+      selectionToolbarPlugin(schema, "floating")
+    ]
+    let state = EditorState.create({
+      doc,
+      selection: NodeSelection.create(doc, 0),
+      plugins
+    })
+    state = state.apply(
+      state.tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks: [0],
+          anchorBlock: 0
+        })
+        .setMeta("multiBlockKeep", true)
+    )
+    const view = new EditorView(host, { state })
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+
+    expect(toolbar.style.display).toBe("flex")
+    toolbar.querySelector<HTMLButtonElement>('[data-mark="bold"]')!.click()
+
+    expect(schema.marks.bold!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+      .toBeDefined()
+    expect(multiBlockSelectionKey.getState(view.state)?.selectedBlocks).toEqual([])
+    expect(view.state.selection).toBeInstanceOf(TextSelection)
+    expect(view.state.selection.empty).toBe(true)
+    expect(toolbar.style.display).toBe("none")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("collapses the selection and hides the floating toolbar on Escape", () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Text"))
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1),
+        plugins: [selectionToolbarPlugin(schema, "floating")]
+      })
+    })
+    Object.defineProperty(view, "coordsAtPos", {
+      value: () => ({ left: 20, right: 20, top: 20, bottom: 40 })
+    })
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5))
+    )
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true
+    })
+
+    expect(view.dom.dispatchEvent(escape)).toBe(false)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(view.state.selection.empty).toBe(true)
+    expect(view.state.selection.from).toBe(5)
+    expect(toolbar.style.display).toBe("none")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("closes a floating link editor and clears its text highlight on Escape", () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Text"))
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1),
+        plugins: [selectionToolbarPlugin(schema, "floating")]
+      })
+    })
+    Object.defineProperty(view, "coordsAtPos", {
+      value: () => ({ left: 20, right: 20, top: 20, bottom: 40 })
+    })
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5))
+    )
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+    toolbar.querySelector<HTMLButtonElement>(".link-btn")!.click()
+    const popup = toolbar.querySelector<HTMLElement>(".link-input-popup")!
+    const input = popup.querySelector<HTMLInputElement>(".link-url-input")!
+
+    expect(popup.style.display).toBe("block")
+    input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true
+    }))
+
+    expect(view.state.selection.empty).toBe(true)
+    expect(view.state.selection.from).toBe(5)
+    expect(popup.style.display).toBe("none")
+    expect(toolbar.style.display).toBe("none")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it.each(["top", "bottom", "none"] as const)(
+    "preserves the text highlight on Escape in %s mode",
+    (mode) => {
+      const host = document.createElement("div")
+      document.body.appendChild(host)
+      const doc = schema.nodes.doc!.create(
+        null,
+        schema.nodes.paragraph!.create(null, schema.text("Text"))
+      )
+      const view = new EditorView(host, {
+        state: EditorState.create({
+          doc,
+          selection: TextSelection.create(doc, 1, 5),
+          plugins: [selectionToolbarPlugin(schema, mode)]
+        })
+      })
+
+      view.dom.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true
+      }))
+
+      expect(view.state.selection.from).toBe(1)
+      expect(view.state.selection.to).toBe(5)
+
+      view.destroy()
+      host.remove()
+    }
+  )
+
   it("anchors the floating toolbar below highlighted text in editor document space", () => {
     const canvas = document.createElement("div")
     canvas.dataset.rumiEditorCanvas = ""
@@ -217,6 +493,7 @@ describe("selection toolbar mode", () => {
     Object.defineProperty(view, "scrollToSelection", { value: () => {} })
     const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
 
+    expect(toolbar.hasAttribute("data-rumi-area-selection-exclude")).toBe(true)
     expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
     await Promise.resolve()
     expect(toolbar.querySelector<HTMLElement>(".link-input-popup")?.style.display)
@@ -238,7 +515,7 @@ describe("selection toolbar mode", () => {
     const linkPopup = toolbar.querySelector<HTMLElement>(".link-input-popup")!
     const linkInput = linkPopup.querySelector<HTMLInputElement>(".link-url-input")!
     linkInput.value = "https://example.com"
-    linkPopup.querySelector<HTMLButtonElement>("button")!.click()
+    linkPopup.querySelector<HTMLButtonElement>(".link-apply-btn")!.click()
     expect(schema.marks.link!.isInSet(view.state.doc.firstChild!.firstChild!.marks)?.attrs.href)
       .toBe("https://example.com")
 
@@ -323,6 +600,19 @@ describe("selection toolbar mode", () => {
     expect(popup.querySelector(".link-copy-btn")).not.toBeNull()
     expect(popup.querySelector(".link-open-btn")).not.toBeNull()
     expect(popup.querySelector(".link-unlink-btn")).not.toBeNull()
+    expect(popup.querySelector(".link-apply-btn")).not.toBeNull()
+    const inputRow = popup.querySelector(".link-input-row")!
+    for (const selector of [
+      ".link-copy-btn",
+      ".link-open-btn",
+      ".link-unlink-btn",
+      ".link-apply-btn"
+    ]) {
+      const action = popup.querySelector<HTMLButtonElement>(selector)!
+      expect(action.parentElement).toBe(inputRow)
+      expect(action.textContent).toBe("")
+      expect(action.getAttribute("aria-label")).toBeTruthy()
+    }
 
     input.value = ""
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
@@ -333,6 +623,357 @@ describe("selection toolbar mode", () => {
 
     view.destroy()
     host.remove()
+  })
+
+  it("places the caret after the complete external link when applying it", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Link me"))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 8),
+      plugins: [selectionToolbarPlugin(schema, "top"), linkPlugin(schema)]
+    })
+    const view = new EditorView(host, { state })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    const input = popup.querySelector<HTMLInputElement>(".link-url-input")!
+    input.value = "https://example.com"
+    dispatchPrimaryClick(popup.querySelector<HTMLButtonElement>(".link-apply-btn")!)
+
+    expect(view.state.selection.from).toBe(9)
+    expect(view.state.selection.empty).toBe(true)
+    expect(view.state.doc.nodeAt(1)?.type.name).toBe("link_marker")
+    expect(view.state.doc.nodeAt(1)?.attrs.linkType).toBe("external")
+    const icon = view.dom.querySelector<HTMLElement>('.rumi-link-icon[data-link-type="external"]')
+    expect(icon).not.toBeNull()
+    expect(icon?.dataset.href).toBe("https://example.com")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("creates a leading internal-link icon while leaving the caret after the anchor", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Link me"))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 8),
+      plugins: [selectionToolbarPlugin(schema, "top"), linkPlugin(schema)]
+    })
+    const view = new EditorView(host, { state })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    const input = popup.querySelector<HTMLInputElement>(".link-url-input")!
+    input.value = "Projects.db.md"
+    dispatchPrimaryClick(popup.querySelector<HTMLButtonElement>(".link-apply-btn")!)
+
+    expect(view.state.selection.from).toBe(9)
+    expect(view.state.selection.empty).toBe(true)
+    expect(view.state.doc.nodeAt(1)?.type.name).toBe("link_marker")
+    expect(view.state.doc.nodeAt(1)?.attrs.linkType).toBe("internal")
+    expect(view.state.doc.nodeAt(1)?.attrs.mentionKind).toBe("database")
+    const icon = view.dom.querySelector<HTMLElement>('.rumi-link-icon[data-link-type="internal"]')
+    expect(icon).not.toBeNull()
+    expect(icon?.dataset.href).toBe("Projects.db.md")
+    expect(icon?.dataset.linkKind).toBe("database")
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("moves the derived icon when a destination changes between internal and external", async () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const internalLink = schema.marks.link!.create({ href: "Notes.md" })
+    const internalMarker = schema.nodes.link_marker!.create({
+      href: "Notes.md",
+      linkType: "internal",
+      mentionKind: "page"
+    })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, [
+        internalMarker,
+        schema.text("Link me", [internalLink])
+      ])
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 4),
+        plugins: [selectionToolbarPlugin(schema, "top"), linkPlugin(schema)]
+      })
+    })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    let popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    popup.querySelector<HTMLInputElement>(".link-url-input")!.value = "https://example.com"
+    dispatchPrimaryClick(popup.querySelector<HTMLButtonElement>(".link-apply-btn")!)
+
+    expect(view.dom.querySelector('.rumi-link-icon[data-link-type="internal"]')).toBeNull()
+    expect(view.state.doc.nodeAt(1)?.type.name).toBe("link_marker")
+    expect(view.state.doc.nodeAt(1)?.attrs.linkType).toBe("external")
+    expect(view.state.selection.from).toBe(9)
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    popup.querySelector<HTMLInputElement>(".link-url-input")!.value = "Projects.db.md"
+    dispatchPrimaryClick(popup.querySelector<HTMLButtonElement>(".link-apply-btn")!)
+
+    expect(view.dom.querySelector('.rumi-link-icon[data-link-type="external"]')).toBeNull()
+    expect(view.state.doc.nodeAt(1)?.type.name).toBe("link_marker")
+    expect(view.state.doc.nodeAt(1)?.attrs.linkType).toBe("internal")
+    expect(view.state.doc.nodeAt(1)?.attrs.mentionKind).toBe("database")
+    expect(view.state.selection.from).toBe(9)
+
+    view.destroy()
+    host.remove()
+  })
+
+  it("shows normal-weight baseline-aligned suggestions with only the match in black", () => {
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "workspace",
+      documentKey: "current.md",
+      documents: [
+        { path: "archive/docs/todo.md", nodePath: "archive/docs/todo.md", title: "todo", kind: "page" },
+        { path: "docs/todo-roadmap.md", nodePath: "docs/todo-roadmap.md", title: "todo-roadmap", kind: "page" },
+        { path: "docs/todo.md", nodePath: "docs/todo.md", title: "todo", kind: "page" },
+        {
+          path: "Contracts/server-events.md",
+          nodePath: "Contracts/server-events.md",
+          title: "server-events",
+          kind: "page"
+        }
+      ]
+    })
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Link me"))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 8),
+      plugins: [selectionToolbarPlugin(schema, "top")]
+    })
+    const view = new EditorView(host, { state })
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+
+    toolbar.querySelector<HTMLButtonElement>(".link-btn")!.click()
+    const input = toolbar.querySelector<HTMLInputElement>(".link-url-input")!
+    const ghost = toolbar.querySelector<HTMLElement>(".link-url-inline-suggestion")!
+    input.focus()
+    input.value = "/docs/to"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+
+    expect(input.dataset.suggestion).toBe("/docs/todo.md")
+    expect(ghost.textContent).toBe("/docs/todo.md")
+    expect(input.style.borderTopWidth).toBe("0px")
+    expect(input.style.borderBottomWidth).toBe("1px")
+    expect(input.style.fontWeight).toBe("400")
+    expect(ghost.style.fontWeight).toBe(input.style.fontWeight)
+    expect(ghost.style.lineHeight).toBe(input.style.lineHeight)
+    expect(ghost.style.paddingBottom).toBe(input.style.paddingBottom)
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+    expect(input.dataset.suggestion).toBe("/docs/todo-roadmap.md")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+    expect(input.dataset.suggestion).toBe("/docs/todo-roadmap.md")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
+    expect(input.dataset.suggestion).toBe("/docs/todo-roadmap.md")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }))
+    expect(input.dataset.suggestion).toBe("/docs/todo.md")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }))
+    expect(input.value).toBe("/docs/todo.md")
+    expect(input.dataset.suggestion).toBeUndefined()
+    expect(document.activeElement).toBe(input)
+
+    input.value = "event"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    const match = ghost.querySelector<HTMLElement>(".link-url-suggestion-match")!
+    const muted = ghost.querySelector<HTMLElement>(".link-url-suggestion-muted")!
+    expect(input.dataset.suggestion).toBe("Contracts/server-events.md")
+    expect(ghost.textContent).toBe("event  → Contracts/server-events.md")
+    expect(match.textContent).toBe("event")
+    expect(match.style.color).not.toBe(muted.style.color)
+
+    view.destroy()
+    host.remove()
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "",
+      documentKey: "",
+      documents: []
+    })
+  })
+
+  it("commits the active internal path and keeps it separate from the anchor name", async () => {
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "workspace",
+      documentKey: "docs/test/inner/test⧸1.md",
+      documents: [{
+        path: "Contracts/editor-save-contract.md",
+        nodePath: "Contracts/editor-save-contract.md",
+        title: "editor-save-contract",
+        kind: "page"
+      }]
+    })
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("editor"))
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1, 7),
+        plugins: [selectionToolbarPlugin(schema, "top"), linkPlugin(schema)]
+      })
+    })
+    const toolbar = document.body.querySelector<HTMLElement>(".selection-toolbar")!
+    toolbar.querySelector<HTMLButtonElement>(".link-btn")!.click()
+    const input = toolbar.querySelector<HTMLInputElement>(".link-url-input")!
+    input.value = "editor"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+
+    expect(input.dataset.suggestion).toBe("Contracts/editor-save-contract.md")
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+
+    const anchor = view.state.doc.firstChild?.child(1)
+    expect(schema.marks.link!.isInSet(anchor?.marks ?? [])?.attrs.href)
+      .toBe("Contracts/editor-save-contract.md")
+    expect(view.state.doc.firstChild?.child(0).attrs).toMatchObject({
+      linkType: "internal",
+      href: "Contracts/editor-save-contract.md"
+    })
+
+    expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(toolbar.querySelector<HTMLInputElement>(".link-url-input")?.value)
+      .toBe("Contracts/editor-save-contract.md")
+    expect(toolbar.querySelector<HTMLInputElement>(".link-text-input")?.value)
+      .toBe("editor")
+
+    view.destroy()
+    host.remove()
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "",
+      documentKey: "",
+      documents: []
+    })
+  })
+
+  it("shows a checkmark for 500ms after copying before closing the link editor", async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    })
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const link = schema.marks.link!.create({ href: "Notes.md" })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Notes", [link]))
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 3),
+        plugins: [selectionToolbarPlugin(schema, "top")]
+      })
+    })
+
+    try {
+      expect(openSelectionToolbarLinkEditor(view.state, view.dispatch)).toBe(true)
+      await Promise.resolve()
+      const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+      const copyButton = popup.querySelector<HTMLButtonElement>(".link-copy-btn")!
+      dispatchPrimaryClick(copyButton)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(writeText).toHaveBeenCalledWith("Notes.md")
+      expect(copyButton.getAttribute("aria-label")).toBe("Copied")
+      expect(copyButton.classList.contains("copied")).toBe(true)
+      expect(popup.style.display).toBe("block")
+
+      vi.advanceTimersByTime(499)
+      expect(popup.style.display).toBe("block")
+      vi.advanceTimersByTime(1)
+      expect(popup.style.display).toBe("none")
+    } finally {
+      view.destroy()
+      host.remove()
+      Reflect.deleteProperty(navigator, "clipboard")
+      vi.useRealTimers()
+    }
+  })
+
+  it("removes a highlighted link without changing selection or editor scroll", () => {
+    const canvas = document.createElement("div")
+    canvas.dataset.rumiEditorCanvas = ""
+    const host = document.createElement("div")
+    canvas.appendChild(host)
+    document.body.appendChild(canvas)
+    canvas.scrollTop = 640
+    canvas.scrollLeft = 18
+    const link = schema.marks.link!.create({ href: "https://example.com" })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, schema.text("Linked text", [link]))
+    )
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1, 12),
+      plugins: [selectionToolbarPlugin(schema, "top")]
+    })
+    const view = new EditorView(host, { state })
+    const nativeFocus = view.focus.bind(view)
+    Object.defineProperty(view, "focus", {
+      value: () => {
+        canvas.scrollTop = 0
+        canvas.scrollLeft = 0
+        nativeFocus()
+      }
+    })
+
+    document.body.querySelector<HTMLButtonElement>(".selection-toolbar .link-btn")!.click()
+
+    expect(schema.marks.link!.isInSet(view.state.doc.firstChild!.firstChild!.marks))
+      .toBeUndefined()
+    expect(view.state.selection.from).toBe(1)
+    expect(view.state.selection.to).toBe(12)
+    expect(canvas.scrollTop).toBe(640)
+    expect(canvas.scrollLeft).toBe(18)
+
+    view.destroy()
+    canvas.remove()
   })
 
   it("opens only the link editor when the formatting toolbar is hidden", async () => {
@@ -366,3 +1007,26 @@ describe("selection toolbar mode", () => {
     host.remove()
   })
 })
+
+function dispatchPrimaryClick(target: HTMLElement): void {
+  target.dispatchEvent(new MouseEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    button: 0
+  }))
+  target.dispatchEvent(new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+    button: 0
+  }))
+  target.dispatchEvent(new MouseEvent("mouseup", {
+    bubbles: true,
+    cancelable: true,
+    button: 0
+  }))
+  target.dispatchEvent(new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    button: 0
+  }))
+}

@@ -13,6 +13,7 @@ function loadMermaid(): Promise<MermaidApi> {
       startOnLoad: false,
       theme: "default",
       securityLevel: "strict",
+      suppressErrorRendering: true,
       fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
     })
     return mermaid
@@ -183,7 +184,7 @@ class MermaidNodeView implements NodeView {
     const isView = this.mode === "view"
 
     this.dom.dataset.mode = this.mode
-    this.dom.classList.toggle("bg-neutral-100", !isView)
+    this.dom.classList.toggle("bg-surface-subtle", !isView)
     this.editorContainer.style.display = isView ? "none" : "flex"
     this.previewContainer.style.display = isView ? "flex" : "none"
     this.editorContainer.style.width = "100%"

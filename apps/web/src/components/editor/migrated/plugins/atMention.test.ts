@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { schema } from "../schema";
-import { createMentionLinkText, mentionKindForPath } from "./atMention";
+import { createMentionLinkContent, mentionKindForPath } from "./atMention";
 
 describe("at mentions", () => {
   it("uses a typed mention mark while keeping the Markdown prefix out of the visible label", () => {
-    const mention = createMentionLinkText(schema, {
+    const mention = createMentionLinkContent(schema, {
       name: "Project notes.md",
       path: "Projects/Project notes.md",
       kind: "page"
     });
+    const marker = mention.child(0);
+    const label = mention.child(1);
 
-    expect(mention.text).toBe("Project notes");
-    expect(mention.marks[0]?.attrs).toMatchObject({
+    expect(marker.type.name).toBe("link_marker");
+    expect(marker.attrs).toMatchObject({
+      href: "Projects/Project notes.md",
+      linkType: "internal",
+      mentionKind: "page"
+    });
+    expect(label.text).toBe("Project notes");
+    expect(label.marks[0]?.attrs).toMatchObject({
       href: "Projects/Project notes.md",
       mention: true,
       mentionKind: "page"

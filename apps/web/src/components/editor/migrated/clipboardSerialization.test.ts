@@ -42,14 +42,16 @@ describe("portable editor clipboard serialization", () => {
     expect(html).toContain("First<br>")
     expect(html).toContain("<strong>bold</strong>")
     expect(html).toContain('<a href="https://example.com">link</a>')
+    expect(html).not.toContain("link_marker")
+    expect(html).not.toContain("rumi-link-icon")
     expect(html).toContain("<ul>")
     expect(html).toContain("<li>Bullet</li>")
     expect(html).toContain('type="checkbox" checked')
     expect(html).toContain("<table>")
     expect(html).toContain("<th>Name</th>")
     expect(html).toContain(
-      '<pre style="background-color:#f1f3f4;border-radius:4px;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
-      '<code class="language-ts" style="background-color:#f1f3f4;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
+      '<pre style="background-color:#f5f5f5;border-radius:4px;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
+      '<code class="language-ts" style="background-color:#f5f5f5;font-family:&quot;Roboto Mono&quot;,monospace;white-space:pre-wrap">' +
       "const ready = true</code></pre>"
     )
   })

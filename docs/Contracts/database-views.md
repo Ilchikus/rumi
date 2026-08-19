@@ -221,7 +221,7 @@ source control for an embed; it does not fork table, toolbar, selection, or view
   enclosing border or expansion animation.
 - When records are selected, the bulk-action surface uses the same 40-pixel white band and preceding
   44-pixel fade as search. Bulk controls retain their compact size while their labels share the exact
-  vertical center and text line with the view-pill labels. The selection count becomes a blue-600
+  vertical center and text line with the view-pill labels. The selection count becomes a sky-600
   underlined `Clear all` link on hover or keyboard focus and clears the selection when activated.
   In embeds, bulk mode omits the database source link/dropdown so only selection actions remain.
 - Pressing Escape closes and clears search and clears the current bulk selection. If selection mode

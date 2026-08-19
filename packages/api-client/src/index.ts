@@ -37,6 +37,8 @@ import type {
   SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
   TrashPageResult,
+  UpdateImagePresentationRequest,
+  UpdateImagePresentationResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -120,6 +122,18 @@ export class RumiApiClient {
   async savePage(request: SavePageRequest): Promise<SavePageResult> {
     return this.request<SavePageResult>("/api/page/save", {
       method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async updateImagePresentation(
+    request: UpdateImagePresentationRequest
+  ): Promise<UpdateImagePresentationResult> {
+    return this.request<UpdateImagePresentationResult>("/api/page/image-presentation", {
+      method: "PUT",
       headers: {
         "content-type": "application/json"
       },

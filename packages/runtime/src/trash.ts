@@ -1,13 +1,20 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { PageDocumentKind, TrashItem, TrashItemKind } from "@rumi/contracts";
+import type {
+  PageDocumentKind,
+  PagePresentation,
+  TrashItem,
+  TrashItemKind
+} from "@rumi/contracts";
+import type { PagePresentationSnapshot } from "./presentation";
 import { classifyFilePath, normalizeWorkspacePath } from "@rumi/workspace-format";
 
 interface TrashMetadata extends TrashItem {
   version: 1;
   payloadName: string;
   revisionObjects: Record<string, string>;
+  presentationPages?: PagePresentationSnapshot;
 }
 
 export interface TrashedNode {
@@ -22,6 +29,7 @@ export interface RestoredNode {
   item: TrashItem;
   path: string;
   revisionObjects: Record<string, string>;
+  presentationPages: PagePresentationSnapshot;
 }
 
 export interface TrashedPageContent {
@@ -29,6 +37,7 @@ export interface TrashedPageContent {
   path: string;
   kind: PageDocumentKind;
   content: string;
+  presentation: PagePresentation;
 }
 
 export class WorkspaceTrash {
@@ -66,7 +75,8 @@ export class WorkspaceTrash {
 
   async move(
     inputPath: string,
-    revisionObjects: Record<string, string> = {}
+    revisionObjects: Record<string, string> = {},
+    presentationPages: PagePresentationSnapshot = {}
   ): Promise<TrashedNode> {
     const originalPath = safeWorkspacePath(inputPath);
     const absolutePath = this.resolveWorkspacePath(originalPath);
@@ -84,7 +94,8 @@ export class WorkspaceTrash {
       originalPath,
       deletedAt: new Date().toISOString(),
       payloadName,
-      revisionObjects
+      revisionObjects,
+      presentationPages
     };
 
     await fs.mkdir(payloadDirectory, { recursive: true });
@@ -127,7 +138,8 @@ export class WorkspaceTrash {
     return {
       item: publicItem(metadata),
       path: restoredPath,
-      revisionObjects: metadata.revisionObjects
+      revisionObjects: metadata.revisionObjects,
+      presentationPages: metadata.presentationPages ?? {}
     };
   }
 
@@ -194,7 +206,8 @@ export class WorkspaceTrash {
       item: publicItem(metadata),
       path: originalPagePath,
       kind,
-      content: await fs.readFile(realContentPath, "utf8")
+      content: await fs.readFile(realContentPath, "utf8"),
+      presentation: metadata.presentationPages?.[originalPagePath] ?? { images: {} }
     };
   }
 
@@ -212,7 +225,8 @@ export class WorkspaceTrash {
       typeof parsed.deletedAt !== "string" ||
       typeof parsed.payloadName !== "string" ||
       !parsed.revisionObjects ||
-      typeof parsed.revisionObjects !== "object"
+      typeof parsed.revisionObjects !== "object" ||
+      (parsed.presentationPages !== undefined && typeof parsed.presentationPages !== "object")
     ) {
       throw new Error(`Invalid trash metadata: ${id}`);
     }

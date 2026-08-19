@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-08-01"
+updated: "2026-08-19"
 ---
 # File Format
 
@@ -90,6 +90,13 @@ Unknown editor settings, invalid toolbar modes, and non-boolean values for boole
 rejected.
 
 SQLite index data is rebuildable.
+
+Shared page presentation that must not alter portable Markdown is stored as typed JSON at
+`.rumi/presentation.json`. It is hidden runtime-owned workspace state rather than page source or
+workspace configuration. Its first supported fields are image width and alignment (`left`, `center`,
+or `full`) scoped by page path and image source. Images default to left alignment when no shared
+presentation entry exists. Unlike `.rumi/index.json`, presentation data is durable and must travel with workspace
+backups that promise to preserve shared rendering.
 
 Rumi-owned operational history is stored under `.rumi/objects/` and `.rumi/revisions/`. It is not
 Git history and does not add required IDs to canonical Markdown files. Revision blobs are exact,

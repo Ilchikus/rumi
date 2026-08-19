@@ -301,7 +301,12 @@ async function renderMermaid(
   try {
     mermaidModule ??= import("mermaid");
     const { default: mermaid } = await mermaidModule;
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "neutral",
+      suppressErrorRendering: true
+    });
     const id = `rumi-mermaid-${++mermaidRenderId}`;
     const { svg } = await mermaid.render(id, source);
     return { ok: true, svg };

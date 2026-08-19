@@ -33,7 +33,7 @@ try {
   await fs.writeFile(path.join(workspaceRoot, "Welcome.md"), "# Welcome to Rumi\n", "utf8");
   await fs.writeFile(
     path.join(workspaceRoot, ".rumi", "config.json"),
-    JSON.stringify({ uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png"] } }),
+    JSON.stringify({ uploads: { maxFileSizeMb: 1, allowedFileTypes: [".png", ".svg"] } }),
     "utf8"
   );
 
@@ -152,6 +152,38 @@ try {
   const applicationHtml = await applicationResponse.text();
   if (applicationResponse.status !== 200 || !applicationHtml.includes('<div id="root"></div>')) {
     throw new Error("Installed CLI did not serve the packaged official web client");
+  }
+
+  const svgSource = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+  const svgUploadResponse = await fetch(new URL("/api/assets?fileName=package-smoke.svg", serving.url), {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from(svgSource)
+  });
+  const svgUpload = await svgUploadResponse.json();
+  if (
+    svgUploadResponse.status !== 200 ||
+    svgUpload?.path !== ".assets/package-smoke.svg" ||
+    svgUpload?.contentType !== "image/svg+xml"
+  ) {
+    throw new Error(`Installed CLI could not upload a static SVG: ${JSON.stringify(svgUpload)}`);
+  }
+  const svgReadResponse = await fetch(new URL("/api/asset?path=.assets%2Fpackage-smoke.svg", serving.url));
+  if (
+    svgReadResponse.status !== 200 ||
+    !svgReadResponse.headers.get("content-type")?.includes("image/svg+xml") ||
+    await svgReadResponse.text() !== svgSource
+  ) {
+    throw new Error("Installed CLI could not read the uploaded SVG safely");
+  }
+
+  const activeSvgResponse = await fetch(new URL("/api/assets?fileName=active.svg", serving.url), {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+  });
+  if (activeSvgResponse.status !== 400) {
+    throw new Error("Installed CLI accepted active SVG content");
   }
 
   const rejectedUploadResponse = await fetch(new URL("/api/assets?fileName=document.pdf", serving.url), {

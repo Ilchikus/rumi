@@ -129,6 +129,13 @@ export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
             )
             return true
           }
+          const startsTripleFence =
+            from === to &&
+            state.selection instanceof TextSelection &&
+            state.selection.$from.parent.type === schema.nodes.paragraph &&
+            state.selection.$from.parentOffset === 2 &&
+            state.selection.$from.parent.textBetween(0, 2) === "``"
+          if (startsTripleFence) return false
           if (
             code.isInSet(state.storedMarks ?? state.selection.$from.marks()) ||
             !(state.selection instanceof TextSelection)
@@ -259,11 +266,6 @@ export function buildInputRules(schema: Schema) {
   // Blockquote: > at start of line
   if (schema.nodes.blockquote) {
     rules.push(wrappingInputRule(/^\s*>\s$/, schema.nodes.blockquote))
-  }
-
-  // Code block: ``` at start of line
-  if (schema.nodes.code_block) {
-    rules.push(textblockTypeInputRule(/^```$/, schema.nodes.code_block))
   }
 
   // Flat bullet item: - or * at start of line

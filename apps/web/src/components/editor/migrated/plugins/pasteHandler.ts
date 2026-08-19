@@ -47,6 +47,28 @@ function isPdfFile(file: File): boolean {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
 }
 
+function isImageFile(file: File): boolean {
+  return file.type.startsWith("image/") || file.name.toLocaleLowerCase().endsWith(".svg")
+}
+
+export function isCompleteSvgSource(text: string): boolean {
+  const source = text.trim()
+  if (!source) return false
+  return /^(?:<\?xml\s+[\s\S]*?\?>\s*)?<svg\b[^>]*(?:\/>|>[\s\S]*<\/svg>)$/iu.test(source)
+}
+
+function selectionIsInCode(state: EditorState, schema: Schema): boolean {
+  if (state.selection.$from.parent.type.spec.code) return true
+  const code = schema.marks.code
+  if (!code) return false
+  if (code.isInSet(state.storedMarks ?? state.selection.$from.marks())) return true
+  return !state.selection.empty && state.doc.rangeHasMark(
+    state.selection.from,
+    state.selection.to,
+    code
+  )
+}
+
 function insertBlockAtPosition(view: EditorView, blockNode: ProseMirrorNode, pos: number) {
   const { state, dispatch } = view
   const $pos = state.doc.resolve(pos)
@@ -324,9 +346,7 @@ export function pasteHandlerPlugin(schema: Schema) {
         pasteWasExplicitlyPlainText = false
 
         // Handle image files from clipboard
-        const imageFile = Array.from(clipboard.files).find((file) =>
-          file.type.startsWith("image/")
-        )
+        const imageFile = Array.from(clipboard.files).find(isImageFile)
 
         if (imageFile && schema.nodes.image) {
           void uploadEditorAsset(imageFile)
@@ -354,6 +374,28 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         const html = clipboard.getData("text/html")
         const text = clipboard.getData("text/plain")
+        if (
+          !plainTextPaste &&
+          schema.nodes.image &&
+          isCompleteSvgSource(text) &&
+          !selectionIsInCode(view.state, schema)
+        ) {
+          event.preventDefault()
+          const file = new File([text.trim()], "pasted-svg.svg", {
+            type: "image/svg+xml"
+          })
+          void uploadEditorAsset(file)
+            .then((relativePath) => {
+              if (!relativePath || view.isDestroyed) return
+              const image = schema.nodes.image.create({
+                src: relativePath,
+                alt: file.name
+              })
+              insertBlockAtSelection(view, image)
+            })
+            .catch(reportEditorError)
+          return true
+        }
         const codeText = text.length > 0
           ? text
           : html
@@ -449,9 +491,7 @@ export function pasteHandlerPlugin(schema: Schema) {
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })
         if (!pos) return false
 
-        const imageFile = Array.from(files).find((file) =>
-          file.type.startsWith("image/")
-        )
+        const imageFile = Array.from(files).find(isImageFile)
 
         const pdfFile = Array.from(files).find((file) => isPdfFile(file))
 

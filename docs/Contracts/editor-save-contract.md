@@ -3,7 +3,7 @@ status: draft
 area: editor
 owner: shared
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-08-19"
 ---
 # Editor Save Contract
 
@@ -18,6 +18,8 @@ Open page returns:
   contentHash,
   frontmatterHash,
   version,
+  presentation,
+  presentationVersion,
   databaseContext?,
   assetBaseUrl?
 }
@@ -49,6 +51,13 @@ Save response:
 ```
 
 The editor keeps ProseMirror as live state. Markdown is serialized for save.
+
+Shared image width and alignment use a separate presentation save boundary. The editor applies the
+returned presentation before mounting each image, previews pointer-drag changes without network
+writes, sends the final width on pointer release, and sends an alignment when its toolbar action is
+activated. A presentation-only ProseMirror transaction never marks Markdown dirty. Images without
+stored alignment default left. Repeated occurrences of the same image source within a page share
+one width and alignment.
 
 If `baseVersion` is stale, the client refetches the latest page, retains fields changed in the live
 editor, advances the base version, and retries. Routine reconciliation is silent. Only a repeated

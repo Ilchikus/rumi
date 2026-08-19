@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appShortcutAction,
   createMenuIndexForKey,
+  createMenuNumberAction,
   hasPrimaryModifier,
   shortcutLabels
 } from "./appShortcuts";
@@ -127,6 +128,32 @@ describe("application shortcuts", () => {
       code: "Digit1",
       metaKey: true
     })).toBeNull();
+  });
+
+  it("focuses on the first number press and confirms only a repeated number", () => {
+    expect(createMenuNumberAction(
+      { ...baseEvent, key: "2", code: "Digit2" },
+      null
+    )).toEqual({ index: 1, action: "focus" });
+    expect(createMenuNumberAction(
+      { ...baseEvent, key: "2", code: "Digit2" },
+      1
+    )).toEqual({ index: 1, action: "create-and-open" });
+    expect(createMenuNumberAction(
+      { ...baseEvent, key: "3", code: "Digit3" },
+      1
+    )).toEqual({ index: 2, action: "focus" });
+  });
+
+  it("does not capture modified digits reserved by the browser or operating system", () => {
+    expect(createMenuNumberAction(
+      { ...baseEvent, key: "2", code: "Digit2", metaKey: true },
+      1
+    )).toBeNull();
+    expect(createMenuNumberAction(
+      { ...baseEvent, key: "2", code: "Digit2", ctrlKey: true },
+      1
+    )).toBeNull();
   });
 
   it("recognizes only the platform primary modifier for immediate creation", () => {

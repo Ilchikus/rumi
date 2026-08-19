@@ -52,7 +52,7 @@ import {
 } from "./sidebarPreferences";
 import {
   appShortcutPlatform,
-  createMenuIndexForKey,
+  createMenuNumberAction,
   hasPrimaryModifier,
   shortcutLabels
 } from "../../lib/appShortcuts";
@@ -81,6 +81,7 @@ interface SidebarProps {
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
   onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onCreateDefault: (parentPath: string, kind: SidebarCreateKind) => Promise<void>;
+  creationParentPath: string;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
@@ -91,6 +92,35 @@ interface SidebarProps {
 
 export type SidebarCreateKind = "page" | "folder" | "database";
 type CreateKind = SidebarCreateKind;
+
+export function sidebarCreationParentPath(
+  tree: WorkspaceNode | null,
+  selection: SidebarSelection | null
+): string {
+  if (!tree || !selection || selection.kind === "workspace") return "";
+  if (selection.kind === "folder" || selection.kind === "database") {
+    return selection.nodePath;
+  }
+
+  let nearestContainerPath = "";
+  const visit = (node: WorkspaceNode) => {
+    if (
+      (node.kind === "folder" || node.kind === "database") &&
+      (
+        selection.nodePath === node.path ||
+        selection.nodePath.startsWith(`${node.path}/`)
+      ) &&
+      node.path.length > nearestContainerPath.length
+    ) {
+      nearestContainerPath = node.path;
+    }
+
+    for (const child of node.children ?? []) visit(child);
+  };
+
+  visit(tree);
+  return nearestContainerPath;
+}
 
 export function sidebarNodeCreateKinds(
   kind: WorkspaceNode["kind"]
@@ -106,6 +136,40 @@ export function shouldCreatePageImmediately(
   platform: Parameters<typeof hasPrimaryModifier>[1]
 ): boolean {
   return kind === "page" && hasPrimaryModifier(event, platform);
+}
+
+function enabledSidebarMenuItems(menu: HTMLElement): HTMLElement[] {
+  return Array.from(menu.querySelectorAll<HTMLElement>(
+    '[role="menuitem"]:not([data-disabled])'
+  ));
+}
+
+export function focusFirstSidebarMenuItem(menu: HTMLElement): HTMLElement | null {
+  const firstItem = enabledSidebarMenuItems(menu)[0] ?? null;
+  firstItem?.focus({ preventScroll: true });
+  return firstItem;
+}
+
+export function moveSidebarMenuFocus(
+  menu: HTMLElement,
+  direction: "next" | "previous"
+): HTMLElement | null {
+  const items = enabledSidebarMenuItems(menu);
+  if (items.length === 0) return null;
+  const activeIndex = items.indexOf(document.activeElement as HTMLElement);
+  const offset = direction === "next" ? 1 : -1;
+  const nextIndex = activeIndex < 0
+    ? direction === "next" ? 0 : items.length - 1
+    : (activeIndex + offset + items.length) % items.length;
+  const item = items[nextIndex] ?? null;
+  item?.focus({ preventScroll: true });
+  return item;
+}
+
+export function restoreSidebarContextFocus(element: HTMLElement | null): boolean {
+  if (!element?.isConnected) return false;
+  element.focus({ preventScroll: true });
+  return true;
 }
 
 const TREE_INDENT_PX = 20;
@@ -139,6 +203,7 @@ type VisibleTreeRow = VisibleTreeNodeRow | VisibleTreeCreateRow;
 interface FloatingMenu {
   node: WorkspaceNode | null;
   point: { x: number; y: number };
+  returnFocus: HTMLElement | null;
 }
 
 interface MoveDestination {
@@ -174,6 +239,7 @@ export function Sidebar({
   onCreateFolder,
   onCreateDatabase,
   onCreateDefault,
+  creationParentPath,
   onRenameNode,
   onMoveNode,
   onConvertNode,
@@ -390,13 +456,24 @@ export function Sidebar({
     }
 
     event.preventDefault();
-    setFloatingMenu({ node: null, point: { x: event.clientX, y: event.clientY } });
+    setFloatingMenu({
+      node: null,
+      point: { x: event.clientX, y: event.clientY },
+      returnFocus: null
+    });
   }, []);
 
   const openNodeMenu = useCallback((node: WorkspaceNode, event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    setFloatingMenu({ node, point: { x: event.clientX, y: event.clientY } });
+    const target = event.target as HTMLElement;
+    const returnFocus = target.closest<HTMLElement>("button")
+      ?? event.currentTarget.querySelector<HTMLElement>("button:not(:disabled)");
+    setFloatingMenu({
+      node,
+      point: { x: event.clientX, y: event.clientY },
+      returnFocus
+    });
   }, []);
 
   const renderVisibleTreeRow = (
@@ -466,7 +543,11 @@ export function Sidebar({
               }}
             >
               <span className="h-7 w-7 shrink-0" aria-hidden="true">
-                <img src="/rumi-logo.svg" alt="" className="block h-full w-full object-contain" />
+                <img
+                  src="/rumi-logo.svg?v=20260819-1"
+                  alt=""
+                  className="block h-full w-full object-contain"
+                />
               </span>
               <span className="truncate text-lg font-semibold">{workspaceName}</span>
             </button>
@@ -474,6 +555,7 @@ export function Sidebar({
           <div className="flex shrink-0 gap-1">
             <RootCreateMenu
               open={rootCreateMenuOpen}
+              parentPath={creationParentPath}
               onOpenChange={onRootCreateMenuOpenChange}
               onCreate={startCreate}
               onCreateDefault={createDefault}
@@ -858,11 +940,13 @@ function TreeDepthGuides({
 
 function RootCreateMenu({
   open,
+  parentPath,
   onOpenChange,
   onCreate,
   onCreateDefault
 }: {
   open: boolean;
+  parentPath: string;
   onOpenChange: (open: boolean) => void;
   onCreate: (parentPath: string, kind: CreateKind) => void;
   onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
@@ -871,8 +955,10 @@ function RootCreateMenu({
   const labels = shortcutLabels(platform);
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const immediatePointerKindRef = useRef<CreateKind | null>(null);
+  const numberedSelectionRef = useRef<number | null>(null);
 
   useEffect(() => {
+    numberedSelectionRef.current = null;
     if (!open) return;
 
     const animationFrame = window.requestAnimationFrame(() => {
@@ -883,7 +969,7 @@ function RootCreateMenu({
 
   const createImmediately = (kind: CreateKind) => {
     onOpenChange(false);
-    void onCreateDefault("", kind).catch(() => undefined);
+    void onCreateDefault(parentPath, kind).catch(() => undefined);
   };
 
   const createOptions: Array<{
@@ -907,11 +993,24 @@ function RootCreateMenu({
         align="end"
         className="min-w-48"
         onKeyDown={(event) => {
-          const index = createMenuIndexForKey(event);
-          if (index === null) return;
+          const numberAction = createMenuNumberAction(
+            event,
+            numberedSelectionRef.current
+          );
+          if (!numberAction) return;
           event.preventDefault();
           event.stopPropagation();
-          itemRefs.current[index]?.focus();
+
+          const option = createOptions[numberAction.index];
+          if (!option) return;
+          if (numberAction.action === "focus") {
+            numberedSelectionRef.current = numberAction.index;
+            itemRefs.current[numberAction.index]?.focus();
+            return;
+          }
+
+          numberedSelectionRef.current = null;
+          createImmediately(option.kind);
         }}
       >
         {createOptions.map((option, index) => (
@@ -939,7 +1038,7 @@ function RootCreateMenu({
               }
 
               immediatePointerKindRef.current = null;
-              onCreate("", option.kind);
+              onCreate(parentPath, option.kind);
             }}
           >
             {option.icon}
@@ -973,8 +1072,25 @@ function FloatingSidebarMenu({
   onConvert: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (contentRef.current) focusFirstSidebarMenuItem(contentRef.current);
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [menu]);
+
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      const returnFocus = menu.returnFocus;
+      window.setTimeout(() => restoreSidebarContextFocus(returnFocus), 0);
+    }
+    onOpenChange(open);
+  };
+
   return (
-    <DropdownMenu open onOpenChange={onOpenChange}>
+    <DropdownMenu open onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -984,7 +1100,23 @@ function FloatingSidebarMenu({
           style={{ left: menu.point.x, top: menu.point.y }}
         />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        ref={contentRef}
+        align="start"
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          event.preventDefault();
+          moveSidebarMenuFocus(
+            event.currentTarget,
+            event.key === "ArrowDown" ? "next" : "previous"
+          );
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!restoreSidebarContextFocus(menu.returnFocus)) return;
+          event.preventDefault();
+        }}
+      >
         {menu.node ? (
           <NodeMenuItems
             node={menu.node}

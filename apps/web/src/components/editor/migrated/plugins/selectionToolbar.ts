@@ -29,8 +29,12 @@ import {
   isToolbarBlockTypeActive,
   moveToolbarBlocks
 } from "./topToolbarActions"
-import { moveBlocks } from "./multiBlockSelection"
-import { openEditorHref } from "../platform"
+import { moveBlocks, multiBlockSelectionKey } from "./multiBlockSelection"
+import {
+  migratedEditorPlatform,
+  openEditorHref,
+  type MigratedEditorDocument
+} from "../platform"
 import {
   isExternalLinkHref,
   normalizeLinkHref
@@ -38,6 +42,103 @@ import {
 import { linkRangeAtSelection } from "../linkSelection"
 
 export const selectionToolbarPluginKey = new PluginKey("selectionToolbar")
+
+function normalizedSuggestionValue(value: string): string {
+  return value
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "")
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+}
+
+function withoutMarkdownExtension(value: string): string {
+  return value.endsWith(".md") ? value.slice(0, -3) : value
+}
+
+function documentSuggestionRank(
+  document: MigratedEditorDocument,
+  query: string
+): number | null {
+  const title = normalizedSuggestionValue(document.title)
+  const paths = [document.path, document.nodePath]
+    .map(normalizedSuggestionValue)
+    .filter((path, index, all) => path && all.indexOf(path) === index)
+  const basenames = paths.map((path) => path.split("/").at(-1) ?? path)
+  const queryHasPath = query.includes("/")
+
+  if (!queryHasPath) {
+    const names = [title, ...basenames]
+    const exactName = names.some((name) =>
+      name === query || withoutMarkdownExtension(name) === query
+    )
+    if (exactName) return 0
+
+    const nameStarts = names.some((name) =>
+      name.startsWith(query) || withoutMarkdownExtension(name).startsWith(query)
+    )
+    if (nameStarts) return 10
+
+    const nameContains = names.some((name) => name.includes(query))
+    if (nameContains) return 20
+  }
+
+  const exactPath = paths.some((path) =>
+    path === query || withoutMarkdownExtension(path) === query
+  )
+  if (exactPath) return queryHasPath ? 0 : 30
+
+  const pathStarts = paths.some((path) =>
+    path.startsWith(query) || withoutMarkdownExtension(path).startsWith(query)
+  )
+  if (pathStarts) return queryHasPath ? 10 : 40
+
+  const pathBoundaryMatch = paths.some((path) =>
+    path.includes(`/${query}`) || withoutMarkdownExtension(path).includes(`/${query}`)
+  )
+  if (pathBoundaryMatch) return queryHasPath ? 20 : 50
+
+  const pathContains = paths.some((path) => path.includes(query))
+  if (pathContains) return queryHasPath ? 30 : 60
+
+  // A path-shaped query must keep its directory context. Falling back to a
+  // matching basename here would make /docs/todo compete with every todo.md.
+  if (queryHasPath) return null
+
+  return null
+}
+
+export function linkDestinationSuggestions(
+  documents: readonly MigratedEditorDocument[],
+  rawQuery: string
+): string[] {
+  const query = normalizedSuggestionValue(rawQuery)
+  if (!query) return []
+
+  const absolute = rawQuery.trimStart().startsWith("/")
+  const seen = new Set<string>()
+  return documents
+    .map((document, index) => ({
+      document,
+      index,
+      rank: documentSuggestionRank(document, query)
+    }))
+    .filter((entry) => entry.rank !== null)
+    .sort((left, right) =>
+      left.rank - right.rank ||
+      left.document.path.length - right.document.path.length ||
+      left.document.path.localeCompare(right.document.path) ||
+      left.index - right.index
+    )
+    .flatMap(({ document }) => {
+      const path = document.path.replaceAll("\\", "/").replace(/^\/+/, "")
+      const key = path.toLocaleLowerCase()
+      if (!path || seen.has(key)) return []
+      seen.add(key)
+      return [absolute ? `/${path}` : path]
+    })
+    .slice(0, 20)
+}
 
 interface SelectionToolbarPreferences {
   mode: EditorToolbarMode
@@ -90,16 +191,55 @@ export const openSelectionToolbarLinkEditor: Command = (state, dispatch) => {
 }
 
 function toggleToolbarMark(view: EditorView, markType: MarkType) {
-  const blockSelection = selectedBlockInlineRanges(view.state).length > 0
-  const { empty, to } = view.state.selection
-  const mode = selectionToolbarPluginKey.getState(view.state)?.mode ?? "floating"
-  toggleInlineMark(markType)(view.state, view.dispatch)
-  if (mode === "floating" && !blockSelection && !empty) {
-    view.dispatch(
-      view.state.tr.setSelection(TextSelection.create(view.state.doc, to))
-    )
-  }
+  const applied = toggleInlineMark(markType)(view.state, view.dispatch)
+  if (!applied) return
+  dismissFloatingToolbarSelection(view)
   view.focus()
+}
+
+function dismissFloatingToolbarSelection(view: EditorView): boolean {
+  const mode = selectionToolbarPluginKey.getState(view.state)?.mode ?? "floating"
+  if (mode !== "floating") return false
+
+  const blockRanges = selectedBlockInlineRanges(view.state)
+  const { empty, to } = view.state.selection
+  const collapseTo = blockRanges.at(-1)?.to ?? (!empty ? to : null)
+  if (collapseTo === null) return false
+
+  let transaction = view.state.tr
+    .setSelection(TextSelection.create(view.state.doc, collapseTo))
+    .setMeta("addToHistory", false)
+  if (blockRanges.length > 0) {
+    transaction = transaction.setMeta(multiBlockSelectionKey, {
+      selectedBlocks: [],
+      anchorBlock: null
+    })
+  }
+  view.dispatch(transaction)
+  return true
+}
+
+interface EditorViewportSnapshot {
+  element: HTMLElement
+  scrollLeft: number
+  scrollTop: number
+}
+
+export function captureEditorViewport(view: EditorView): EditorViewportSnapshot | null {
+  const element = view.dom.closest<HTMLElement>("[data-rumi-editor-canvas]")
+  return element
+    ? { element, scrollLeft: element.scrollLeft, scrollTop: element.scrollTop }
+    : null
+}
+
+export function focusEditorPreservingViewport(
+  view: EditorView,
+  snapshot: EditorViewportSnapshot | null
+): void {
+  view.focus()
+  if (!snapshot?.element.isConnected) return
+  snapshot.element.scrollLeft = snapshot.scrollLeft
+  snapshot.element.scrollTop = snapshot.scrollTop
 }
 
 export function selectionToolbarPlugin(
@@ -132,10 +272,18 @@ export function selectionToolbarPlugin(
       }
     },
 
+    props: {
+      handleKeyDown(view, event) {
+        if (event.key !== "Escape") return false
+        return dismissFloatingToolbarSelection(view)
+      }
+    },
+
     view(editorView) {
       const container = document.createElement("div")
       container.className = "selection-toolbar"
       container.dataset.rumiEditorOverlay = ""
+      container.dataset.rumiAreaSelectionExclude = ""
       container.setAttribute("role", "toolbar")
       container.setAttribute("aria-label", "Editor formatting")
       document.body.appendChild(container)
@@ -328,6 +476,8 @@ export function selectionToolbarPlugin(
 
       // Link button
       let linkButton: HTMLButtonElement | null = null
+      let linkEditorSessionOpen = false
+      let closeLinkEditorSession = () => {}
       if (schema.marks.link) {
         inlineGroup.appendChild(createInlineToolbarSeparator())
 
@@ -353,11 +503,15 @@ export function selectionToolbarPlugin(
           position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
           margin-top: 8px; background: white; border: 1px solid hsl(214.3, 31.8%, 91.4%);
           border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-          padding: 8px; display: none; width: 260px;
+          padding: 8px; display: none; width: 360px; max-width: calc(100vw - 32px);
         `
+        for (const eventName of ["pointerdown", "mousedown", "mouseup", "click", "contextmenu"]) {
+          linkPopup.addEventListener(eventName, (event) => event.stopPropagation())
+        }
 
         const linkInputRow = document.createElement("div")
-        linkInputRow.style.cssText = `display: flex; gap: 8px;`
+        linkInputRow.className = "link-input-row"
+        linkInputRow.style.cssText = `display: flex; align-items: center; gap: 4px;`
 
         const linkTextInput = document.createElement("input")
         linkTextInput.type = "text"
@@ -373,57 +527,201 @@ export function selectionToolbarPlugin(
         linkInput.type = "text"
         linkInput.className = "link-url-input"
         linkInput.placeholder = "Enter URL or file path..."
+        linkInput.setAttribute("aria-autocomplete", "inline")
         linkInput.style.cssText = `
-          flex: 1; padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
-          border-radius: 6px; font-size: 13px; outline: none;
+          position: relative; width: 100%; box-sizing: border-box; padding: 6px 0 5px;
+          border: 0; border-bottom: 1px solid hsl(214.3, 31.8%, 91.4%);
+          background: transparent; border-radius: 0; font-size: 13px;
+          font-weight: 400; line-height: 18px; outline: none;
         `
 
-        const linkApplyBtn = document.createElement("button")
-        linkApplyBtn.textContent = "Apply"
-        linkApplyBtn.style.cssText = `
-          padding: 6px 12px; background: hsl(222.2, 47.4%, 11.2%); color: white;
-          border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
+        const linkInputShell = document.createElement("div")
+        linkInputShell.className = "link-url-input-shell"
+        linkInputShell.style.cssText = `position: relative; flex: 1; min-width: 0;`
+
+        const linkSuggestionGhost = document.createElement("div")
+        linkSuggestionGhost.className = "link-url-inline-suggestion"
+        linkSuggestionGhost.setAttribute("aria-hidden", "true")
+        linkSuggestionGhost.style.cssText = `
+          position: absolute; inset: 0; box-sizing: border-box; overflow: hidden;
+          padding: 6px 0 5px; border: 0; border-bottom: 1px solid transparent;
+          pointer-events: none; white-space: pre; font-size: 13px;
+          font-weight: 400; line-height: 18px;
         `
+        const linkSuggestionPrefix = document.createElement("span")
+        linkSuggestionPrefix.style.color = "transparent"
+        const linkSuggestionSuffix = document.createElement("span")
+        const linkSuggestionBeforeMatch = document.createElement("span")
+        linkSuggestionBeforeMatch.className = "link-url-suggestion-muted"
+        linkSuggestionBeforeMatch.style.color = "hsl(215, 16%, 57%)"
+        const linkSuggestionMatch = document.createElement("span")
+        linkSuggestionMatch.className = "link-url-suggestion-match"
+        linkSuggestionMatch.style.color = "#0f172a"
+        const linkSuggestionAfterMatch = document.createElement("span")
+        linkSuggestionAfterMatch.className = "link-url-suggestion-muted"
+        linkSuggestionAfterMatch.style.color = "hsl(215, 16%, 57%)"
+        linkSuggestionSuffix.append(
+          linkSuggestionBeforeMatch,
+          linkSuggestionMatch,
+          linkSuggestionAfterMatch
+        )
+        linkSuggestionGhost.append(linkSuggestionPrefix, linkSuggestionSuffix)
 
-        linkPopup.appendChild(linkTextInput)
-        linkInputRow.appendChild(linkInput)
-        linkInputRow.appendChild(linkApplyBtn)
-        linkPopup.appendChild(linkInputRow)
+        const linkSuggestionStatus = document.createElement("span")
+        linkSuggestionStatus.className = "sr-only link-url-suggestion-status"
+        linkSuggestionStatus.setAttribute("role", "status")
+        linkSuggestionStatus.setAttribute("aria-live", "polite")
+        const linkSuggestionStatusId = `rumi-link-suggestion-${Math.random().toString(36).slice(2)}`
+        linkSuggestionStatus.id = linkSuggestionStatusId
+        linkInput.setAttribute("aria-describedby", linkSuggestionStatusId)
 
-        const linkActionRow = document.createElement("div")
-        linkActionRow.style.cssText = `display: flex; gap: 8px; margin-top: 8px;`
+        linkInputShell.append(linkSuggestionGhost, linkInput, linkSuggestionStatus)
 
         const linkCopyBtn = document.createElement("button")
         linkCopyBtn.type = "button"
-        linkCopyBtn.className = "link-copy-btn"
-        linkCopyBtn.textContent = "Copy link"
+        linkCopyBtn.className = "link-copy-btn link-action-icon"
+        linkCopyBtn.title = "Copy link"
+        linkCopyBtn.setAttribute("aria-label", "Copy link")
+        const copyIconMarkup = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+        const copiedIconMarkup = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg>`
+        linkCopyBtn.innerHTML = copyIconMarkup
 
         const linkOpenBtn = document.createElement("button")
         linkOpenBtn.type = "button"
-        linkOpenBtn.className = "link-open-btn"
-        linkOpenBtn.textContent = "Open"
+        linkOpenBtn.className = "link-open-btn link-action-icon"
+        linkOpenBtn.title = "Open link"
+        linkOpenBtn.setAttribute("aria-label", "Open link")
+        linkOpenBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>`
 
         const linkUnlinkBtn = document.createElement("button")
         linkUnlinkBtn.type = "button"
-        linkUnlinkBtn.className = "link-unlink-btn"
-        linkUnlinkBtn.textContent = "Unlink"
+        linkUnlinkBtn.className = "link-unlink-btn link-action-icon"
+        linkUnlinkBtn.title = "Unlink"
+        linkUnlinkBtn.setAttribute("aria-label", "Unlink")
+        linkUnlinkBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="m8 2 1 3"/><path d="m2 8 3 1"/><path d="m16 19 1 3"/><path d="m19 16 3 1"/></svg>`
 
+        const linkApplyBtn = document.createElement("button")
+        linkApplyBtn.type = "button"
+        linkApplyBtn.className = "link-apply-btn link-action-icon"
+        linkApplyBtn.title = "Apply link"
+        linkApplyBtn.setAttribute("aria-label", "Apply link")
+        linkApplyBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg>`
+        linkApplyBtn.style.cssText = `
+          width: 28px; height: 28px; flex: 0 0 28px; padding: 0;
+          background: #0284c7; color: white; border: 1px solid #0284c7;
+          border-radius: 6px; cursor: pointer; display: inline-flex;
+          align-items: center; justify-content: center;
+        `
+
+        linkPopup.appendChild(linkTextInput)
+        linkInputRow.appendChild(linkInputShell)
         for (const actionButton of [linkCopyBtn, linkOpenBtn, linkUnlinkBtn]) {
           actionButton.style.cssText = `
-            padding: 5px 9px; background: transparent;
+            width: 28px; height: 28px; flex: 0 0 28px; padding: 0;
+            background: transparent; color: hsl(222.2, 47.4%, 11.2%);
             border: 1px solid hsl(214.3, 31.8%, 91.4%);
-            border-radius: 6px; font-size: 12px; cursor: pointer;
+            border-radius: 6px; cursor: pointer; display: inline-flex;
+            align-items: center; justify-content: center;
           `
           actionButton.addEventListener("mousedown", preserveEditorSelection)
-          linkActionRow.appendChild(actionButton)
+          linkInputRow.appendChild(actionButton)
         }
-        linkPopup.appendChild(linkActionRow)
+        linkInputRow.appendChild(linkApplyBtn)
+        linkPopup.appendChild(linkInputRow)
 
         let savedSelection: {
           ranges: Array<{ from: number; to: number }>
           blockSelection: boolean
           existingText: string | null
         } | null = null
+        let linkSuggestionQuery = ""
+        let linkSuggestions: string[] = []
+        let linkSuggestionIndex = 0
+        let linkCopyFeedbackTimer: number | null = null
+
+        const currentLinkSuggestion = () =>
+          linkSuggestions[linkSuggestionIndex] ?? null
+
+        const renderLinkSuggestion = () => {
+          const suggestion = currentLinkSuggestion()
+          const query = linkSuggestionQuery
+          const exactValue = suggestion?.toLocaleLowerCase() === query.toLocaleLowerCase()
+          if (!query || !suggestion || exactValue) {
+            linkSuggestionGhost.style.display = "none"
+            linkSuggestionPrefix.textContent = ""
+            linkSuggestionBeforeMatch.textContent = ""
+            linkSuggestionMatch.textContent = ""
+            linkSuggestionAfterMatch.textContent = ""
+            linkSuggestionStatus.textContent = ""
+            delete linkInput.dataset.suggestion
+            return
+          }
+
+          const continuesQuery = suggestion
+            .toLocaleLowerCase()
+            .startsWith(query.toLocaleLowerCase())
+          linkSuggestionPrefix.textContent = query
+          if (continuesQuery) {
+            linkSuggestionBeforeMatch.textContent = suggestion.slice(query.length)
+            linkSuggestionMatch.textContent = ""
+            linkSuggestionAfterMatch.textContent = ""
+          } else {
+            const matchQuery = query.trim()
+            const matchIndex = suggestion.toLocaleLowerCase().indexOf(
+              matchQuery.toLocaleLowerCase()
+            )
+            linkSuggestionBeforeMatch.textContent = matchIndex === -1
+              ? `  → ${suggestion}`
+              : `  → ${suggestion.slice(0, matchIndex)}`
+            linkSuggestionMatch.textContent = matchIndex === -1
+              ? ""
+              : suggestion.slice(matchIndex, matchIndex + matchQuery.length)
+            linkSuggestionAfterMatch.textContent = matchIndex === -1
+              ? ""
+              : suggestion.slice(matchIndex + matchQuery.length)
+          }
+          linkSuggestionGhost.style.display = "block"
+          linkSuggestionStatus.textContent =
+            `Suggestion ${linkSuggestionIndex + 1} of ${linkSuggestions.length}: ${suggestion}. Press Tab to accept.`
+          linkInput.dataset.suggestion = suggestion
+        }
+
+        const updateLinkSuggestions = () => {
+          linkSuggestionQuery = linkInput.value
+          const normalizedInput = linkSuggestionQuery.trim().toLocaleLowerCase()
+          linkSuggestions = linkDestinationSuggestions(
+            migratedEditorPlatform().documents,
+            linkSuggestionQuery
+          ).filter((suggestion) => suggestion.toLocaleLowerCase() !== normalizedInput)
+          linkSuggestionIndex = 0
+          renderLinkSuggestion()
+        }
+
+        const clearLinkSuggestions = () => {
+          linkSuggestionQuery = ""
+          linkSuggestions = []
+          linkSuggestionIndex = 0
+          renderLinkSuggestion()
+        }
+
+        const resetLinkCopyFeedback = () => {
+          if (linkCopyFeedbackTimer !== null) {
+            window.clearTimeout(linkCopyFeedbackTimer)
+            linkCopyFeedbackTimer = null
+          }
+          linkCopyBtn.innerHTML = copyIconMarkup
+          linkCopyBtn.title = "Copy link"
+          linkCopyBtn.setAttribute("aria-label", "Copy link")
+          linkCopyBtn.classList.remove("copied")
+        }
+
+        closeLinkEditorSession = () => {
+          resetLinkCopyFeedback()
+          linkPopup.style.display = "none"
+          clearLinkSuggestions()
+          savedSelection = null
+          linkEditorSessionOpen = false
+        }
 
         linkBtn.addEventListener("mousedown", (e) => {
           e.preventDefault()
@@ -445,6 +743,7 @@ export function selectionToolbarPlugin(
           // A selected link toggles off. A caret within a link opens its URL editor.
           const linkMark = schema.marks.link
           if (!empty && isInlineMarkActive(editorView.state, linkMark)) {
+            const viewport = captureEditorViewport(editorView)
             let tr = editorView.state.tr
             const ranges = blockSelection ? blockRanges : [{ from, to }]
             for (const range of ranges) {
@@ -452,7 +751,7 @@ export function selectionToolbarPlugin(
             }
             if (blockSelection) tr.setMeta("multiBlockKeep", true)
             editorView.dispatch(tr)
-            editorView.focus()
+            focusEditorPreservingViewport(editorView, viewport)
             return
           }
 
@@ -468,8 +767,10 @@ export function selectionToolbarPlugin(
               ? editorView.state.doc.textBetween(caretLink.from, caretLink.to)
               : null
           }
+          linkEditorSessionOpen = true
           linkPopup.style.display = "block"
           linkInput.value = caretLink?.href ?? ""
+          updateLinkSuggestions()
           linkTextInput.value = savedSelection.existingText ?? ""
           linkTextInput.style.display = savedSelection.existingText === null
             ? "none"
@@ -485,6 +786,7 @@ export function selectionToolbarPlugin(
           e.preventDefault()
           e.stopPropagation()
 
+          const viewport = captureEditorViewport(editorView)
           const href = normalizeLinkHref(linkInput.value)
           if (savedSelection) {
             const linkMark = schema.marks.link
@@ -522,20 +824,44 @@ export function selectionToolbarPlugin(
               const selectionTo = existingText === null
                 ? ranges.at(-1).to
                 : ranges[0].from + linkTextInput.value.length
-              tr = tr.setSelection(TextSelection.create(tr.doc, selectionTo))
+              const markerAtSelection = tr.doc.nodeAt(selectionTo)
+              const cursorPosition = href &&
+                markerAtSelection?.type.name === "link_marker"
+                ? selectionTo + markerAtSelection.nodeSize
+                : selectionTo
+              tr = tr.setSelection(
+                TextSelection.create(tr.doc, cursorPosition)
+              )
             }
             editorView.dispatch(tr)
           }
-          linkPopup.style.display = "none"
-          savedSelection = null
-          editorView.focus()
+          closeLinkEditorSession()
+          dismissFloatingToolbarSelection(editorView)
+          focusEditorPreservingViewport(editorView, viewport)
+          update()
         })
 
-        linkCopyBtn.addEventListener("click", (event) => {
+        linkCopyBtn.addEventListener("click", async (event) => {
           event.preventDefault()
           event.stopPropagation()
           const href = normalizeLinkHref(linkInput.value)
-          if (href) void navigator.clipboard.writeText(href)
+          if (!href) return
+
+          try {
+            await navigator.clipboard.writeText(href)
+          } catch {
+            return
+          }
+          resetLinkCopyFeedback()
+          linkCopyBtn.innerHTML = copiedIconMarkup
+          linkCopyBtn.title = "Copied"
+          linkCopyBtn.setAttribute("aria-label", "Copied")
+          linkCopyBtn.classList.add("copied")
+          linkCopyFeedbackTimer = window.setTimeout(() => {
+            linkCopyFeedbackTimer = null
+            closeLinkEditorSession()
+            update()
+          }, 500)
         })
 
         linkOpenBtn.addEventListener("click", (event) => {
@@ -553,14 +879,44 @@ export function selectionToolbarPlugin(
           linkApplyBtn.click()
         })
 
+        linkInput.addEventListener("input", updateLinkSuggestions)
         linkInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") {
+          const acceptLinkSuggestion = () => {
+            const suggestion = currentLinkSuggestion()
+            if (!suggestion) return false
+            linkInput.value = suggestion
+            linkInput.setSelectionRange(linkInput.value.length, linkInput.value.length)
+            clearLinkSuggestions()
+            return true
+          }
+          if (e.key === "Tab" && currentLinkSuggestion()) {
             e.preventDefault()
+            e.stopPropagation()
+            acceptLinkSuggestion()
+          } else if (
+            (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+            !e.altKey &&
+            !e.ctrlKey &&
+            !e.metaKey &&
+            !e.shiftKey &&
+            linkSuggestions.length > 0
+          ) {
+            e.preventDefault()
+            e.stopPropagation()
+            const direction = e.key === "ArrowDown" ? 1 : -1
+            linkSuggestionIndex = (
+              linkSuggestionIndex + direction + linkSuggestions.length
+            ) % linkSuggestions.length
+            renderLinkSuggestion()
+          } else if (e.key === "Enter") {
+            e.preventDefault()
+            acceptLinkSuggestion()
             linkApplyBtn.click()
           } else if (e.key === "Escape") {
-            linkPopup.style.display = "none"
-            savedSelection = null
+            closeLinkEditorSession()
+            dismissFloatingToolbarSelection(editorView)
             editorView.focus()
+            update()
           }
         })
         linkTextInput.addEventListener("keydown", (e) => {
@@ -568,9 +924,10 @@ export function selectionToolbarPlugin(
             e.preventDefault()
             linkApplyBtn.click()
           } else if (e.key === "Escape") {
-            linkPopup.style.display = "none"
-            savedSelection = null
+            closeLinkEditorSession()
+            dismissFloatingToolbarSelection(editorView)
             editorView.focus()
+            update()
           }
         })
 
@@ -656,7 +1013,7 @@ export function selectionToolbarPlugin(
           : null
         const hasTextSelection = !empty && from !== to && !(selection instanceof NodeSelection)
         const textSelectionInCode = hasTextSelection && selection.$from.parent.type.spec.code
-        const forceLinkEditor = linkEditorRequested && Boolean(
+        const forceLinkEditor = (linkEditorRequested || linkEditorSessionOpen) && Boolean(
           caretLink ||
           hasBlockSelection ||
           (hasTextSelection && !textSelectionInCode)
@@ -672,9 +1029,9 @@ export function selectionToolbarPlugin(
           isExpandedEditorToolbarMode(mode)
         )
 
-        // Close the link popup on any update
-        const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
-        if (linkPopup) linkPopup.style.display = "none"
+        if (linkEditorSessionOpen && !forceLinkEditor) {
+          closeLinkEditorSession()
+        }
 
         if ((mode === "none" && !forceLinkEditor) || !editorView.editable) {
           container.style.display = "none"
@@ -797,11 +1154,13 @@ export function selectionToolbarPlugin(
       // Close the toolbar on outside click (capture phase to catch all clicks)
       const handleOutsideClick = (e: MouseEvent) => {
         // If click is inside the toolbar, let it handle normally
-        if (container.contains(e.target as Node)) return
+        if (
+          container.contains(e.target as Node) ||
+          e.composedPath().includes(container)
+        ) return
 
         // Close link popup
-        const linkPopup = container.querySelector(".link-input-popup") as HTMLElement
-        if (linkPopup) linkPopup.style.display = "none"
+        closeLinkEditorSession()
 
         // Preserve selections for the always-visible editor toolbar. Floating
         // text selections keep their established outside-click behavior.
@@ -815,6 +1174,7 @@ export function selectionToolbarPlugin(
             editorView.dispatch(tr)
           }
         }
+        update()
       }
       // Use capture phase to catch clicks anywhere in the app
       document.addEventListener("mousedown", handleOutsideClick, true)
@@ -830,6 +1190,7 @@ export function selectionToolbarPlugin(
         update,
         destroy() {
           destroyed = true
+          closeLinkEditorSession()
           document.removeEventListener("mousedown", handleOutsideClick, true)
           window.removeEventListener("resize", syncEditorToolbarBounds)
           resizeObserver?.disconnect()

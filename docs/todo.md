@@ -1,16 +1,31 @@
-
-
-## In progress
+## &#32;- In progress
 
 ## Planned
 
-- [ ] sidebar context menu: focus on first item, navigate with arrows, confirm on enter
-- [ ] after moving current page to trash, navigate to previous page instead of home (check if issue exists, could be for db-pages only)
+- [ ] context actions on items from breadcrumbs (rmb)
+    - [ ] include copy path and copy url to context actions. these context actions should be synced with sidebar and breadcrumbs - basically the same component and actions
+- [x] update logo with following image (rumi.md and app)
+
+![](.assets/light.svg)
+
+- [x] \`\`\` does not creates a code block
+- [ ] add favorite pages/folders/dbs
+- [ ] dark theme
+- [x] open external links in new tab by default, internal - same tab
+- [x] add .svg uploads support
+- [x] when pasting svg code outside the code block/inline code, i want it to paste as file - prob create a file from code and link to it as other assets. on shift+cmd+v it should paste as text anywhere
+- [x] make sure on uploads/assets rename docs have proper links
+- [x] sidebar context menu: focus on first item, navigate with arrows, confirm on enter
+- [x] after moving current page to trash, navigate to previous page instead of home (check if issue exists, could be for db-pages only)
 - [ ] drag-n-drop block into db:
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
 - [ ] [Inline-code caret boundary](Tasks/xxx-inline-code-caret-boundary.md)
+- [x] cold visit inner url should always open this url regardless of what should be opened on start
+- [x] improve link behaviour
+    - [x] highlight → remove link makes viewport jump down, it should remain
+- [ ] media library - similarly to trash and settings add a page, where users can browse, delete, copy etc. uploaded files
 
 ## To think
 

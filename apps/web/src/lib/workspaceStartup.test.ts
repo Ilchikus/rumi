@@ -78,6 +78,19 @@ describe("workspace startup persistence", () => {
     expect(canHydrateStartupPage("/settings", "last-visited", false)).toBe(false);
   });
 
+  it.each([
+    "/projects/roadmap",
+    "/project-files/r%C3%A9sum%C3%A9",
+    "/tasks/my-task",
+    "/settings",
+    "/settings-2",
+    "/trash",
+    "/trash/item-1"
+  ])("never lets a startup snapshot replace the explicit cold route %s", (pathname) => {
+    expect(canHydrateStartupPage(pathname, "last-visited", false)).toBe(false);
+    expect(canHydrateStartupPage(pathname, "home", true)).toBe(false);
+  });
+
   it("hydrates behind the authenticated App boundary and revalidates server state", () => {
     expect(appSource).toContain("readWorkspaceStartupSnapshot(window.localStorage)");
     expect(appSource).toContain("startupSnapshotRef");
@@ -86,6 +99,9 @@ describe("workspace startup persistence", () => {
     expect(appSource).toContain("Promise.all([api.getWorkspace(), api.getTree()])");
     expect(appSource).toContain("snapshotMatchesWorkspace");
     expect(appSource).toContain('if (route?.view === "node" && !treeRevalidated)');
+    expect(appSource.indexOf('if (route?.view === "node")')).toBeLessThan(
+      appSource.indexOf('if (route?.view === "home")')
+    );
     expect(appSource).toContain('saveState === "idle" || saveState === "saved"');
     expect(appSource).toContain("startupSnapshot?.settings?.editor.inlineToolbar");
     expect(appSource).toContain("cachedWorkspaceSettings");

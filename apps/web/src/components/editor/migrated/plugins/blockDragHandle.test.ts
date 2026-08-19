@@ -1,5 +1,6 @@
-import { EditorState, NodeSelection, TextSelection } from "prosemirror-state"
-import { describe, expect, it } from "vitest"
+import { EditorState, NodeSelection, TextSelection, type Transaction } from "prosemirror-state"
+import type { EditorView } from "prosemirror-view"
+import { describe, expect, it, vi } from "vitest"
 import { parseMarkdown } from "../markdown"
 import { schema } from "../schema"
 import {
@@ -31,6 +32,7 @@ import {
 } from "../inactiveBlockSelection"
 import {
   createDeleteSelectedBlocksTransaction,
+  deleteSelectedBlocks,
   multiBlockSelectionKey,
   multiBlockSelectionPlugin,
   selectAllBlocksInStages
@@ -344,33 +346,46 @@ describe("selected-block handle menu trigger", () => {
     expect(transaction!.doc.firstChild?.textContent).toBe("HeaderValue")
   })
 
-  it("fully removes deleted selected blocks and focuses a surviving block", () => {
+  it("fully removes selected blocks without refocusing or requesting viewport movement", () => {
     const doc = parseMarkdown("One\n\nTwo\n\nThree\n", schema)
     let state = EditorState.create({
       doc,
       selection: TextSelection.create(doc, doc.child(0).nodeSize + 1),
-      plugins: [multiBlockSelectionPlugin(schema)]
+      plugins: [inactiveBlockSelectionPlugin(), multiBlockSelectionPlugin(schema)]
     })
     selectAllBlocksInStages(state, (transaction) => { state = state.apply(transaction) })
 
-    const transaction = createDeleteSelectedBlocksTransaction(state)
-    expect(transaction).not.toBeNull()
-    state = state.apply(transaction!)
+    let dispatched: Transaction | null = null
+    const focus = vi.fn()
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        dispatched = transaction
+        state = state.apply(transaction)
+      },
+      focus
+    } as unknown as EditorView
+
+    deleteSelectedBlocks(view)
 
     expect(Array.from(
       { length: state.doc.childCount },
       (_, index) => state.doc.child(index).textContent
     )).toEqual(["One", "Three"])
     expect(selectedBlocks(state)).toEqual([])
-    expect(state.selection).toBeInstanceOf(TextSelection)
-    expect(state.selection.$from.parent.textContent).toBe("Three")
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+    expect(transactionLeavesEditorInactive(dispatched!)).toBe(true)
+    expect(dispatched!.scrolledIntoView).toBe(false)
+    expect(focus).not.toHaveBeenCalled()
   })
 
   it.each([
     ["database_embed", { source: "Projects" }],
     ["horizontal_rule", null]
   ])(
-    "fully removes a selected blank paragraph after %s and keeps a trailing structural caret",
+    "fully removes a selected blank paragraph after %s and deactivates its structural caret",
     (typeName, attrs) => {
       const boundary = schema.nodes[typeName]!.create(attrs)
       const empty = schema.nodes.paragraph!.create()
@@ -391,13 +406,14 @@ describe("selected-block handle menu trigger", () => {
 
       const transaction = createDeleteSelectedBlocksTransaction(state)
       expect(transaction).not.toBeNull()
-      expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
+      expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+      expect(transaction!.scrolledIntoView).toBe(false)
       state = state.apply(transaction!)
 
       expect(state.doc.childCount).toBe(1)
       expect(state.doc.firstChild).toBe(boundary)
       expect(selectedBlocks(state)).toEqual([])
-      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
       expect(state.selection).toBeInstanceOf(StructuralCaretSelection)
       expect((state.selection as StructuralCaretSelection).side).toBe("after")
       expect(state.selection.from).toBe(boundary.nodeSize)
@@ -422,6 +438,7 @@ describe("selected-block handle menu trigger", () => {
     const transaction = createDeleteSelectedBlocksTransaction(state)
     expect(transaction).not.toBeNull()
     expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+    expect(transaction!.scrolledIntoView).toBe(false)
     state = state.apply(transaction!)
 
     expect(state.doc.childCount).toBe(1)
@@ -435,7 +452,7 @@ describe("selected-block handle menu trigger", () => {
     ["database_embed", { source: "Projects" }],
     ["horizontal_rule", null]
   ])(
-    "places a leading structural caret when deletion reveals a following %s",
+    "keeps the editor inactive when deletion reveals a following %s",
     (typeName, attrs) => {
       const removed = schema.nodes.paragraph!.create(null, schema.text("Remove"))
       const caretlessNext = schema.nodes[typeName]!.create(attrs)
@@ -456,20 +473,18 @@ describe("selected-block handle menu trigger", () => {
 
       const transaction = createDeleteSelectedBlocksTransaction(state)
       expect(transaction).not.toBeNull()
-      expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
+      expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+      expect(transaction!.scrolledIntoView).toBe(false)
       state = state.apply(transaction!)
 
       expect(state.doc.childCount).toBe(2)
       expect(state.doc.firstChild).toBe(caretlessNext)
       expect(selectedBlocks(state)).toEqual([])
-      expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
-      expect(state.selection).toBeInstanceOf(StructuralCaretSelection)
-      expect((state.selection as StructuralCaretSelection).side).toBe("before")
-      expect(state.selection.from).toBe(0)
+      expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
     }
   )
 
-  it("places the text caret in Mermaid when deletion reveals it", () => {
+  it("keeps Mermaid in view mode and the editor inactive when deletion reveals it", () => {
     const removed = schema.nodes.paragraph!.create(null, schema.text("Remove"))
     const mermaid = schema.nodes.mermaid!.create(
       { mode: "view" },
@@ -492,17 +507,15 @@ describe("selected-block handle menu trigger", () => {
 
     const transaction = createDeleteSelectedBlocksTransaction(state)
     expect(transaction).not.toBeNull()
-    expect(transactionLeavesEditorInactive(transaction!)).toBe(false)
+    expect(transactionLeavesEditorInactive(transaction!)).toBe(true)
+    expect(transaction!.scrolledIntoView).toBe(false)
     state = state.apply(transaction!)
 
     expect(state.doc.firstChild?.type).toBe(schema.nodes.mermaid)
     expect(state.doc.firstChild?.textContent).toBe(mermaid.textContent)
     expect(selectedBlocks(state)).toEqual([])
-    expect(inactiveBlockSelectionKey.getState(state)).toBe(false)
-    expect(state.selection).toBeInstanceOf(TextSelection)
-    expect(state.selection.$from.parent).toBe(state.doc.firstChild)
-    expect(state.selection.$from.parentOffset).toBe(0)
-    expect(state.doc.firstChild?.attrs.mode).toBe("edit")
+    expect(inactiveBlockSelectionKey.getState(state)).toBe(true)
+    expect(state.doc.firstChild?.attrs.mode).toBe("view")
   })
 
   it("focuses search immediately for keyboard selection but preserves handle drag timing", () => {

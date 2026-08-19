@@ -9,7 +9,7 @@ coverage:
   - ui-smoke
   - docs
 created: "2026-08-03"
-updated: "2026-08-06"
+updated: "2026-08-19"
 ---
 # M07-013 Editor Toolbar And Bulk Formatting
 
@@ -23,7 +23,10 @@ when the user has explicitly selected several blocks.
 - Persist `floating`, `top`, `bottom`, and `none` editor-toolbar modes in workspace settings, while
   retaining the compatible `editor.inlineToolbar` key and reading the former `sticky` value as
   `bottom`.
-- Keep floating behavior anchored above the active text or block highlight.
+- Keep floating behavior anchored above the active text or block highlight. Formatting preserves
+  that selection and keeps the toolbar open. Escape collapses the text or explicit block selection
+  and closes the floating toolbar, including from its link editor. Top, Bottom, and None preserve
+  the current selection.
 - Keep Floating compact. Render Top below the workspace header and Bottom above the viewport's
   bottom safe-area inset as always-visible full formatting bars aligned to the editor content
   column.
@@ -44,8 +47,10 @@ when the user has explicitly selected several blocks.
   native-history-compatible before/after structural caret positions so keyboard navigation and
   block deletion do not require an inactive editor or visible whole-node selection.
 - Present Mermaid in view mode by default without block chrome, and enter its code-formatted edit
-  mode from the absolute mode switcher or by moving a text caret into the block. Keep code and
-  Mermaid edit surfaces on Neutral 100, while rendered Mermaid remains on the page background.
+  mode from the absolute mode switcher or by moving a text caret into the block. Keep fenced code,
+  Mermaid edit surfaces and error messages, and inline code on the shared Neutral 100
+  `surface-subtle` token used by the application address bar, while rendered Mermaid remains on
+  the page background.
 - Apply toolbar marks and formatting shortcuts to every selected block, including non-contiguous
   selections, without changing blocks between them.
 - Normalize mixed inline-mark selections to one shared state.
@@ -74,12 +79,16 @@ editor
 - [x] Editor transactions for contiguous and non-contiguous block formatting.
 - [x] Editor interaction coverage for selected task checkbox synchronization.
 - [x] UI smoke coverage for settings wiring and all toolbar modes.
+- [x] Floating format dismissal, Escape dismissal, and fixed/hidden selection-preservation
+  coverage.
 - [x] File-format and editor-interaction contract updates.
 
 ## Done When
 
 - Saving any toolbar mode updates an open editor without remounting it.
 - Floating, Top, Bottom, and hidden modes match their named behavior.
+- Applying formatting or pressing Escape clears the floating highlight and closes that toolbar,
+  while Top, Bottom, and None preserve the selection after formatting.
 - Full-toolbar undo/redo follows editor history, and its final delete action removes the current block or all
   explicitly selected blocks through the canonical whole-block deletion transaction.
 - Keyboard undo/redo and full-toolbar undo/redo invoke the same ProseMirror commands and history stack.

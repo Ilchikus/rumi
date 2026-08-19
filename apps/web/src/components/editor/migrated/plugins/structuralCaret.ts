@@ -8,6 +8,7 @@ import {
   supportsStructuralCaret,
   type StructuralCaretSide
 } from "../structuralCaretSelection"
+import { transactionLeavesEditorInactive } from "../inactiveBlockSelection"
 import { createDeleteBlocksTransaction } from "./multiBlockSelection"
 
 function dispatchStructuralCaret(
@@ -146,7 +147,7 @@ function deleteAtStructuralCaret(view: EditorView, key: "Backspace" | "Delete") 
   )
   if (!transaction) return false
   view.dispatch(transaction)
-  view.focus()
+  if (!transactionLeavesEditorInactive(transaction)) view.focus()
   return true
 }
 

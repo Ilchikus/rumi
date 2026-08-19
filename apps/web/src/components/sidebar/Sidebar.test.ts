@@ -2,17 +2,67 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   shouldCreatePageImmediately,
+  sidebarCreationParentPath,
   sidebarNodeCreateKinds
 } from "./Sidebar";
+import type { WorkspaceNode } from "@rumi/contracts";
 
 const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
+const indexSource = readFileSync(new URL("../../../index.html", import.meta.url), "utf8");
+const publicLogoSource = readFileSync(
+  new URL("../../../public/rumi-logo.svg", import.meta.url),
+  "utf8"
+);
+const suppliedLogoSource = readFileSync(
+  new URL("../../../../../docs/.assets/light.svg", import.meta.url),
+  "utf8"
+);
 const editableTitleSource = readFileSync(
   new URL("../editor/EditablePageTitle.tsx", import.meta.url),
   "utf8"
 );
 
+describe("Rumi logo", () => {
+  it("uses the latest supplied vector in the sidebar and favicon", () => {
+    expect(publicLogoSource).toBe(suppliedLogoSource);
+    expect(publicLogoSource).toContain('width="728" height="691"');
+    expect(sidebarSource).toContain('/rumi-logo.svg?v=20260819-1');
+    expect(indexSource).toContain('/rumi-logo.svg?v=20260819-1');
+  });
+});
+
 describe("sidebar create-menu shortcuts", () => {
+  const nestedTree: WorkspaceNode = {
+    path: "",
+    name: "notes",
+    kind: "workspace",
+    children: [{
+      path: "personal",
+      name: "personal",
+      kind: "folder",
+      children: [{
+        path: "personal/tasks",
+        name: "tasks",
+        kind: "folder",
+        children: [{
+          path: "personal/tasks/groceries.md",
+          name: "groceries.md",
+          kind: "page"
+        }]
+      }]
+    }, {
+      path: "Milestones",
+      name: "Milestones",
+      kind: "database",
+      children: [{
+        path: "Milestones/Launch.md",
+        name: "Launch.md",
+        kind: "page"
+      }]
+    }]
+  };
+
   it("offers three child types for folders and only pages for databases", () => {
     expect(sidebarNodeCreateKinds("folder")).toEqual(["page", "folder", "database"]);
     expect(sidebarNodeCreateKinds("database")).toEqual(["page"]);
@@ -25,11 +75,43 @@ describe("sidebar create-menu shortcuts", () => {
     expect(appSource).toContain("setRootCreateMenuOpen(true)");
   });
 
-  it("supports numbered focus and primary-modifier immediate creation", () => {
-    expect(sidebarSource).toContain("createMenuIndexForKey(event)");
-    expect(sidebarSource).toContain("itemRefs.current[index]?.focus()");
+  it("creates and opens the focused type when its number is repeated", () => {
+    expect(sidebarSource).toContain("createMenuNumberAction(");
+    expect(sidebarSource).toContain("numberedSelectionRef.current = numberAction.index");
+    expect(sidebarSource).toContain("itemRefs.current[numberAction.index]?.focus()");
+    expect(sidebarSource).toContain("createImmediately(option.kind)");
     expect(sidebarSource).toContain('event.key !== "Enter" || !hasPrimaryModifier(event, platform)');
     expect(sidebarSource).toContain("immediatePointerKindRef.current === option.kind");
+  });
+
+  it("creates in the nearest folder or database around the current page", () => {
+    expect(sidebarCreationParentPath(nestedTree, {
+      nodePath: "personal/tasks/groceries.md",
+      openPath: "personal/tasks/groceries.md",
+      kind: "page"
+    })).toBe("personal/tasks");
+    expect(sidebarCreationParentPath(nestedTree, {
+      nodePath: "Milestones/Launch.md",
+      openPath: "Milestones/Launch.md",
+      kind: "page"
+    })).toBe("Milestones");
+    expect(sidebarCreationParentPath(nestedTree, {
+      nodePath: "personal",
+      openPath: "personal/personal.index.md",
+      kind: "folder"
+    })).toBe("personal");
+    expect(sidebarCreationParentPath(nestedTree, {
+      nodePath: "groceries.md",
+      openPath: "groceries.md",
+      kind: "page"
+    })).toBe("");
+  });
+
+  it("passes the contextual parent to named and immediate root-menu creation", () => {
+    expect(appSource).toContain("sidebarCreationParentPath(tree, selection)");
+    expect(appSource).toContain("creationParentPath={creationParentPath}");
+    expect(sidebarSource).toContain("onCreate(parentPath, option.kind)");
+    expect(sidebarSource).toContain("onCreateDefault(parentPath, kind)");
   });
 
   it("opens modified New Page actions from folder and database menus immediately", () => {
@@ -69,6 +151,20 @@ describe("sidebar create-menu shortcuts", () => {
     expect(sidebarSource).toContain(
       "const finalName = sanitizeWorkspaceName(name).sanitized.trim();"
     );
+  });
+});
+
+describe("sidebar context-menu keyboard focus", () => {
+  it("wires explicit open focus and close restoration into sidebar menus", () => {
+    expect(sidebarSource).toContain(
+      "if (contentRef.current) focusFirstSidebarMenuItem(contentRef.current)"
+    );
+    expect(sidebarSource).toContain('event.key !== "ArrowDown" && event.key !== "ArrowUp"');
+    expect(sidebarSource).toContain("moveSidebarMenuFocus(");
+    expect(sidebarSource).toContain("ref={contentRef}");
+    expect(sidebarSource).toContain("onCloseAutoFocus={(event) => {");
+    expect(sidebarSource).toContain("window.setTimeout(() => restoreSidebarContextFocus(returnFocus), 0)");
+    expect(sidebarSource).toContain("restoreSidebarContextFocus(menu.returnFocus)");
   });
 });
 

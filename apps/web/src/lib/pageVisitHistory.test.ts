@@ -16,6 +16,16 @@ const tree: WorkspaceNode = {
         { name: "Nested", path: "Folder/Nested.md", kind: "page" }
       ]
     },
+    {
+      name: "Tasks",
+      path: "Tasks",
+      kind: "database",
+      companionPath: "Tasks/Tasks.db.md",
+      children: [
+        { name: "Current", path: "Tasks/Current.md", kind: "page" },
+        { name: "Older", path: "Tasks/Older.md", kind: "page" }
+      ]
+    },
     { name: "Previous", path: "Previous.md", kind: "page" }
   ]
 };
@@ -35,7 +45,39 @@ describe("page visit history", () => {
       )
     ).toEqual({
       history: [],
-      node: tree.children![2]
+      node: tree.children![3]
     });
+  });
+
+  it("returns the previous ordinary page after deleting an open database record", () => {
+    expect(
+      takePreviousVisitedNode(["Previous.md"], tree, "Tasks/Current.md")
+    ).toEqual({
+      history: [],
+      node: tree.children![3]
+    });
+  });
+
+  it("skips visited records inside a deleted database subtree", () => {
+    expect(
+      takePreviousVisitedNode(
+        ["Previous.md", "Tasks/Older.md", "Tasks/Current.md"],
+        tree,
+        "Tasks"
+      )
+    ).toEqual({
+      history: [],
+      node: tree.children![3]
+    });
+  });
+
+  it("falls back only after every visited candidate is missing or deleted", () => {
+    expect(
+      takePreviousVisitedNode(
+        ["Missing.md", "Tasks/Older.md"],
+        tree,
+        "Tasks"
+      )
+    ).toEqual({ history: [], node: null });
   });
 });

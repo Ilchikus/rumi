@@ -261,7 +261,8 @@ async function scanDirectory(
   for (const entry of entries) {
     const childPath = normalizeWorkspacePath(path.posix.join(normalized, entry.name));
 
-    if (isHiddenFromTree(childPath)) {
+    const isAssetPath = childPath === ".assets" || childPath.startsWith(".assets/");
+    if (isHiddenFromTree(childPath) && !isAssetPath) {
       continue;
     }
 

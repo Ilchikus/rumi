@@ -43,7 +43,8 @@ describe("migrated editor platform updates", () => {
   });
 
   it("opens external and workspace links in the requested tab", () => {
-    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const focusedTab = { focus: vi.fn() } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(focusedTab);
     const openDocument = vi.fn();
     setMigratedEditorPlatform({
       databaseRefreshRevisions: {},
@@ -61,6 +62,7 @@ describe("migrated editor platform updates", () => {
       "_blank",
       "noopener,noreferrer"
     );
+    expect(focusedTab.focus).toHaveBeenCalledOnce();
 
     openEditorHref("Notes.md", "new");
     expect(openDocument).toHaveBeenCalledWith("Notes.md", "new");

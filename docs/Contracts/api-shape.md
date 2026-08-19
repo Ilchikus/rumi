@@ -3,7 +3,7 @@ status: draft
 area: api
 owner: server
 created: "2026-06-22"
-updated: "2026-07-27"
+updated: "2026-08-19"
 ---
 # API Shape
 
@@ -43,6 +43,13 @@ Opening a Markdown record directly inside a database includes its database path,
 version in the page response. This lets any client render typed record properties without querying
 or downloading every database record. Creating a select option is a versioned database-schema
 command; the client does not write `.db.md` directly.
+
+Opening any page also includes its typed shared presentation and an independent presentation
+version. `PUT /api/page/image-presentation` accepts one page path, image source, at least one typed
+patch field (integer CSS-pixel width or `left`/`center`/`full` alignment), and an optional base
+presentation version. It merges that patch and returns the complete updated page presentation or a
+conflict. The client never reads or writes `.rumi/presentation.json` directly, and the API does not
+expose a generic arbitrary metadata object.
 
 Database view creation/update/deletion, record-page property visibility, and database property
 creation are also versioned domain commands. Database queries accept an optional stable view ID;

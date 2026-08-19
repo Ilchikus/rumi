@@ -3,7 +3,7 @@ status: draft
 area: runtime
 owner: runtime
 created: 2026-06-22
-updated: 2026-07-27
+updated: 2026-08-19
 ---
 # Runtime Commands
 
@@ -21,6 +21,7 @@ saveAsset
 saveAssetStream
 openPage
 savePage
+updateImagePresentation
 createPage
 createFolder
 createDatabase
@@ -65,8 +66,12 @@ Commands own side effects:
 - File writes.
 - Atomic workspace-setting writes that preserve unrelated `.rumi/config.json` domains and update
   the live upload policy.
-- Streamed asset writes that enforce the live size policy while bytes arrive, validate the file
-  signature, and atomically publish only complete uploads.
+- Atomic shared image-width/alignment writes to `.rumi/presentation.json`, independently versioned from
+  Markdown content and cached by the runtime for page-open reads.
+- Streamed asset writes that enforce the live size policy while bytes arrive, validate the complete
+  file, and atomically publish only complete uploads. SVG validation parses the full XML document
+  and accepts only static content without scripts, event handlers, animation, embedded documents,
+  or external resource references.
 - Index updates.
 - Reference repair.
 - Event emission.
@@ -87,11 +92,12 @@ and publishes `workspace.treeChanged` after the restored payload is durable. `de
 permanently removes one Trash payload and its metadata, then publishes `trash.changed`.
 
 `renameNode` and `moveNode` choose an available destination, then update the target's filesystem
-path, revision identity, and search entry before returning the actual path. They run reference repair
+path, revision identity, shared presentation paths, and search entry before returning the actual path. They run reference repair
 as tracked background work so large workspaces do not block the client. Repair covers known Markdown
 links and mentions in body and frontmatter, preserves custom labels, checkpoints each page before
 rewriting it, refreshes its search entry, and publishes `page.changed` with
-`changedBy: "reference-repair"`.
+`changedBy: "reference-repair"`. The same repair runs when the watcher can identify an external
+asset rename uniquely by fingerprint.
 
 ## Event Bus
 

@@ -1,5 +1,6 @@
 import type { MarkType } from "prosemirror-model"
 import type { EditorState } from "prosemirror-state"
+import { isExternalLinkHref, normalizeLinkHref } from "./linkHref"
 
 export interface LinkRange {
   from: number
@@ -12,7 +13,50 @@ export function linkRangeAtSelection(
   linkType: MarkType | undefined = state.schema.marks.link
 ): LinkRange | null {
   if (!linkType || !state.selection.empty) return null
-  return linkRangeAtPosition(state, state.selection.from, linkType)
+  const directRange = linkRangeAtPosition(state, state.selection.from, linkType)
+  if (directRange) return directRange
+
+  const markerAt = state.doc.nodeAt(state.selection.from)
+  if (markerAt?.type.name === "link_marker") {
+    return linkRangeAtPosition(
+      state,
+      state.selection.from + markerAt.nodeSize,
+      linkType
+    )
+  }
+
+  const markerBefore = state.selection.from > 0
+    ? state.doc.nodeAt(state.selection.from - 1)
+    : null
+  if (markerBefore?.type.name === "link_marker") {
+    return linkRangeAtPosition(state, state.selection.from, linkType)
+  }
+
+  // A derived leading marker makes the far edge of the anchor an explicit
+  // rendered-link boundary too. Keep plain marked text conservative: only
+  // resolve that edge when the complete anchor has its matching marker.
+  const rangeBefore = linkRangeAtPosition(
+    state,
+    Math.max(0, state.selection.from - 1),
+    linkType
+  )
+  if (
+    rangeBefore?.to === state.selection.from &&
+    hasMatchingLeadingMarker(state, rangeBefore)
+  ) {
+    return rangeBefore
+  }
+  return null
+}
+
+function hasMatchingLeadingMarker(state: EditorState, range: LinkRange): boolean {
+  if (range.from <= 0) return false
+  const marker = state.doc.nodeAt(range.from - 1)
+  if (marker?.type.name !== "link_marker") return false
+
+  return normalizeLinkHref(String(marker.attrs.href ?? "")) ===
+      normalizeLinkHref(range.href) &&
+    (marker.attrs.linkType === "external") === isExternalLinkHref(range.href)
 }
 
 export function linkRangeAtPosition(
@@ -27,7 +71,10 @@ export function linkRangeAtPosition(
 
   const adjacentMarks = [
     linkType.isInSet($position.nodeAfter?.marks ?? []),
-    linkType.isInSet($position.marks())
+    linkType.isInSet($position.marks()),
+    ...($position.nodeAfter?.type.name === "link_marker"
+      ? [linkType.isInSet($position.nodeBefore?.marks ?? [])]
+      : [])
   ].filter(Boolean)
 
   for (const activeMark of adjacentMarks) {

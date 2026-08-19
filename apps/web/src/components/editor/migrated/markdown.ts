@@ -4,6 +4,7 @@ import { unified } from "unified"
 import remarkParse from "remark-parse"
 import remarkGfm from "remark-gfm"
 import { mentionKindForPath } from "./mentionTypes"
+import { isExternalLinkHref, normalizeLinkHref } from "./linkHref"
 import type {
   Root,
   RootContent,
@@ -522,7 +523,19 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
           }
         }
       ])
-      return mention ? withoutMentionPrefix(converted, schema) : converted
+      const linkContent = mention ? withoutMentionPrefix(converted, schema) : converted
+      if (schema.nodes.link_marker) {
+        const external = isExternalLinkHref(node.url)
+        return [
+          schema.nodes.link_marker.create({
+            href: external ? normalizeLinkHref(node.url) : node.url,
+            linkType: external ? "external" : "internal",
+            mentionKind: mentionKindForPath(node.url)
+          }),
+          ...linkContent
+        ]
+      }
+      return linkContent
     }
 
     case "html":
@@ -793,17 +806,9 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       const alt = node.attrs.alt || ""
       const src = node.attrs.src || ""
       const title = node.attrs.title ? ` "${node.attrs.title}"` : ""
-      // Store alignment and caption as HTML comment if present
-      const hasExtras = node.attrs.alignment !== "center" || node.attrs.caption
-      if (hasExtras) {
-        const extras: string[] = []
-        if (node.attrs.alignment && node.attrs.alignment !== "center") {
-          extras.push(`align="${node.attrs.alignment}"`)
-        }
-        if (node.attrs.caption) {
-          extras.push(`caption="${node.attrs.caption.replace(/"/g, '&quot;')}"`)
-        }
-        lines.push(indent + `<!-- ${extras.join(" ")} -->`)
+      // Presentation (alignment and width) lives in .rumi/presentation.json.
+      if (node.attrs.caption) {
+        lines.push(indent + `<!-- caption="${node.attrs.caption.replace(/"/g, '&quot;')}" -->`)
       }
       lines.push(indent + `![${alt}](${src}${title})`)
       lines.push("")
@@ -939,6 +944,10 @@ function serializeInline(parent: ProseMirrorNode): string {
       result += "\n"
     } else if (node.type.name === "hard_break") {
       result += "  \n"
+    } else if (node.type.name === "link_marker") {
+      // Derived editor-only atoms. The adjacent marked text owns the durable
+      // [label](destination) Markdown representation.
+      return
     }
   })
 

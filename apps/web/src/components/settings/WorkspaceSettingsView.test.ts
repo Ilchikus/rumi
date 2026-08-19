@@ -40,7 +40,7 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("setEmojiSuggestions(checked)");
   });
 
-  it("uses a switch for misspellings, Sky checkboxes for formats, and auto-saves blank as unlimited", () => {
+  it("uses a switch for misspellings, Blue checkboxes for formats, and auto-saves blank as unlimited", () => {
     expect(viewSource).toContain('type="checkbox"');
     expect(viewSource).toContain("accent-sky-600");
     expect(viewSource).toContain('trimmedSize === "" ? null');

@@ -28,6 +28,24 @@ describe("Mermaid node view", () => {
     mermaidMocks.render.mockResolvedValue({ svg: "<svg></svg>" })
   })
 
+  it("suppresses Mermaid's document-level syntax error rendering", async () => {
+    const node = schema.nodes.mermaid!.create(
+      { mode: "view" },
+      schema.text("not valid Mermaid")
+    )
+    const state = EditorState.create({
+      doc: schema.nodes.doc!.create(null, node)
+    })
+    const view = { state, dispatch: vi.fn() } as unknown as EditorView
+    const nodeView = mermaidNodeView(node, view, () => 0)
+
+    await vi.waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ suppressErrorRendering: true })
+    ))
+
+    nodeView.destroy?.()
+  })
+
   it("defaults to view mode and exposes only the floating view/edit switcher", () => {
     const node = schema.nodes.mermaid!.create(
       null,
@@ -43,7 +61,7 @@ describe("Mermaid node view", () => {
     const dom = nodeView.dom as HTMLElement
 
     expect(node.attrs.mode).toBe("view")
-    expect(dom.classList.contains("bg-neutral-100")).toBe(false)
+    expect(dom.classList.contains("bg-surface-subtle")).toBe(false)
     expect(dom.querySelector(".mermaid-label")).toBeNull()
     expect(dom.querySelectorAll(".mermaid-mode-btn")).toHaveLength(2)
     expect(dom.querySelector('[data-mode="split"]')).toBeNull()
@@ -68,7 +86,7 @@ describe("Mermaid node view", () => {
       [],
       DecorationSet.empty
     )).toBe(true)
-    expect(dom.classList.contains("bg-neutral-100")).toBe(true)
+    expect(dom.classList.contains("bg-surface-subtle")).toBe(true)
     expect(dom.querySelector<HTMLElement>(".mermaid-editor")?.style.display)
       .toBe("flex")
     expect(dom.querySelector<HTMLElement>(".mermaid-preview")?.style.display)
@@ -179,7 +197,10 @@ describe("Mermaid node view", () => {
       "graph TD; A-->C"
     ])
     expect(mermaidMocks.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({ securityLevel: "strict" })
+      expect.objectContaining({
+        securityLevel: "strict",
+        suppressErrorRendering: true
+      })
     )
 
     pending[1]!.resolve({ svg: "<svg data-current=\"true\"></svg>" })

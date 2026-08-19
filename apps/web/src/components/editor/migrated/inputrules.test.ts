@@ -1,5 +1,6 @@
 import { EditorState, TextSelection, type Plugin, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
+import { history } from "prosemirror-history"
 import { describe, expect, it } from "vitest"
 import {
   buildInputRules,
@@ -10,14 +11,17 @@ import { buildKeymap } from "./keymap"
 import { serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
 
-function createTypingHarness() {
+function createTypingHarness(
+  doc = schema.nodes.doc!.create(null, schema.nodes.paragraph!.create())
+) {
   const plugins = [
     inlineCodeInputSessionPlugin(schema),
     buildInputRules(schema),
-    buildKeymap(schema)
+    buildKeymap(schema),
+    history()
   ]
   let state = EditorState.create({
-    doc: schema.nodes.doc!.create(null, schema.nodes.paragraph!.create()),
+    doc,
     plugins
   })
   const view = {
@@ -125,6 +129,87 @@ function typeText(text: string): EditorState {
   harness.type(text)
   return harness.state
 }
+
+describe("live editor code-block input rules", () => {
+  it("keeps a bare fence literal until Enter, then creates a plain code block", () => {
+    const harness = createTypingHarness()
+
+    harness.type("```")
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(harness.state.doc.firstChild?.textContent).toBe("```")
+    expect(harness.key("Enter")).toBe(true)
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(harness.state.doc.firstChild?.attrs.language).toBeNull()
+    expect(harness.state.doc.firstChild?.textContent).toBe("")
+
+    harness.type("const answer = 42")
+    expect(harness.state.doc.firstChild?.textContent).toBe("const answer = 42")
+    expect(serializeMarkdown(harness.state.doc)).toBe(
+      "```\nconst answer = 42\n```\n"
+    )
+  })
+
+  it("applies a typed language when Enter commits the fence", () => {
+    const harness = createTypingHarness()
+
+    harness.type("```php")
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(harness.key("Enter")).toBe(true)
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(harness.state.doc.firstChild?.attrs.language).toBe("php")
+
+    harness.type("<?php echo 'Rumi';")
+    expect(serializeMarkdown(harness.state.doc)).toBe(
+      "```php\n<?php echo 'Rumi';\n```\n"
+    )
+  })
+
+  it("creates editable Mermaid source when Enter commits a Mermaid fence", () => {
+    const harness = createTypingHarness()
+
+    harness.type("```mermaid")
+
+    expect(harness.key("Enter")).toBe(true)
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.mermaid)
+    expect(harness.state.doc.firstChild?.attrs.mode).toBe("edit")
+
+    harness.type("flowchart TD")
+    expect(serializeMarkdown(harness.state.doc)).toBe(
+      "```mermaid\nflowchart TD\n```\n"
+    )
+  })
+
+  it("keeps three backticks literal away from paragraph start", () => {
+    const state = typeText("value```")
+
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(state.doc.firstChild?.textContent).toBe("value```")
+  })
+
+  it("keeps three backticks literal inside an existing code block", () => {
+    const harness = createTypingHarness(
+      schema.nodes.doc!.create(null, schema.nodes.code_block!.create())
+    )
+
+    harness.type("```")
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(harness.state.doc.firstChild?.textContent).toBe("```")
+  })
+
+  it("undoes the Enter conversion back to the complete literal fence", () => {
+    const harness = createTypingHarness()
+    harness.type("```php")
+    harness.key("Enter")
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.code_block)
+    expect(harness.undoShortcut()).toBe(true)
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(harness.state.doc.firstChild?.textContent).toBe("```php")
+  })
+})
 
 describe("live editor task input rules", () => {
   it.each([

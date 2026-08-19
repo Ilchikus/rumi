@@ -21,6 +21,7 @@ import rust from "highlight.js/lib/languages/rust"
 import java from "highlight.js/lib/languages/java"
 import cpp from "highlight.js/lib/languages/cpp"
 import ruby from "highlight.js/lib/languages/ruby"
+import php from "highlight.js/lib/languages/php"
 import yaml from "highlight.js/lib/languages/yaml"
 import xml from "highlight.js/lib/languages/xml"
 
@@ -47,6 +48,7 @@ hljs.registerLanguage("cpp", cpp)
 hljs.registerLanguage("c", cpp)
 hljs.registerLanguage("ruby", ruby)
 hljs.registerLanguage("rb", ruby)
+hljs.registerLanguage("php", php)
 hljs.registerLanguage("yaml", yaml)
 hljs.registerLanguage("yml", yaml)
 hljs.registerLanguage("xml", xml)
@@ -61,7 +63,7 @@ class CodeBlockView implements NodeView {
 
   constructor(private node: PmNode, private view: EditorView, private getPos: () => number | undefined) {
     this.dom = document.createElement("pre")
-    this.dom.classList.add("code-block-wrapper", "bg-neutral-100")
+    this.dom.classList.add("code-block-wrapper", "bg-surface-subtle")
 
     // Toolbar
     this.toolbar = document.createElement("div")

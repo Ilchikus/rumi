@@ -5,6 +5,7 @@ import { Schema, Node as PmNode } from "prosemirror-model"
 import {
   multiBlockSelectionKey,
   selectBlock,
+  createDeleteBlocksTransaction,
   deleteSelectedBlocks,
   duplicateSelectedBlocks
 } from "./multiBlockSelection"
@@ -26,7 +27,6 @@ import {
   type BlockContextMenuIntent
 } from "./blockContextMenuModel"
 import { createBlockTypeChangeTransaction } from "./blockTypeConversion"
-import { createCaretlessBlankBlockDeletionTransaction } from "../inactiveBlockSelection"
 
 interface BlockDragHandleState {
   contextMenuIntent: BlockContextMenuIntent | null
@@ -840,7 +840,9 @@ class BlockDragHandleView {
   private isAreaSelectionExcludedTarget(target: EventTarget | null): boolean {
     if (!(target instanceof Node)) return false
     const element = target instanceof Element ? target : target.parentElement
-    return Boolean(element?.closest("[data-rumi-area-selection-exclude]"))
+    return Boolean(element?.closest(
+      "[data-rumi-area-selection-exclude], [data-rumi-editor-overlay]"
+    ))
   }
 
   private onWrapperMouseMove = (e: MouseEvent) => {
@@ -1541,32 +1543,8 @@ class BlockDragHandleView {
 
   private deleteBlock(blockPos: number) {
     const { state, dispatch } = this.view
-    const node = state.doc.nodeAt(blockPos)
-    if (!node) return
-
-    const caretlessTransaction =
-      createCaretlessBlankBlockDeletionTransaction(state, blockPos)
-    if (caretlessTransaction) {
-      caretlessTransaction.setMeta(multiBlockSelectionKey, {
-        selectedBlocks: [],
-        anchorBlock: null
-      })
-      dispatch(caretlessTransaction)
-      return
-    }
-
-    const transaction = state.tr.replaceWith(
-      blockPos,
-      blockPos + node.nodeSize,
-      state.schema.nodes.paragraph.create()
-    )
-    transaction.setSelection(TextSelection.create(transaction.doc, blockPos + 1))
-    transaction.setMeta(multiBlockSelectionKey, {
-      selectedBlocks: [],
-      anchorBlock: null
-    })
-    dispatch(transaction.scrollIntoView())
-    this.view.focus()
+    const transaction = createDeleteBlocksTransaction(state, [blockPos])
+    if (transaction) dispatch(transaction)
   }
 
   private duplicateBlock(blockPos: number) {

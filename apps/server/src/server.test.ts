@@ -77,6 +77,63 @@ describe("Rumi server API", () => {
     await server.close();
   });
 
+  it("returns and updates versioned shared image presentation", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Idea.md"), "![](.assets/diagram.png)", "utf8");
+    const { server } = await createRumiServer({ workspacePath: root });
+    const opened = await server.inject({ method: "GET", url: "/api/page?path=Idea.md" });
+    const openedPage = opened.json();
+
+    expect(openedPage).toMatchObject({ presentation: { images: {} } });
+    const updated = await server.inject({
+      method: "PUT",
+      url: "/api/page/image-presentation",
+      payload: {
+        path: "Idea.md",
+        imageSrc: ".assets/diagram.png",
+        widthPx: 512,
+        basePresentationVersion: openedPage.presentationVersion
+      }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      status: "saved",
+      presentation: { images: { ".assets/diagram.png": { widthPx: 512 } } }
+    });
+    const updatedPresentation = updated.json();
+    const aligned = await server.inject({
+      method: "PUT",
+      url: "/api/page/image-presentation",
+      payload: {
+        path: "Idea.md",
+        imageSrc: ".assets/diagram.png",
+        alignment: "center",
+        basePresentationVersion: updatedPresentation.presentationVersion
+      }
+    });
+    expect(aligned.statusCode).toBe(200);
+    expect(aligned.json()).toMatchObject({
+      status: "saved",
+      presentation: {
+        images: { ".assets/diagram.png": { widthPx: 512, alignment: "center" } }
+      }
+    });
+
+    const conflict = await server.inject({
+      method: "PUT",
+      url: "/api/page/image-presentation",
+      payload: {
+        path: "Idea.md",
+        imageSrc: ".assets/diagram.png",
+        widthPx: 640,
+        basePresentationVersion: openedPage.presentationVersion
+      }
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ status: "conflict" });
+    await server.close();
+  });
+
   it("serves safe workspace assets without exposing Markdown or hidden state", async () => {
     const root = await tempWorkspace();
     await fs.mkdir(path.join(root, ".assets"), { recursive: true });
@@ -121,11 +178,37 @@ describe("Rumi server API", () => {
     expect(second.json()).toMatchObject({ status: "saved", path: ".assets/diagram (1).png" });
     expect(await fs.readFile(path.join(root, ".assets", "diagram.png"))).toEqual(payload);
 
+    const svgPayload = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+    );
+    const svg = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=diagram.svg",
+      headers: { "content-type": "application/octet-stream" },
+      payload: svgPayload
+    });
+    expect(svg.statusCode).toBe(200);
+    expect(svg.json()).toMatchObject({
+      status: "saved",
+      path: ".assets/diagram.svg",
+      contentType: "image/svg+xml"
+    });
+    const readSvg = await server.inject({
+      method: "GET",
+      url: "/api/asset?path=.assets%2Fdiagram.svg"
+    });
+    expect(readSvg.headers["content-type"]).toContain("image/svg+xml");
+    expect(readSvg.headers["x-content-type-options"]).toBe("nosniff");
+    expect(readSvg.headers["content-security-policy"]).toContain("sandbox");
+    expect(readSvg.rawPayload).toEqual(svgPayload);
+
     const unsafe = await server.inject({
       method: "POST",
       url: "/api/assets?fileName=script.svg",
       headers: { "content-type": "application/octet-stream" },
-      payload: Buffer.from("<svg/>")
+      payload: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+      )
     });
     expect(unsafe.statusCode).toBe(400);
 

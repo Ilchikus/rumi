@@ -55,11 +55,12 @@ export function openEditorHref(
   const trimmed = href.trim();
   if (!trimmed) return;
   if (/^https?:\/\//iu.test(trimmed)) {
-    window.open(
+    const opened = window.open(
       trimmed,
       target === "new" ? "_blank" : "_self",
       target === "new" ? "noopener,noreferrer" : undefined
     );
+    if (target === "new") opened?.focus();
   } else {
     currentPlatform.openDocument?.(trimmed, target);
   }

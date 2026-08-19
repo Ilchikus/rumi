@@ -10,6 +10,7 @@ const sidebarSource = readFileSync(new URL("../sidebar/Sidebar.tsx", import.meta
 describe("workspace loading shell", () => {
   it("keeps application geometry without loading-state copy", () => {
     expect(shellSource).toContain('data-rumi-workspace-shell=""');
+    expect(shellSource).toContain("absolute inset-x-0 top-0");
     expect(shellSource).toContain("getSavedSidebarWidth");
     expect(shellSource).toContain("sidebarWidthForViewport");
     expect(shellSource).toContain('isNarrow && !sidebarCollapsed ? "blur-sm"');

@@ -147,7 +147,7 @@ describe("workspace upload configuration", () => {
         message: /unknown setting "allowedTypes"/u
       },
       {
-        source: JSON.stringify({ uploads: { allowedFileTypes: [".svg"] } }),
+        source: JSON.stringify({ uploads: { allowedFileTypes: [".exe"] } }),
         message: /unsupported upload type/u
       },
       {
@@ -201,6 +201,9 @@ describe("workspace upload configuration", () => {
       ]),
       ".pdf": Buffer.from("%PDF-"),
       ".png": Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ".svg": Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>'
+      ),
       ".webp": Buffer.from("RIFF0000WEBP"),
       ".webm": Buffer.concat([
         Buffer.from([0x1a, 0x45, 0xdf, 0xa3]),
@@ -213,6 +216,43 @@ describe("workspace upload configuration", () => {
       expect(assetContentMatchesFileType(extension, signature), extension).toBe(true);
       expect(assetContentMatchesFileType(extension, Buffer.from("not the declared file")), extension).toBe(false);
     }
+  });
+
+  it.each([
+    ["script", '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'],
+    ["event handler", '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'],
+    ["external href", '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/a.png"/></svg>'],
+    ["foreign object", '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>'],
+    ["animation", '<svg xmlns="http://www.w3.org/2000/svg"><animate attributeName="x"/></svg>'],
+    ["doctype", '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'],
+    ["malformed XML", '<svg xmlns="http://www.w3.org/2000/svg"><g></svg>'],
+    ["wrong root", '<html xmlns="http://www.w3.org/1999/xhtml"></html>']
+  ])("rejects unsafe or invalid static SVG content: %s", (_name, source) => {
+    expect(assetContentMatchesFileType(".svg", Buffer.from(source))).toBe(false);
+  });
+
+  it("allows local paint-server references in otherwise static SVG", () => {
+    const source = Buffer.from([
+      '<svg xmlns="http://www.w3.org/2000/svg">',
+      '<style>.shape { fill: url(#paint); stroke: #fff; }</style>',
+      '<defs><linearGradient id="paint"><stop offset="1"/></linearGradient></defs>',
+      '<rect class="shape" width="10" height="10"/>',
+      '</svg>'
+    ].join(""));
+
+    expect(assetContentMatchesFileType(".svg", source)).toBe(true);
+  });
+
+  it("rejects external resources and animation declared through SVG CSS", () => {
+    const external = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><style>.x{fill:url(https://example.com/a)}</style></svg>'
+    );
+    const animated = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><style>@keyframes x{to{opacity:0}}</style></svg>'
+    );
+
+    expect(assetContentMatchesFileType(".svg", external)).toBe(false);
+    expect(assetContentMatchesFileType(".svg", animated)).toBe(false);
   });
 });
 

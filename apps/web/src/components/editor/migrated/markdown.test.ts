@@ -112,17 +112,31 @@ describe("live editor Markdown round trips", () => {
   it("uses explicit Markdown source syntax as the durable link state", () => {
     const parsed = parseMarkdown("[Rumi](www.rumi.md)\n", schema)
 
-    expect(parsed.firstChild?.firstChild?.marks.map((mark) => mark.type.name)).toContain("link")
+    expect(parsed.firstChild?.firstChild?.type.name).toBe("link_marker")
+    expect(parsed.firstChild?.firstChild?.attrs.href).toBe("https://www.rumi.md")
+    expect(parsed.firstChild?.firstChild?.attrs.linkType).toBe("external")
+    expect(parsed.firstChild?.child(1).marks.map((mark) => mark.type.name)).toContain("link")
     expect(serializeMarkdown(parsed)).toBe("[Rumi](www.rumi.md)\n")
   })
 
   it("renders workspace links whose file paths contain unescaped spaces", () => {
     const markdown = "An internal document link points to the [inner](test folder/inner/inner.index.md)\n"
     const parsed = parseMarkdown(markdown, schema)
-    const linkedText = parsed.firstChild?.content.content.find((node) => node.text === "inner")
+    const inlineNodes = parsed.firstChild?.content.content ?? []
+    const linkedTextIndex = inlineNodes.findIndex((node) => node.text === "inner")
+    const linkedText = inlineNodes[linkedTextIndex]
 
     expect(linkedText?.marks.find((mark) => mark.type.name === "link")?.attrs.href)
       .toBe("test folder/inner/inner.index.md")
+    expect(parsed.firstChild?.content.content.some(
+      (node) => node.type.name === "link_marker" && node.attrs.linkType === "external"
+    )).toBe(false)
+    expect(inlineNodes[linkedTextIndex - 1]?.type.name).toBe("link_marker")
+    expect(inlineNodes[linkedTextIndex - 1]?.attrs).toMatchObject({
+      href: "test folder/inner/inner.index.md",
+      linkType: "internal",
+      mentionKind: "folder"
+    })
     expect(serializeMarkdown(parsed)).toBe(
       "An internal document link points to the [inner](<test folder/inner/inner.index.md>)\n"
     )
@@ -138,6 +152,14 @@ describe("live editor Markdown round trips", () => {
     expect(link?.attrs).toMatchObject({
       href: "test folder/inner.index.md",
       mention: true,
+      mentionKind: "folder"
+    })
+    const mentionMarker = parsed.firstChild?.content.content.find(
+      (node) => node.type.name === "link_marker"
+    )
+    expect(mentionMarker?.attrs).toMatchObject({
+      href: "test folder/inner.index.md",
+      linkType: "internal",
       mentionKind: "folder"
     })
     expect(serializeMarkdown(parsed)).toBe(markdown)

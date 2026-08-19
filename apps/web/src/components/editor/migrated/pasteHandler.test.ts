@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model"
+import { history, undo } from "prosemirror-history"
 import { EditorState, NodeSelection, TextSelection, type Transaction } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
 import { describe, expect, it } from "vitest"
@@ -20,6 +21,7 @@ import {
   createPlainTextPasteSlice,
   createCodeTextPasteTransaction,
   createInlineCodePasteTransaction,
+  isCompleteSvgSource,
   createUrlPasteTransaction,
   normalizePastedTables,
   pasteHandlerPlugin
@@ -744,7 +746,7 @@ describe("live editor copy", () => {
 
 describe("live editor asset paste", () => {
   it("keeps image clipboard files on the asynchronous asset-upload path", async () => {
-    let uploadedFile: File | null = null
+    const uploaded: { file: File | null } = { file: null }
     let resolveDispatch!: () => void
     const dispatched = new Promise<void>((resolve) => { resolveDispatch = resolve })
     setMigratedEditorPlatform({
@@ -753,7 +755,7 @@ describe("live editor asset paste", () => {
       documentKey: "test.md",
       documents: [],
       async uploadAsset(file) {
-        uploadedFile = file
+        uploaded.file = file
         return ".assets/pasted.png"
       }
     })
@@ -783,9 +785,293 @@ describe("live editor asset paste", () => {
         createPlainTextPasteSlice("", schema)
       )).toBe(true)
       await dispatched
-      expect(uploadedFile).toBe(file)
+      expect(uploaded.file).toBe(file)
       expect(state.doc.firstChild?.type).toBe(schema.nodes.image)
       expect(state.doc.firstChild?.attrs.src).toBe(".assets/pasted.png")
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
+  })
+
+  it("uploads complete SVG source on normal paste and inserts an image block", async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+    const uploaded: { file: File | null } = { file: null }
+    let resolveDispatch!: () => void
+    const dispatched = new Promise<void>((resolve) => { resolveDispatch = resolve })
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      async uploadAsset(file) {
+        uploaded.file = file
+        return ".assets/pasted-svg.svg"
+      }
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      let state = EditorState.create({
+        doc: parseMarkdown("", schema),
+        plugins: [history()]
+      })
+      const view = {
+        get state() { return state },
+        isDestroyed: false,
+        dispatch(transaction: Transaction) {
+          state = state.apply(transaction)
+          resolveDispatch()
+        }
+      } as unknown as EditorView
+      let prevented = false
+      const event = {
+        clipboardData: {
+          files: [],
+          getData(type: string) { return type === "text/plain" ? source : "" }
+        },
+        preventDefault() { prevented = true }
+      } as unknown as ClipboardEvent
+
+      expect(isCompleteSvgSource(source)).toBe(true)
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        view,
+        event,
+        createPlainTextPasteSlice(source, schema)
+      )).toBe(true)
+      await dispatched
+
+      expect(prevented).toBe(true)
+      expect(uploaded.file?.name).toBe("pasted-svg.svg")
+      expect(uploaded.file?.type).toBe("image/svg+xml")
+      expect(uploaded.file?.size).toBe(new Blob([source]).size)
+      expect(state.doc.firstChild?.type).toBe(schema.nodes.image)
+      expect(state.doc.firstChild?.attrs).toMatchObject({
+        src: ".assets/pasted-svg.svg",
+        alt: "pasted-svg.svg"
+      })
+      expect(undo(state, (transaction) => { state = state.apply(transaction) })).toBe(true)
+      expect(state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+      expect(state.doc.textContent).toBe("")
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
+  })
+
+  it("keeps SVG source literal for explicit plain-text paste", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>'
+    let uploaded = false
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      async uploadAsset() {
+        uploaded = true
+        return ".assets/pasted-svg.svg"
+      }
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      let state = stateWithSelection("", 1)
+      const view = {
+        get state() { return state },
+        dispatch(transaction: Transaction) { state = state.apply(transaction) }
+      } as unknown as EditorView
+      const parsed = plugin.props.clipboardTextParser?.call(
+        plugin,
+        source,
+        state.selection.$from,
+        true,
+        view
+      ) ?? createPlainTextPasteSlice(source, schema)
+      const transformed = plugin.props.transformPasted?.call(plugin, parsed, view, true) ?? parsed
+      const event = {
+        clipboardData: {
+          files: [],
+          getData(type: string) { return type === "text/plain" ? source : "" }
+        },
+        preventDefault() {}
+      } as unknown as ClipboardEvent
+
+      expect(plugin.props.handlePaste?.call(plugin, view, event, transformed)).toBe(false)
+      expect(uploaded).toBe(false)
+      state = state.apply(state.tr.replaceSelection(transformed))
+      expect(state.doc.textContent).toBe(source)
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
+  })
+
+  it("keeps normal SVG source literal inside block and inline code", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'
+    let uploaded = false
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      async uploadAsset() {
+        uploaded = true
+        return ".assets/pasted-svg.svg"
+      }
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      const event = {
+        clipboardData: {
+          files: [],
+          getData(type: string) { return type === "text/plain" ? source : "" }
+        },
+        preventDefault() {}
+      } as unknown as ClipboardEvent
+
+      let blockState = stateWithSelection("```svg\nplaceholder\n```", 1, 12)
+      const blockView = {
+        get state() { return blockState },
+        dispatch(transaction: Transaction) { blockState = blockState.apply(transaction) }
+      } as unknown as EditorView
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        blockView,
+        event,
+        createPlainTextPasteSlice(source, schema)
+      )).toBe(true)
+      expect(blockState.doc.firstChild?.type).toBe(schema.nodes.code_block)
+      expect(blockState.doc.firstChild?.textContent).toBe(source)
+
+      let inlineState = stateWithSelection("`placeholder`", 1, 12)
+      const inlineView = {
+        get state() { return inlineState },
+        dispatch(transaction: Transaction) { inlineState = inlineState.apply(transaction) }
+      } as unknown as EditorView
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        inlineView,
+        event,
+        createPlainTextPasteSlice(source, schema)
+      )).toBe(true)
+      expect(inlineState.doc.firstChild?.textContent).toBe(source)
+      expect(schema.marks.code!.isInSet(inlineState.doc.firstChild!.firstChild!.marks))
+        .toBeDefined()
+      expect(uploaded).toBe(false)
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
+  })
+
+  it("does not insert a pasted SVG after its editor is destroyed", async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'
+    let resolveUpload!: (path: string) => void
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      uploadAsset() {
+        return new Promise((resolve) => { resolveUpload = resolve })
+      }
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      let dispatched = false
+      const view = {
+        state: stateWithSelection("", 1),
+        isDestroyed: false,
+        dispatch() { dispatched = true }
+      }
+      const event = {
+        clipboardData: {
+          files: [],
+          getData(type: string) { return type === "text/plain" ? source : "" }
+        },
+        preventDefault() {}
+      } as unknown as ClipboardEvent
+
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        view as unknown as EditorView,
+        event,
+        createPlainTextPasteSlice(source, schema)
+      )).toBe(true)
+      view.isDestroyed = true
+      resolveUpload(".assets/pasted-svg.svg")
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(dispatched).toBe(false)
+    } finally {
+      setMigratedEditorPlatform({
+        databaseRefreshRevisions: {},
+        workspaceKey: "",
+        documentKey: "",
+        documents: []
+      })
+    }
+  })
+
+  it("reports a pasted SVG upload failure without changing the document", async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'
+    let resolveMessage!: (message: string) => void
+    const message = new Promise<string>((resolve) => { resolveMessage = resolve })
+    setMigratedEditorPlatform({
+      databaseRefreshRevisions: {},
+      workspaceKey: "test",
+      documentKey: "test.md",
+      documents: [],
+      async uploadAsset() {
+        throw new Error("SVG upload failed")
+      },
+      onMessage: resolveMessage
+    })
+
+    try {
+      const plugin = pasteHandlerPlugin(schema)
+      let state = stateWithSelection("", 1)
+      const view = {
+        get state() { return state },
+        isDestroyed: false,
+        dispatch(transaction: Transaction) { state = state.apply(transaction) }
+      } as unknown as EditorView
+      const event = {
+        clipboardData: {
+          files: [],
+          getData(type: string) { return type === "text/plain" ? source : "" }
+        },
+        preventDefault() {}
+      } as unknown as ClipboardEvent
+
+      expect(plugin.props.handlePaste?.call(
+        plugin,
+        view,
+        event,
+        createPlainTextPasteSlice(source, schema)
+      )).toBe(true)
+      await expect(message).resolves.toBe("SVG upload failed")
+      expect(state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+      expect(state.doc.textContent).toBe("")
     } finally {
       setMigratedEditorPlatform({
         databaseRefreshRevisions: {},

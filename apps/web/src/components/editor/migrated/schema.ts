@@ -331,8 +331,9 @@ const nodes: { [key: string]: NodeSpec } = {
       src: { default: "" },
       alt: { default: "" },
       title: { default: null },
-      alignment: { default: "center" }, // left, center, full
-      caption: { default: "" }
+      alignment: { default: "left" }, // left, center, full
+      caption: { default: "" },
+      widthPx: { default: null }
     },
     parseDOM: [{
       tag: "figure.image-block",
@@ -343,8 +344,9 @@ const nodes: { [key: string]: NodeSpec } = {
           src: img?.getAttribute("src") || "",
           alt: img?.getAttribute("alt") || "",
           title: img?.getAttribute("title") || null,
-          alignment: dom.getAttribute("data-alignment") || "center",
-          caption: caption?.textContent || ""
+          alignment: dom.getAttribute("data-alignment") || "left",
+          caption: caption?.textContent || "",
+          widthPx: null
         }
       }
     }, {
@@ -354,8 +356,9 @@ const nodes: { [key: string]: NodeSpec } = {
           src: dom.getAttribute("src") || "",
           alt: dom.getAttribute("alt") || "",
           title: dom.getAttribute("title") || null,
-          alignment: "center",
-          caption: ""
+          alignment: "left",
+          caption: "",
+          widthPx: null
         }
       }
     }],
@@ -370,6 +373,48 @@ const nodes: { [key: string]: NodeSpec } = {
           title: node.attrs.title
         }
       ], node.attrs.caption ? ["figcaption", node.attrs.caption] : ""]
+    }
+  },
+
+  link_marker: {
+    inline: true,
+    group: "inline",
+    atom: true,
+    selectable: false,
+    marks: "",
+    attrs: {
+      href: { default: "" },
+      linkType: { default: "internal" },
+      mentionKind: { default: "page" }
+    },
+    leafText() {
+      return ""
+    },
+    parseDOM: [{
+      tag: "span[data-rumi-link-icon]",
+      getAttrs(dom: HTMLElement) {
+        return {
+          href: dom.getAttribute("data-href") ?? "",
+          linkType: dom.getAttribute("data-link-type") ??
+            dom.getAttribute("data-rumi-link-icon") ??
+            "internal",
+          mentionKind: dom.getAttribute("data-link-kind") ?? "page"
+        }
+      }
+    }],
+    toDOM(node) {
+      const external = node.attrs.linkType === "external"
+      return ["span", {
+        class: "rumi-link-icon",
+        "data-rumi-link-icon": node.attrs.linkType,
+        "data-href": node.attrs.href,
+        "data-link-type": node.attrs.linkType,
+        "data-link-kind": node.attrs.mentionKind,
+        contenteditable: "false",
+        role: "link",
+        "aria-label": external ? "Open external link" : "Open internal link",
+        title: external ? "Web link" : "Internal link"
+      }]
     }
   },
 
@@ -489,15 +534,22 @@ const marks: { [key: string]: MarkSpec } = {
     toDOM(node) {
       const href = normalizeLinkHref(node.attrs.href)
       const external = isExternalLinkHref(href)
+      const internalKind = external
+        ? null
+        : node.attrs.mentionKind ?? mentionKindForPath(node.attrs.href)
       return [
         "a",
         {
           href,
           title: node.attrs.title,
           ...(external ? { "data-external-link": "true" } : {}),
+          ...(!external ? {
+            "data-internal-link": "true",
+            "data-mention-kind": internalKind
+          } : {}),
           ...(node.attrs.mention ? {
             "data-mention": "true",
-            "data-mention-kind": node.attrs.mentionKind ?? mentionKindForPath(node.attrs.href)
+            "data-mention-kind": internalKind
           } : {})
         },
         0

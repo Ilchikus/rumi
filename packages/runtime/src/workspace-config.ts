@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { EditorToolbarMode, WorkspaceSettings } from "@rumi/contracts";
+import { SaxesParser, type SaxesAttributeNS, type SaxesTagNS } from "saxes";
 
 export const WORKSPACE_CONFIG_PATH = ".rumi/config.json";
 export const DEFAULT_ASSET_FILE_SIZE_MB = 50;
@@ -17,6 +18,7 @@ export const SUPPORTED_ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = O
   ".mp4": "video/mp4",
   ".pdf": "application/pdf",
   ".png": "image/png",
+  ".svg": "image/svg+xml",
   ".webp": "image/webp",
   ".webm": "video/webm"
 });
@@ -186,6 +188,8 @@ export function assetContentMatchesFileType(extension: string, data: Uint8Array)
       return hasAscii(data, 0, "%PDF-");
     case ".png":
       return hasBytes(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case ".svg":
+      return isSafeStaticSvg(data);
     case ".webp":
       return hasAscii(data, 0, "RIFF") && hasAscii(data, 8, "WEBP");
     case ".webm":
@@ -193,6 +197,110 @@ export function assetContentMatchesFileType(extension: string, data: Uint8Array)
     default:
       return false;
   }
+}
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const UNSAFE_STATIC_SVG_ELEMENTS = new Set([
+  "a",
+  "animate",
+  "animatemotion",
+  "animatetransform",
+  "audio",
+  "embed",
+  "foreignobject",
+  "iframe",
+  "object",
+  "script",
+  "set",
+  "video"
+]);
+
+export function isSafeStaticSvg(data: Uint8Array): boolean {
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(data).replace(/^\uFEFF/u, "");
+  } catch {
+    return false;
+  }
+  if (!source.trim()) return false;
+
+  let safe = true;
+  let rootSeen = false;
+  let depth = 0;
+  let styleDepth = 0;
+  const parser = new SaxesParser({ xmlns: true });
+  parser.on("error", () => {
+    safe = false;
+  });
+  parser.on("doctype", () => {
+    safe = false;
+  });
+  parser.on("processinginstruction", () => {
+    safe = false;
+  });
+  parser.on("opentag", (tag: SaxesTagNS) => {
+    const localName = tag.local.toLocaleLowerCase();
+    if (depth === 0) {
+      if (rootSeen || localName !== "svg" || (tag.uri !== "" && tag.uri !== SVG_NAMESPACE)) {
+        safe = false;
+      }
+      rootSeen = true;
+    }
+    depth += 1;
+
+    if (UNSAFE_STATIC_SVG_ELEMENTS.has(localName)) safe = false;
+    if (localName === "style") styleDepth += 1;
+    for (const attribute of Object.values(tag.attributes) as SaxesAttributeNS[]) {
+      if (!isSafeStaticSvgAttribute(attribute)) safe = false;
+    }
+  });
+  parser.on("text", (text) => {
+    if (styleDepth > 0 && !isSafeStaticSvgCss(text)) safe = false;
+  });
+  parser.on("cdata", (text) => {
+    if (styleDepth > 0 && !isSafeStaticSvgCss(text)) safe = false;
+  });
+  parser.on("closetag", (tag: SaxesTagNS) => {
+    if (tag.local.toLocaleLowerCase() === "style") styleDepth -= 1;
+    depth -= 1;
+    if (depth < 0 || styleDepth < 0) safe = false;
+  });
+
+  try {
+    parser.write(source).close();
+  } catch {
+    return false;
+  }
+  return safe && rootSeen && depth === 0 && styleDepth === 0;
+}
+
+function isSafeStaticSvgAttribute(attribute: SaxesAttributeNS): boolean {
+  const localName = attribute.local.toLocaleLowerCase();
+  const value = attribute.value.trim();
+  if (localName.startsWith("on") || localName === "base") return false;
+  if ((localName === "href" || localName === "src") && !/^#[^\s]+$/u.test(value)) {
+    return false;
+  }
+  if (!isSafeStaticSvgCss(value)) return false;
+  if (
+    localName === "style" &&
+    /(?:^|;)\s*(?:animation(?:-[\w-]+)?|transition(?:-[\w-]+)?)\s*:/iu.test(value)
+  ) return false;
+  return true;
+}
+
+function isSafeStaticSvgCss(value: string): boolean {
+  if (/javascript\s*:|@import\b|@keyframes\b|expression\s*\(|behavior\s*:/iu.test(value)) {
+    return false;
+  }
+  if (/url\s*\(/iu.test(value)) {
+    const withoutLocalReferences = value.replace(
+      /url\(\s*(["']?)#[^)"']+\1\s*\)/giu,
+      ""
+    );
+    if (/url\s*\(/iu.test(withoutLocalReferences)) return false;
+  }
+  return true;
 }
 
 function requireMaxFileSizeMb(value: unknown): number | null {

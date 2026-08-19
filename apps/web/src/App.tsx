@@ -24,6 +24,8 @@ import type {
   EditorToolbarMode,
   DatabasePropertyOptionColor,
   DatabasePropertyType,
+  ImageAlignment,
+  ImagePresentation,
   PageDocument,
   RumiEvent,
   SavePageReason,
@@ -54,8 +56,11 @@ import {
   EDITOR_PAGE_CONTAINER_CLASS
 } from "./components/layout/EditorPageLayout";
 import { WorkspaceHeader } from "./components/layout/WorkspaceHeader";
-import { Sidebar } from "./components/sidebar/Sidebar";
-import type { SidebarCreateKind, SidebarSelection } from "./components/sidebar/Sidebar";
+import { Sidebar, sidebarCreationParentPath } from "./components/sidebar/Sidebar";
+import type {
+  SidebarCreateKind,
+  SidebarSelection
+} from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import {
@@ -306,6 +311,10 @@ export function App(): ReactElement {
   const pageVisitHistoryRef = useRef<string[]>([]);
   const shortcutPlatform = useMemo(() => appShortcutPlatform(), []);
   const shortcutLabel = useMemo(() => shortcutLabels(shortcutPlatform), [shortcutPlatform]);
+  const creationParentPath = useMemo(
+    () => sidebarCreationParentPath(tree, selection),
+    [selection, tree]
+  );
   const isNarrow = viewportWidth < 768;
   const visibleSidebarWidth = sidebarWidthForViewport(sidebarWidth, viewportWidth);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
@@ -572,6 +581,80 @@ export function App(): ReactElement {
   const cacheResolvedPage = useCallback((nextPage: PageDocument) => {
     pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
   }, []);
+
+  const updateOpenPageImagePresentation = useCallback(async (
+    imageSrc: string,
+    patch: ImagePresentation
+  ) => {
+    const currentPage = pageRef.current;
+    if (!currentPage || !currentPage.presentationVersion) return;
+
+    const previousPage = currentPage;
+    const optimisticPage: PageDocument = {
+      ...currentPage,
+      presentation: {
+        images: {
+          ...(currentPage.presentation?.images ?? {}),
+          [imageSrc]: {
+            ...currentPage.presentation?.images[imageSrc],
+            ...patch
+          }
+        }
+      }
+    };
+    pageRef.current = optimisticPage;
+    setPage(optimisticPage);
+
+    try {
+      let result = await api.updateImagePresentation({
+        path: currentPage.path,
+        imageSrc,
+        ...patch,
+        basePresentationVersion: currentPage.presentationVersion
+      });
+      if (result.status === "conflict") {
+        result = await api.updateImagePresentation({
+          path: currentPage.path,
+          imageSrc,
+          ...patch,
+          basePresentationVersion: result.currentPresentationVersion
+        });
+      }
+      if (result.status !== "saved") {
+        throw new Error("Rumi could not save the image presentation after refreshing its latest version.");
+      }
+
+      const latestPage = pageRef.current;
+      if (!latestPage || latestPage.path !== result.path) return;
+      const savedPage: PageDocument = {
+        ...latestPage,
+        presentation: result.presentation,
+        presentationVersion: result.presentationVersion
+      };
+      pageRef.current = savedPage;
+      setPage(savedPage);
+      forgetCachedPage(savedPage.path);
+      setMessage("");
+    } catch (error) {
+      const latestPage = pageRef.current;
+      if (
+        latestPage?.path === previousPage.path &&
+        latestPage.presentationVersion === previousPage.presentationVersion
+      ) {
+        pageRef.current = previousPage;
+        setPage(previousPage);
+      }
+      setMessage(errorMessage(error));
+    }
+  }, [api, forgetCachedPage, setMessage]);
+
+  const resizeOpenPageImage = useCallback((imageSrc: string, widthPx: number) =>
+    updateOpenPageImagePresentation(imageSrc, { widthPx }),
+  [updateOpenPageImagePresentation]);
+
+  const alignOpenPageImage = useCallback((imageSrc: string, alignment: ImageAlignment) =>
+    updateOpenPageImagePresentation(imageSrc, { alignment }),
+  [updateOpenPageImagePresentation]);
 
   const refreshOpenPageDatabaseContext = useCallback(async (
     expectedPagePath?: string
@@ -1214,11 +1297,12 @@ export function App(): ReactElement {
       return;
     }
     if (target === "new") {
-      window.open(
+      const opened = window.open(
         workspaceUrlForNode(linkedNode, tree),
         "_blank",
         "noopener,noreferrer"
       );
+      opened?.focus();
       return;
     }
     void openNode(linkedNode);
@@ -2855,6 +2939,7 @@ export function App(): ReactElement {
             settingsOpen={settingsOpen}
             collapsed={sidebarCollapsed}
             rootCreateMenuOpen={rootCreateMenuOpen}
+            creationParentPath={creationParentPath}
             onToggleCollapsed={() => {
               const nextCollapsed = !sidebarCollapsed;
               if (nextCollapsed) setRootCreateMenuOpen(false);
@@ -2914,7 +2999,7 @@ export function App(): ReactElement {
 
       <section
         className={cn(
-          "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[filter] duration-200 ease-out",
+          "relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[filter] duration-200 ease-out",
           blurContent ? "blur-sm" : "blur-0"
         )}
       >
@@ -2958,7 +3043,7 @@ export function App(): ReactElement {
             />
           </Suspense>
         ) : activeTrashPage ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col pt-14">
             <div className="flex shrink-0 flex-col items-start justify-between gap-3 border-b border-border bg-muted/70 px-6 py-3 text-sm sm:flex-row sm:items-center">
               <p className="text-muted-foreground">
                 This page is in Trash. Restore it to continue editing.
@@ -3011,6 +3096,7 @@ export function App(): ReactElement {
                         workspaceKey={workspaceRootPath}
                         documentKey={`trash:${activeTrashPage.item.id}`}
                         markdown={activeTrashPage.page.markdownBody}
+                        presentation={activeTrashPage.page.presentation}
                         documents={editorDocuments}
                         onMessage={setMessage}
                         highlightMisspellings={highlightMisspellings}
@@ -3102,6 +3188,9 @@ export function App(): ReactElement {
                     workspaceKey={workspaceRootPath}
                     documentKey={page.path}
                     markdown={draftBody}
+                    presentation={page.presentation}
+                    onImageResize={page.presentationVersion ? resizeOpenPageImage : undefined}
+                    onImageAlignmentChange={page.presentationVersion ? alignOpenPageImage : undefined}
                     documents={editorDocuments}
                     onOpenDocument={openDocumentLink}
                     onUploadAsset={uploadEditorAsset}

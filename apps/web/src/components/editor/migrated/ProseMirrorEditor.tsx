@@ -1,7 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { forwardRef, useEffect, useRef, useCallback, useImperativeHandle, MouseEvent } from "react"
 import type { RumiApiClient } from "@rumi/api-client"
-import type { EditorToolbarMode } from "@rumi/contracts"
+import type { EditorToolbarMode, ImageAlignment, PagePresentation } from "@rumi/contracts"
 import type { DatabaseRefreshRevisions } from "../../database/databaseRefresh"
 import { cn } from "../../../lib/utils"
 import type { Node as ProseMirrorNode } from "prosemirror-model"
@@ -38,6 +38,11 @@ import { codeBlockNodeView } from "./plugins/codeBlockView"
 import { codeHighlightPlugin } from "./plugins/codeHighlight"
 import { fileNodeView } from "./plugins/fileNodeView"
 import { imageNodeView } from "./plugins/imageNodeView"
+import {
+  applyImagePresentationToDocument,
+  applyImagePresentationToView,
+  IMAGE_PRESENTATION_TRANSACTION_META
+} from "./imagePresentation"
 import { mermaidNodeView } from "./plugins/mermaidNodeView"
 import { databaseEmbedNodeView } from "./plugins/databaseEmbedNodeView"
 import { pasteHandlerPlugin } from "./plugins/pasteHandler"
@@ -88,6 +93,9 @@ export interface RumiBlockEditorProps {
   editorToolbar?: EditorToolbarMode
   allowedUploadFileTypes?: readonly string[]
   readOnly?: boolean
+  presentation?: PagePresentation | undefined
+  onImageResize?: ((imageSrc: string, widthPx: number) => void | Promise<void>) | undefined
+  onImageAlignmentChange?: ((imageSrc: string, alignment: ImageAlignment) => void | Promise<void>) | undefined
   onDirty: () => void
 }
 
@@ -109,6 +117,9 @@ function ProseMirrorEditor(
     editorToolbar = "floating",
     allowedUploadFileTypes = [],
     readOnly = false,
+    presentation,
+    onImageResize,
+    onImageAlignmentChange,
     onDirty
   },
   ref
@@ -126,6 +137,11 @@ function ProseMirrorEditor(
   const contentRef = useRef(markdown)
   const onDirtyRef = useRef(onDirty)
   onDirtyRef.current = onDirty
+  const onImageResizeRef = useRef(onImageResize)
+  onImageResizeRef.current = onImageResize
+  const onImageAlignmentChangeRef = useRef(onImageAlignmentChange)
+  onImageAlignmentChangeRef.current = onImageAlignmentChange
+  const imagePresentationEnabled = Boolean(onImageResize || onImageAlignmentChange)
   // RAF handle for deferred serializeMarkdown — avoids blocking the synchronous keystroke path
   const serializeRafRef = useRef<number | null>(null)
   const filesRef = useRef<FileItem[]>([])
@@ -167,7 +183,10 @@ function ProseMirrorEditor(
   useEffect(() => {
     if (!editorRef.current) return
 
-    const doc = parseMarkdown(markdown, schema)
+    const doc = applyImagePresentationToDocument(
+      parseMarkdown(markdown, schema),
+      presentation
+    )
 
     const state = EditorState.create({
       doc,
@@ -210,7 +229,12 @@ function ProseMirrorEditor(
         heading: (node, view, getPos) => headingNodeView(node, view, getPos),
         code_block: (node, view, getPos) => codeBlockNodeView(node, view, getPos),
         file_embed: (node, view, getPos) => fileNodeView(node, view, getPos),
-        image: (node, view, getPos) => imageNodeView(node, view, getPos),
+        image: (node, view, getPos) => imageNodeView(node, view, getPos, {
+          resizable: Boolean(onImageResizeRef.current),
+          onResize: (imageSrc, widthPx) => onImageResizeRef.current?.(imageSrc, widthPx),
+          onAlignmentChange: (imageSrc, alignment) =>
+            onImageAlignmentChangeRef.current?.(imageSrc, alignment)
+        }),
         mermaid: (node, view, getPos) => mermaidNodeView(node, view, getPos),
         database_embed: (node, view, getPos) => databaseEmbedNodeView(node, view, getPos),
       },
@@ -218,7 +242,10 @@ function ProseMirrorEditor(
         const newState = view.state.apply(transaction)
         view.updateState(newState)
 
-        if (transaction.docChanged) {
+        if (
+          transaction.docChanged &&
+          !transaction.getMeta(IMAGE_PRESENTATION_TRANSACTION_META)
+        ) {
           documentRevisionRef.current += 1
           if (serializeRafRef.current !== null) cancelAnimationFrame(serializeRafRef.current)
           serializeRafRef.current = requestAnimationFrame(() => {
@@ -249,7 +276,7 @@ function ProseMirrorEditor(
       }
       titleContentUndoRef.current = null
     }
-  }, [documentKey, getFiles])
+  }, [documentKey, getFiles, imagePresentationEnabled])
 
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !readOnly })
@@ -281,6 +308,11 @@ function ProseMirrorEditor(
       })
     }
   }, [allowedUploadFileTypes, editorToolbar])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (view) applyImagePresentationToView(view, presentation)
+  }, [presentation])
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -382,7 +414,10 @@ function ProseMirrorEditor(
     // Only update if content actually changed from external source
     if (markdown !== contentRef.current) {
       contentRef.current = markdown
-      const doc = parseMarkdown(markdown, schema)
+      const doc = applyImagePresentationToDocument(
+        parseMarkdown(markdown, schema),
+        presentation
+      )
       const newState = EditorState.create({
         doc,
         plugins: viewRef.current.state.plugins

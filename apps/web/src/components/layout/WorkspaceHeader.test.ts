@@ -64,9 +64,14 @@ describe("workspace address bar", () => {
     );
 
     expect(markup).toContain('aria-label="Current location"');
+    expect(markup).toContain('data-rumi-workspace-header=""');
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("absolute inset-x-0 top-0");
+    expect(markup).toContain("pointer-events-none");
+    expect(markup).toContain("pointer-events-auto");
     expect(markup).toContain('data-rumi-address-bar=""');
     expect(markup).toMatch(/<button[^>]*>notes<\/button>/u);
-    expect(markup).toContain("bg-neutral-100");
+    expect(markup).toContain("bg-surface-subtle");
     expect(markup).toContain("Launch plan");
     expect(markup).toContain('aria-label="Toggle search (Command K)"');
     expect(markup).toContain("⌘ K");

@@ -3,6 +3,10 @@ import { EditorState, TextSelection, type Transaction } from "prosemirror-state"
 import type { EditorView } from "prosemirror-view"
 import { describe, expect, it, vi } from "vitest"
 import { redoEditorChange, undoEditorChange } from "../editorHistory"
+import {
+  inactiveBlockSelectionKey,
+  inactiveBlockSelectionPlugin
+} from "../inactiveBlockSelection"
 import { schema } from "../schema"
 import {
   StructuralCaretSelection,
@@ -157,7 +161,7 @@ describe("structural caret deletion history", () => {
     const initialState = EditorState.create({
       doc,
       selection: structuralCaretAtBlock(doc, databasePos, "after"),
-      plugins: [history(), multiBlockSelectionPlugin(schema)]
+      plugins: [history(), inactiveBlockSelectionPlugin(), multiBlockSelectionPlugin(schema)]
     })
     const { view, state } = createTestView(initialState)
 
@@ -165,6 +169,8 @@ describe("structural caret deletion history", () => {
     expect(state().doc.childCount).toBe(2)
     expect(state().doc.child(0)).toBe(before)
     expect(state().doc.child(1)).toBe(after)
+    expect(inactiveBlockSelectionKey.getState(state())).toBe(true)
+    expect(view.focus).not.toHaveBeenCalled()
 
     expect(undoEditorChange(state(), view.dispatch.bind(view))).toBe(true)
     expect(state().doc.childCount).toBe(3)

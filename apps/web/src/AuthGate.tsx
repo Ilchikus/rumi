@@ -1,4 +1,6 @@
 import { type FormEvent, type ReactElement, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Eye } from "@phosphor-icons/react/dist/csr/Eye";
+import { EyeSlash } from "@phosphor-icons/react/dist/csr/EyeSlash";
 import { RumiApiClient } from "@rumi/api-client";
 import type { AuthSessionResult } from "@rumi/contracts";
 import { Button } from "./components/ui/button";
@@ -15,6 +17,7 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
   const [state, setState] = useState<GateState>({ status: "loading" });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -114,16 +117,35 @@ export function AuthGate({ children }: { children: ReactNode }): ReactElement {
           <label className="mt-4 block text-sm font-medium" htmlFor="rumi-password">
             Password
           </label>
-          <Input
-            id="rumi-password"
-            className="mt-1.5"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
+          <div className="relative mt-1.5">
+            <Input
+              id="rumi-password"
+              className="pr-9"
+              name="password"
+              type={passwordVisible ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <Button
+              className="absolute right-0.5 top-0.5 h-7 w-7 text-muted-foreground hover:bg-transparent hover:text-foreground"
+              type="button"
+              variant="ghost"
+              size="icon"
+              tabIndex={-1}
+              aria-label={passwordVisible ? "Hide password" : "Show password"}
+              aria-pressed={passwordVisible}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setPasswordVisible((visible) => !visible)}
+            >
+              {passwordVisible ? (
+                <EyeSlash size={16} aria-hidden="true" />
+              ) : (
+                <Eye size={16} aria-hidden="true" />
+              )}
+            </Button>
+          </div>
 
           {loginError && <p className="mt-3 text-sm text-destructive">{loginError}</p>}
 

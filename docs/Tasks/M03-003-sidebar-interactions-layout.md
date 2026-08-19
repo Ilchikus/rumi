@@ -60,11 +60,15 @@ is one of its descendants. Later navigation can still reveal the ancestors of a 
 Follow-up UI pass switched app tokens to neutral/white/black defaults, reduced nested tree indentation to roughly 20px per level, and settled sidebar entity marks on neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
 
 The browser shell now reserves `Control-N` on macOS (`Alt-N` on Linux, where `Control-N` belongs to
-the browser) for the root create menu, and `Command-S` on macOS (`Control-S` on Linux) for the left
-sidebar. Opening the create menu focuses Page first. Arrow keys and `1`/`2`/`3` move focus without
-selecting. Enter starts the existing inline-name flow. Primary-modifier Enter or click creates the
-chosen item immediately with its collision-safe default name, opens it, and selects the complete
-filename title so the next typed character replaces it.
+the browser) for the create menu, and `Command-S` on macOS (`Control-S` on Linux) for the left
+sidebar. Creation targets the current folder or database, or the nearest containing folder/database
+when a page is open, with the workspace root as fallback. Opening the menu focuses Page first. Arrow
+keys and the first `1`/`2`/`3` press move focus without selecting; repeating the same unmodified
+number immediately creates and opens the collision-safe default item in the current window. Modified
+digits remain available to the browser and operating system. Enter and ordinary pointer selection
+start the existing inline-name flow, while primary-modifier Enter or click retains immediate
+creation. Every menu path uses the same active-path-derived parent, and immediate creation selects
+the complete filename title so the next typed character replaces it.
 
 ## Done When
 

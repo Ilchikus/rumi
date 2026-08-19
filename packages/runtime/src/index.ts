@@ -50,6 +50,8 @@ import type {
   SetDatabaseRecordPagePropertyVisibilityRequest,
   TrashListResult,
   TrashPageResult,
+  UpdateImagePresentationRequest,
+  UpdateImagePresentationResult,
   UpdateDatabaseRecordPropertyRequest,
   UpdateDatabasePropertyOptionRequest,
   UpdateDatabaseSchemaRequest,
@@ -83,6 +85,7 @@ import {
   queryDatabaseRecords
 } from "./database";
 import { RevisionStore } from "./revisions";
+import { WorkspacePresentationStore } from "./presentation";
 import {
   planWorkspaceReferenceRepairs,
   rewriteMarkdownReferences
@@ -165,6 +168,7 @@ export class WorkspaceRuntime {
   assetPolicy: WorkspaceAssetPolicy;
   readonly events = new RuntimeEventBus();
   private readonly revisions: RevisionStore;
+  private readonly presentation: WorkspacePresentationStore;
   private readonly trash: WorkspaceTrash;
   private readonly workspaceIndex: WorkspaceIndex;
   private readonly backgroundTasks = new Set<Promise<void>>();
@@ -173,12 +177,14 @@ export class WorkspaceRuntime {
   private constructor(
     rootPath: string,
     workspaceIndex: WorkspaceIndex,
-    assetPolicy: WorkspaceAssetPolicy
+    assetPolicy: WorkspaceAssetPolicy,
+    presentation: WorkspacePresentationStore
   ) {
     this.rootPath = rootPath;
     this.name = path.basename(rootPath);
     this.assetPolicy = assetPolicy;
     this.revisions = new RevisionStore({ rootPath });
+    this.presentation = presentation;
     this.trash = new WorkspaceTrash(rootPath);
     this.workspaceIndex = workspaceIndex;
   }
@@ -199,7 +205,8 @@ export class WorkspaceRuntime {
     const runtime = new WorkspaceRuntime(
       rootPath,
       await WorkspaceIndex.open(rootPath),
-      assetPolicy
+      assetPolicy,
+      await WorkspacePresentationStore.open(rootPath)
     );
     await runtime.ensureRootIndexPage();
     return runtime;
@@ -312,8 +319,13 @@ export class WorkspaceRuntime {
 
       if (totalLength === 0) throw new Error("Asset content is required");
       const signature = Buffer.concat(signatureChunks, signatureLength);
-      if (!assetContentMatchesFileType(extension, signature)) {
-        throw new Error(`Asset content does not match its ${extension} file type`);
+      const validationData = extension === ".svg"
+        ? await fs.readFile(temporaryPath)
+        : signature;
+      if (!assetContentMatchesFileType(extension, validationData)) {
+        throw new Error(extension === ".svg"
+          ? "SVG asset must be a complete static SVG without active or external content"
+          : `Asset content does not match its ${extension} file type`);
       }
 
       const desiredPath = path.posix.join(".assets", cleanedName);
@@ -358,6 +370,7 @@ export class WorkspaceRuntime {
     const content = await fs.readFile(absolutePath, "utf8");
     const parsed = parseMarkdownFile(content);
     const database = target.kind === "page" ? await this.databaseContextForPage(target.path) : null;
+    const pagePresentation = this.presentation.page(target.path);
 
     return {
       path: target.path,
@@ -367,7 +380,42 @@ export class WorkspaceRuntime {
       contentHash: hashText(content),
       frontmatterHash: hashJson(parsed.frontmatter),
       version: hashText(content),
+      ...pagePresentation,
       ...(database ? { database } : {})
+    };
+  }
+
+  async updateImagePresentation(
+    request: UpdateImagePresentationRequest
+  ): Promise<UpdateImagePresentationResult> {
+    const target = await this.resolvePageTarget(request.path);
+    const updated = await this.presentation.updateImage({ ...request, path: target.path });
+
+    if (updated.status === "conflict") {
+      return {
+        status: "conflict",
+        path: target.path,
+        presentation: updated.presentation,
+        currentPresentationVersion: updated.currentPresentationVersion,
+        attemptedBasePresentationVersion: updated.attemptedBasePresentationVersion
+      };
+    }
+
+    const events: RumiEvent[] = updated.changed
+      ? [{
+          name: "page.changed",
+          path: target.path,
+          changedBy: "image-presentation",
+          affects: ["presentation"]
+        }]
+      : [];
+    for (const event of events) this.events.publish(event);
+    return {
+      status: "saved",
+      path: target.path,
+      presentation: updated.presentation,
+      presentationVersion: updated.presentationVersion,
+      events
     };
   }
 
@@ -1454,6 +1502,7 @@ export class WorkspaceRuntime {
 
     await this.revisions.move(oldPath, newPath);
     await this.workspaceIndex.movePath(oldPath, newPath);
+    await this.presentation.moveWorkspacePath(oldPath, newPath);
 
     const database = stat.isFile() ? await this.databaseContextForPage(newPath) : null;
     const movedResult = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
@@ -1509,6 +1558,7 @@ export class WorkspaceRuntime {
     }
     await this.revisions.move(oldPath, newPath);
     await this.workspaceIndex.movePath(oldPath, newPath);
+    await this.presentation.moveWorkspacePath(oldPath, newPath);
 
     const result = mutationResult("page.moved", newPath, ["tree", "links", "search"], oldPath);
     this.publishResultEvents(result);
@@ -1530,7 +1580,9 @@ export class WorkspaceRuntime {
 
     await this.checkpointNodeBeforeDelete(relPath, absolutePath, stat);
     const revisionObjects = await this.revisions.objectsAtOrBelow(relPath);
-    const trashed = await this.trash.move(relPath, revisionObjects);
+    const presentationPages = this.presentation.pagesAtOrBelow(relPath);
+    const trashed = await this.trash.move(relPath, revisionObjects, presentationPages);
+    await this.presentation.removePagesAtOrBelow(relPath);
     await this.revisions.markDeleted(relPath);
     await this.workspaceIndex.removePath(relPath);
 
@@ -1561,7 +1613,9 @@ export class WorkspaceRuntime {
         markdownBody: parsed.body,
         contentHash,
         frontmatterHash: hashJson(parsed.frontmatter),
-        version: contentHash
+        version: contentHash,
+        presentation: trashed.presentation,
+        presentationVersion: hashJson(trashed.presentation)
       }
     };
   }
@@ -1574,6 +1628,11 @@ export class WorkspaceRuntime {
       restored.path
     );
     await this.workspaceIndex.indexPath(restored.path);
+    await this.presentation.restorePages(
+      restored.presentationPages,
+      restored.item.originalPath,
+      restored.path
+    );
     const event: RumiEvent = {
       name: "workspace.treeChanged",
       path: restored.path,
@@ -2013,7 +2072,21 @@ export class WorkspaceRuntime {
         onEvents: async (events) => {
           await this.syncIndexForEvents(events);
           for (const event of events) {
+            if (
+              (event.name === "page.moved" || event.name === "asset.changed") &&
+              event.previousPath &&
+              event.path
+            ) {
+              await this.presentation.moveWorkspacePath(event.previousPath, event.path);
+            }
             this.events.publish(event);
+            if (
+              event.name === "asset.changed" &&
+              event.previousPath &&
+              event.path
+            ) {
+              this.scheduleReferenceRepair(event.previousPath, event.path);
+            }
           }
         }
       });
@@ -2099,7 +2172,7 @@ function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function hashJson(value: FrontmatterRecord): string {
+function hashJson(value: unknown): string {
   return hashText(JSON.stringify(sortJson(value)));
 }
 

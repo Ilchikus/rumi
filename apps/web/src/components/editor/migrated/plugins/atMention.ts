@@ -1,7 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Plugin, PluginKey } from "prosemirror-state"
 import { EditorView } from "prosemirror-view"
-import { Schema } from "prosemirror-model"
+import { Fragment, Schema } from "prosemirror-model"
 import { searchMentionItems } from "../mentionSearch"
 import {
   renderedMentionKind,
@@ -36,7 +36,9 @@ interface PluginState {
 }
 
 export function atMentionPlugin(schema: Schema, getFiles: () => FileItem[]) {
-  if (!schema.marks.link) return new Plugin({ key: atMentionPluginKey })
+  if (!schema.marks.link || !schema.nodes.link_marker) {
+    return new Plugin({ key: atMentionPluginKey })
+  }
 
   return new Plugin<PluginState>({
     key: atMentionPluginKey,
@@ -375,7 +377,7 @@ function filterFiles(files: FileItem[], query: string): FileItem[] {
 function insertFileLink(view: EditorView, file: FileItem, range: { from: number; to: number }, schema: Schema) {
   // Delete the @ and query, insert link
   let tr = view.state.tr.delete(range.from, view.state.selection.from)
-  tr = tr.insert(range.from, createMentionLinkText(schema, file))
+  tr = tr.insert(range.from, createMentionLinkContent(schema, file))
 
   // Close the menu
   tr = tr.setMeta(atMentionPluginKey, {
@@ -389,15 +391,22 @@ function insertFileLink(view: EditorView, file: FileItem, range: { from: number;
   view.focus()
 }
 
-export function createMentionLinkText(schema: Schema, file: FileItem) {
+export function createMentionLinkContent(schema: Schema, file: FileItem): Fragment {
   const displayName = file.name.replace(/\.md$/, "")
-  return schema.text(displayName, [
+  const mentionKind = renderedMentionKind(file.kind, file.path)
+  const label = schema.text(displayName, [
     schema.marks.link.create({
       href: file.path,
       mention: true,
-      mentionKind: renderedMentionKind(file.kind, file.path)
+      mentionKind
     })
   ])
+  const marker = schema.nodes.link_marker.create({
+    href: file.path,
+    linkType: "internal",
+    mentionKind
+  })
+  return Fragment.fromArray([marker, label])
 }
 
 function mentionIconMarkup(file: FileItem): string {

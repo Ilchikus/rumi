@@ -12,13 +12,13 @@ import { Decoration, DecorationSet, EditorView } from "prosemirror-view"
 import { Fragment, Schema } from "prosemirror-model"
 import {
   createCaretlessBlankBlockDeletionTransaction,
+  inactiveBlockSelectionKey,
   transactionLeavesEditorInactive
 } from "../inactiveBlockSelection"
 import {
   StructuralCaretSelection,
   structuralCaretAtBlock,
-  structuralCaretContext,
-  setSelectionBeforeNextSpecialBlock
+  structuralCaretContext
 } from "../structuralCaretSelection"
 
 export interface MultiBlockSelectionState {
@@ -399,12 +399,17 @@ export function createDeleteBlocksTransaction(
 
   if (validPositions.length === 1) {
     const caretlessTransaction =
-      createCaretlessBlankBlockDeletionTransaction(state, validPositions[0])
+      createCaretlessBlankBlockDeletionTransaction(
+        state,
+        validPositions[0],
+        { scrollIntoView: false }
+      )
     if (caretlessTransaction) {
       caretlessTransaction.setMeta(multiBlockSelectionKey, {
         selectedBlocks: [],
         anchorBlock: null
       })
+      caretlessTransaction.setMeta(inactiveBlockSelectionKey, true)
       return caretlessTransaction
     }
   }
@@ -423,12 +428,12 @@ export function createDeleteBlocksTransaction(
   }
 
   if (!transaction.docChanged) return null
-  setSelectionBeforeNextSpecialBlock(transaction, validPositions[0])
   transaction.setMeta(multiBlockSelectionKey, {
     selectedBlocks: [],
     anchorBlock: null
   })
-  return transaction.scrollIntoView()
+  transaction.setMeta(inactiveBlockSelectionKey, true)
+  return transaction
 }
 
 export function deleteSelectedBlocks(view: EditorView) {

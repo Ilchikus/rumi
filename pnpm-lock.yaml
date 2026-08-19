@@ -87,6 +87,9 @@ importers:
       pino-pretty:
         specifier: ^13.1.2
         version: 13.1.3
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
       yaml:
         specifier: ^2.6.1
         version: 2.9.0
@@ -253,6 +256,9 @@ importers:
       '@rumi/workspace-format':
         specifier: workspace:*
         version: link:../workspace-format
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
 
   packages/workspace-format: {}
 

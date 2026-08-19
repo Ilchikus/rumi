@@ -7,15 +7,19 @@ import {
 
 export const RUMI_SLICE_MIME = "application/x-rumi-prosemirror-slice+json"
 
+// Portable HTML cannot rely on Rumi's CSS variables, so keep the resolved
+// Neutral 100 value of --surface-subtle as its standalone fallback.
+const PORTABLE_SUBTLE_SURFACE = "#f5f5f5"
+
 const PORTABLE_CODE_BLOCK_STYLE = [
-  "background-color:#f1f3f4",
+  `background-color:${PORTABLE_SUBTLE_SURFACE}`,
   "border-radius:4px",
   'font-family:"Roboto Mono",monospace',
   "white-space:pre-wrap"
 ].join(";")
 
 const PORTABLE_CODE_INLINE_STYLE = [
-  "background-color:#f1f3f4",
+  `background-color:${PORTABLE_SUBTLE_SURFACE}`,
   'font-family:"Roboto Mono",monospace',
   "white-space:pre-wrap"
 ].join(";")
@@ -80,6 +84,9 @@ function serializeInlineHtml(parent: ProseMirrorNode): string {
 
     if (node.type.name === "soft_break" || node.type.name === "hard_break") {
       html += "<br>"
+    } else if (node.type.name === "link_marker") {
+      // The marker is derived editor chrome, not portable clipboard content.
+      return
     }
   })
 

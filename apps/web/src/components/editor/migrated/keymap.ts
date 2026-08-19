@@ -14,6 +14,7 @@ import {
   wrapIn
 } from "prosemirror-commands"
 import { goToNextCell } from "prosemirror-tables"
+import { closeHistory } from "prosemirror-history"
 import {
   redoEditorChange,
   undoEditorChange
@@ -32,6 +33,7 @@ import {
 import { createCaretlessBlankBlockDeletionTransaction } from "./inactiveBlockSelection"
 import { insertAdjacentParagraphCommand } from "./plugins/topToolbarActions"
 import { openSelectionToolbarLinkEditor } from "./plugins/selectionToolbar"
+import { unlinkSelectedLinkMarker } from "./plugins/linkPlugin"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
 
@@ -262,6 +264,40 @@ export function moveToCodeBoundary(
   }
 }
 
+export function convertCodeFenceOnEnter(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { selection } = state
+    if (!(selection instanceof TextSelection) || !selection.empty) return false
+
+    const { $from } = selection
+    if (
+      $from.depth !== 1 ||
+      $from.parent.type !== schema.nodes.paragraph ||
+      $from.parentOffset !== $from.parent.content.size
+    ) return false
+
+    const match = /^```([^`\s]*)$/u.exec($from.parent.textContent)
+    if (!match || !schema.nodes.code_block) return false
+
+    const language = match[1]?.toLocaleLowerCase() || null
+    const blockStart = $from.before(1)
+    const block = language === "mermaid" && schema.nodes.mermaid
+      ? schema.nodes.mermaid.create({ mode: "edit" })
+      : schema.nodes.code_block.create({ language })
+
+    if (dispatch) {
+      const transaction = state.tr.replaceWith(
+        blockStart,
+        blockStart + $from.parent.nodeSize,
+        block
+      )
+      transaction.setSelection(TextSelection.create(transaction.doc, blockStart + 1))
+      dispatch(closeHistory(transaction).scrollIntoView())
+    }
+    return true
+  }
+}
+
 function stagedBlockSelection(
   contextMenuIntent: BlockContextMenuIntent
 ): Command {
@@ -348,14 +384,15 @@ function buildKeymap(schema: Schema) {
   keys["Mod-D"] = duplicateBlocks
   keys["Mod-a"] = stagedBlockSelection("close")
   keys["Mod-/"] = toggleBlockContextMenu
-  const deleteEmptyBlock = chainCommands(
+  const deleteSelectionOrEmptyBlock = chainCommands(
+    unlinkSelectedLinkMarker(schema),
     resetEmptyFormattedBlock(schema),
     removeEmptyParagraphBlock(schema)
   )
-  keys["Backspace"] = deleteEmptyBlock
-  keys["Delete"] = deleteEmptyBlock
-  keys["Mod-Backspace"] = deleteEmptyBlock
-  keys["Mod-Delete"] = deleteEmptyBlock
+  keys["Backspace"] = deleteSelectionOrEmptyBlock
+  keys["Delete"] = deleteSelectionOrEmptyBlock
+  keys["Mod-Backspace"] = deleteSelectionOrEmptyBlock
+  keys["Mod-Delete"] = deleteSelectionOrEmptyBlock
   keys["Mod-ArrowUp"] = moveToCodeBoundary("start")
   keys["Mod-ArrowDown"] = moveToCodeBoundary("end")
 
@@ -411,6 +448,7 @@ function buildKeymap(schema: Schema) {
   // Enter key: ordered by priority
   keys["Enter"] = chainCommands(
     exitHorizontalRuleEnter(schema),
+    convertCodeFenceOnEnter(schema),
     newlineInCode,
     splitFlatListItem(schema),
     liftEmptyBlock,

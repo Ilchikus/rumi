@@ -56,7 +56,7 @@ function supportedAssetFile(files: readonly File[]): File | null {
   return files.find((file) => {
     const lowerName = file.name.toLocaleLowerCase();
     return (
-      (file.type.startsWith("image/") && file.type !== "image/svg+xml" && !lowerName.endsWith(".svg")) ||
+      file.type.startsWith("image/") || lowerName.endsWith(".svg") ||
       file.type === "application/pdf" ||
       lowerName.endsWith(".pdf")
     );

@@ -1372,6 +1372,7 @@ export function DatabaseView({
             <Button
               type="button"
               size="sm"
+              className="bg-foreground text-background hover:bg-foreground/80"
               onClick={(event) => void createRecord(
                 shouldOpenCreatedDatabaseRecord(event, shortcutPlatform)
               )}

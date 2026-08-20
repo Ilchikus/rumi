@@ -233,6 +233,7 @@ describe("sidebar active ancestor trail", () => {
     expect(sidebarSource).toContain(
       'stickyAncestorIndexes.has(rowAncestorPaths[index] ?? "")'
     );
+    expect(sidebarSource).toContain('? "bg-foreground/70"');
     expect(sidebarSource).not.toContain('active ? "bg-primary/70" : "bg-border"');
   });
 

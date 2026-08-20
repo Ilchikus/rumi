@@ -56,6 +56,10 @@ describe("property create menu", () => {
     }));
     expect(markup).toContain("Add property");
     expect(markup).not.toContain("New property type");
+    expect(propertyCreateMenuSource).toContain(
+      "bg-foreground px-3 text-xs font-medium text-background hover:bg-foreground/80"
+    );
+    expect(propertyCreateMenuSource).not.toContain("bg-primary px-3");
   });
 
   it("always releases its pending state when creation fails", () => {

@@ -240,7 +240,7 @@ export function PropertyCreateMenu<T extends string>({
 
         <button
           type="button"
-          className="mt-2 h-8 w-full rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="mt-2 h-8 w-full rounded-md bg-foreground px-3 text-xs font-medium text-background hover:bg-foreground/80 disabled:opacity-50"
           disabled={creating || !activeType}
           onClick={() => void create()}
         >

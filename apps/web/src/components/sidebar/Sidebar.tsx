@@ -910,7 +910,7 @@ function TreeDepthGuides({
           className={cn(
             "pointer-events-none absolute inset-y-0 w-px",
             stickyAncestorIndexes.has(rowAncestorPaths[index] ?? "")
-              ? "bg-primary/70"
+              ? "bg-foreground/70"
               : "bg-border"
           )}
           style={{ left: (index + 1) * TREE_INDENT_PX }}

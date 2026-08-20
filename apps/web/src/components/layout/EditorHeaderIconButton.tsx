@@ -12,7 +12,7 @@ export const EditorHeaderIconButton = forwardRef<
       ref={ref}
       type={type}
       className={cn(
-        "group grid h-8 w-8 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-foreground",
+        "group grid h-8 w-8 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-foreground",
         className
       )}
       {...props}

@@ -259,7 +259,7 @@ export function PageProperties({
   };
 
   return (
-    <section className="group/properties relative mt-8" aria-label="Page properties">
+    <section className="group/properties relative mt-4" aria-label="Page properties">
       {(properties.length > 0 || database) && (
         <div className="mb-1 flex min-h-7 items-center gap-1">
           {properties.length > 0 && (

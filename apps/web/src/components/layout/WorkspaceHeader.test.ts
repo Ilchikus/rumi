@@ -107,6 +107,7 @@ describe("workspace address bar", () => {
   it("shares one borderless control across create, sidebar, and page actions", () => {
     expect(headerControlSource).toContain("h-8 w-8");
     expect(headerControlSource).toContain("border-0 bg-transparent");
+    expect(headerControlSource).not.toContain("transition-");
     expect(headerControlSource).toContain('collapsed ? "regular" : "fill"');
     expect(headerControlSource).toContain('collapsed ? "fill" : "regular"');
     expect(headerControlSource).toContain("group-hover:opacity-0");

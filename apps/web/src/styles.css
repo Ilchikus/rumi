@@ -11,14 +11,14 @@
     --muted: var(--surface-subtle);
     --muted-foreground: 0 0% 45%;
     --accent: var(--surface-subtle);
-    --accent-foreground: 0 0% 9%;
+    --accent-foreground: var(--foreground);
     --primary: 199 89% 48%;
     --primary-hover: 198 93% 60%;
-    --primary-foreground: 0 0% 9%;
+    --primary-foreground: var(--foreground);
     --secondary: var(--surface-subtle);
-    --secondary-foreground: 0 0% 9%;
+    --secondary-foreground: var(--foreground);
     --destructive: 347 77% 50%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive-foreground: var(--foreground);
     --border: 0 0% 90%;
     --input: 0 0% 83%;
     --ring: var(--primary);
@@ -44,14 +44,10 @@
     --muted: var(--surface-subtle);
     --muted-foreground: 0 0% 63.9%;
     --accent: 0 0% 32.2%;
-    --accent-foreground: 0 0% 98%;
     --primary: 199 89% 48%;
     --primary-hover: 198 93% 60%;
-    --primary-foreground: 0 0% 9%;
     --secondary: 0 0% 25.1%;
-    --secondary-foreground: 0 0% 96.1%;
     --destructive: 350 89% 60%;
-    --destructive-foreground: 0 0% 9%;
     --border: 0 0% 32.2%;
     --input: 0 0% 45.1%;
     --ring: var(--primary);
@@ -93,6 +89,40 @@
 }
 
 @layer components {
+  .rumi-checkbox {
+    appearance: none;
+    border: 1px solid hsl(var(--input));
+    border-radius: 0.2rem;
+    background-color: hsl(var(--background));
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .rumi-checkbox:checked,
+  .rumi-checkbox:indeterminate {
+    border-color: hsl(var(--primary));
+    background-color: hsl(var(--primary));
+  }
+
+  .rumi-checkbox:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size: 14px 14px;
+  }
+
+  .rumi-checkbox:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8H12.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-size: 14px 14px;
+  }
+
+  .rumi-checkbox:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .rumi-checkbox:disabled {
+    opacity: 0.5;
+  }
+
   .rumi-database-view-tabs {
     scrollbar-width: none;
   }
@@ -443,6 +473,7 @@
   .rumi-prosemirror mark {
     border-radius: 0.15rem;
     background: var(--highlight-background);
+    color: hsl(var(--foreground));
     padding: 0 0.08rem;
   }
 

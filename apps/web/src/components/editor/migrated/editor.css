@@ -851,6 +851,7 @@
 /* Highlight mark */
 .prosemirror-editor .ProseMirror mark {
   background-color: var(--highlight-background);
+  color: hsl(var(--foreground));
   border-radius: 0.2em;
   padding: 0.1em 0.2em;
 }

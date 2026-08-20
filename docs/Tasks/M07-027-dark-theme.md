@@ -56,6 +56,9 @@ falls back to Auto. CSS variables own palette resolution so ProseMirror DOM and 
 editor controls update without remounting. Open Mermaid previews listen for the same theme-change
 event and re-render with Mermaid's matching built-in theme.
 
+The final foreground pass keeps button labels and highlighted prose on the active theme foreground,
+while checked and indeterminate Sky controls use explicit white marks in both themes.
+
 ## Done When
 
 The full release checks pass, browser QA covers Light, Dark, and Auto at desktop and narrow widths,

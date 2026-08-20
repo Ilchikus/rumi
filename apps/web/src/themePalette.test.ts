@@ -10,6 +10,18 @@ const addressBar = readFileSync(
   new URL("./components/layout/WorkspaceHeader.tsx", import.meta.url),
   "utf8"
 );
+const migratedEditorStyles = readFileSync(
+  new URL("./components/editor/migrated/editor.css", import.meta.url),
+  "utf8"
+);
+const databaseView = readFileSync(
+  new URL("./components/database/DatabaseView.tsx", import.meta.url),
+  "utf8"
+);
+const settingsView = readFileSync(
+  new URL("./components/settings/WorkspaceSettingsView.tsx", import.meta.url),
+  "utf8"
+);
 
 describe("release theme palette", () => {
   it("uses the requested Light and Dark neutral surfaces", () => {
@@ -29,5 +41,23 @@ describe("release theme palette", () => {
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.3);");
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.2);");
     expect(styles).toContain("background: var(--highlight-background);");
+  });
+
+  it("keeps control and highlighted text theme-aware while checkbox marks stay white", () => {
+    expect(
+      styles.match(
+        /--(?:accent|primary|secondary|destructive)-foreground: var\(--foreground\);/gu
+      )
+    ).toHaveLength(4);
+    expect(styles).toContain("color: hsl(var(--foreground));");
+    expect(migratedEditorStyles).toContain(
+      ".prosemirror-editor .ProseMirror mark {\n  background-color: var(--highlight-background);\n  color: hsl(var(--foreground));"
+    );
+    expect(styles).toContain(".rumi-checkbox:checked {");
+    expect(styles).toContain("stroke='white'");
+    expect(databaseView).toContain("rumi-checkbox");
+    expect(settingsView).toContain("rumi-checkbox");
+    expect(databaseView).not.toContain("accent-primary");
+    expect(settingsView).not.toContain("accent-primary");
   });
 });

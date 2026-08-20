@@ -98,7 +98,7 @@ describe("database table presentation", () => {
     expect(markup).toContain('data-database-selection-control="all"');
     expect(databaseViewSource).toContain('data-database-selection-control="record"');
     expect(markup).toContain('aria-label="Select all records"');
-    expect(markup).toContain("accent-primary");
+    expect(markup).toContain("rumi-checkbox");
     expect(markup).toContain("h-3.5 w-3.5");
     expect(databaseViewSource).toContain("grid h-full w-5");
     expect(databaseViewSource).toContain(

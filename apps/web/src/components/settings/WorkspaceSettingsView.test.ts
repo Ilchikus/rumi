@@ -47,7 +47,7 @@ describe("workspace settings page", () => {
 
   it("uses a switch for misspellings, Blue checkboxes for formats, and auto-saves blank as unlimited", () => {
     expect(viewSource).toContain('type="checkbox"');
-    expect(viewSource).toContain("accent-primary");
+    expect(viewSource).toContain("rumi-checkbox");
     expect(viewSource).toContain('trimmedSize === "" ? null');
     expect(viewSource).toContain("Zero disables uploads");
     expect(viewSource).toContain("{extension}");

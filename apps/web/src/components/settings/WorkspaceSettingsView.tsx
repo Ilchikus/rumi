@@ -398,7 +398,7 @@ export function WorkspaceSettingsView({
                   <input
                     type="checkbox"
                     checked={allowedFileTypes.includes(extension)}
-                    className="h-4 w-4 shrink-0 accent-primary"
+                    className="rumi-checkbox h-4 w-4 shrink-0"
                     onChange={() => toggleFileType(extension)}
                   />
                   <span>{extension}</span>

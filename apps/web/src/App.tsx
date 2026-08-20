@@ -1154,6 +1154,28 @@ export function App(): ReactElement {
         return;
       }
 
+      if (action === "open-settings") {
+        pendingHistoryActionRef.current = "push";
+        setSettingsOpen(true);
+        setTrashOpen(false);
+        setActiveTrashPage(null);
+        setMessage("");
+        void loadWorkspaceSettings();
+        if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
+        return;
+      }
+
+      if (action === "open-trash") {
+        pendingHistoryActionRef.current = "push";
+        setSettingsOpen(false);
+        setTrashOpen(true);
+        setActiveTrashPage(null);
+        setMessage("");
+        void loadTrash();
+        if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
+        return;
+      }
+
       if (action === "open-create-menu") {
         setRootCreateMenuOpen(true);
         if (sidebarCollapsed) {
@@ -1174,6 +1196,9 @@ export function App(): ReactElement {
     return () => window.removeEventListener("keydown", handleAppShortcut, true);
   }, [
     copyOpenPageReference,
+    isNarrow,
+    loadTrash,
+    loadWorkspaceSettings,
     page,
     selection,
     settingsOpen,
@@ -3015,6 +3040,8 @@ export function App(): ReactElement {
             onDeleteNode={deleteNode}
             onOpenSettings={openSettings}
             onOpenTrash={openTrash}
+            settingsShortcut={shortcutLabel.settings}
+            trashShortcut={shortcutLabel.trash}
           />
           {!isNarrow && (
             <button

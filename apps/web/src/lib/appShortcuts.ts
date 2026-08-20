@@ -2,6 +2,8 @@ export type AppShortcutPlatform = "mac" | "linux";
 export type AppShortcutAction =
   | "open-create-menu"
   | "toggle-sidebar"
+  | "open-settings"
+  | "open-trash"
   | "copy-page-url"
   | "copy-page-relative-path";
 
@@ -42,11 +44,15 @@ export function appShortcutAction(
   const isS = event.code === "KeyS" || event.key.toLocaleLowerCase() === "s";
   const isC = event.code === "KeyC" || event.key.toLocaleLowerCase() === "c";
   const isP = event.code === "KeyP" || event.key.toLocaleLowerCase() === "p";
+  const isComma = event.code === "Comma" || event.key === "," || event.key === "<";
+  const isBackslash = event.code === "Backslash" || event.key === "\\" || event.key === "|";
   const hasPrimaryModifier = platform === "mac"
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
 
   if (event.shiftKey && !event.altKey && hasPrimaryModifier) {
+    if (isComma) return "open-settings";
+    if (isBackslash) return "open-trash";
     if (isC) return "copy-page-url";
     if (isP) return "copy-page-relative-path";
   }
@@ -124,12 +130,16 @@ export function shortcutLabels(platform: AppShortcutPlatform): {
   immediate: string;
   copyUrl: string;
   copyRelativePath: string;
+  settings: string;
+  trash: string;
 } {
   return platform === "mac"
     ? {
         create: "⌃N",
         sidebar: "⌘S",
         immediate: "⌘↵",
+        settings: "⇧⌘,",
+        trash: "⇧⌘\\",
         copyUrl: "⇧⌘C",
         copyRelativePath: "⇧⌘P"
       }
@@ -137,6 +147,8 @@ export function shortcutLabels(platform: AppShortcutPlatform): {
         create: "Alt+N",
         sidebar: "Ctrl+S",
         immediate: "Ctrl+Enter",
+        settings: "Ctrl+Shift+,",
+        trash: "Ctrl+Shift+\\",
         copyUrl: "Ctrl+Shift+C",
         copyRelativePath: "Ctrl+Shift+P"
       };

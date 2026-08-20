@@ -174,6 +174,8 @@ describe("sidebar settings entry", () => {
       'import { Gear } from "@phosphor-icons/react/dist/csr/Gear"'
     );
     expect(sidebarSource).toContain("onOpenSettings");
+    expect(sidebarSource).toContain("title={`Settings (${settingsShortcut})`}");
+    expect(sidebarSource).toContain("title={`Trash (${trashShortcut})`}");
     expect(sidebarSource.indexOf(">Settings</span>")).toBeLessThan(
       sidebarSource.indexOf(">Trash</span>")
     );

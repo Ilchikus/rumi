@@ -85,6 +85,8 @@ interface SidebarProps {
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
   onOpenSettings: () => void;
   onOpenTrash: () => void;
+  settingsShortcut: string;
+  trashShortcut: string;
 }
 
 export type SidebarCreateKind = "page" | "folder" | "database";
@@ -239,7 +241,9 @@ export function Sidebar({
   onConvertNode,
   onDeleteNode,
   onOpenSettings,
-  onOpenTrash
+  onOpenTrash,
+  settingsShortcut,
+  trashShortcut
 }: SidebarProps): ReactElement {
   const initialExpansionRef = useRef<InitialSidebarExpansion | null>(null);
   if (!initialExpansionRef.current) {
@@ -600,6 +604,7 @@ export function Sidebar({
               : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           onClick={onOpenSettings}
+          title={`Settings (${settingsShortcut})`}
         >
           <span className="grid h-5 w-5 shrink-0 place-items-center"><Gear size={17} /></span>
           <span className="min-w-0 flex-1 truncate">Settings</span>
@@ -612,6 +617,7 @@ export function Sidebar({
           )}
           aria-current={trashOpen ? "page" : undefined}
           onClick={onOpenTrash}
+          title={`Trash (${trashShortcut})`}
         >
           <span className="grid h-5 w-5 shrink-0 place-items-center"><Trash size={17} /></span>
           <span className="min-w-0 flex-1 truncate">Trash</span>

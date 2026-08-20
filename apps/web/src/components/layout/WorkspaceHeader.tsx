@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
 import { Copy } from "@phosphor-icons/react/dist/csr/Copy";
@@ -14,6 +14,7 @@ import { cn } from "../../lib/utils";
 import type { SidebarSelection } from "../sidebar/Sidebar";
 import { MoveNodeDialog } from "../sidebar/Sidebar";
 import { EDITOR_ADDRESS_BAR_CONTAINER_CLASS } from "./EditorPageLayout";
+import { EditorHeaderIconButton } from "./EditorHeaderIconButton";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +38,7 @@ interface WorkspaceHeaderProps {
   copyUrlShortcut: string;
   copyRelativePathShortcut: string;
   onSeeRevisions: () => void;
+  leadingControls: ReactNode;
 }
 
 export interface WorkspaceBreadcrumb {
@@ -60,7 +62,8 @@ export function WorkspaceHeader({
   onCopyRelativePath,
   copyUrlShortcut,
   copyRelativePathShortcut,
-  onSeeRevisions
+  onSeeRevisions,
+  leadingControls
 }: WorkspaceHeaderProps): ReactElement {
   const breadcrumbs = useMemo(
     () => workspaceBreadcrumbs(workspaceName, tree, selection, systemView),
@@ -83,11 +86,15 @@ export function WorkspaceHeader({
 
   return (
     <header
-      className="pointer-events-none absolute inset-x-0 top-0 z-20 min-h-14 bg-transparent py-2.5"
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 min-h-14 bg-background py-2.5"
       data-rumi-workspace-header=""
     >
-      <div className={`${EDITOR_ADDRESS_BAR_CONTAINER_CLASS} pointer-events-auto`}>
-        <div className="relative">
+      <div className="pointer-events-auto grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center px-3">
+        <div className="flex items-center gap-1" data-rumi-header-sidebar-controls="">
+          {leadingControls}
+        </div>
+
+        <div className={`${EDITOR_ADDRESS_BAR_CONTAINER_CLASS} min-w-0`}>
           <div
             data-rumi-address-bar=""
             className="flex h-9 w-full min-w-0 items-center gap-1 rounded-lg bg-surface-subtle px-2 text-sm text-muted-foreground transition-colors hover:bg-accent"
@@ -149,24 +156,20 @@ export function WorkspaceHeader({
                 ⌘ K
               </kbd>
             </button>
-
           </div>
 
+        </div>
+
+        <div className="flex justify-end" data-rumi-header-actions="">
           {(canManageActiveNode || hasOpenPage) && (
-            <div
-              data-rumi-header-actions=""
-              className="absolute left-full top-1/2 -translate-y-1/2 sm:ml-2"
-            >
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent sm:h-7 sm:w-7"
+                  <EditorHeaderIconButton
                     aria-label="File actions"
                     title="File actions"
                   >
                     <DotsThree size={18} weight="bold" />
-                  </button>
+                  </EditorHeaderIconButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {hasOpenPage && (
@@ -212,7 +215,6 @@ export function WorkspaceHeader({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
           )}
         </div>
       </div>

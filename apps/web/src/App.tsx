@@ -10,7 +10,6 @@ import {
 } from "react";
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
-import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { RumiApiClient } from "@rumi/api-client";
 import { toast } from "sonner";
@@ -55,10 +54,19 @@ import { emptyPageTitle, pageTitleFromPath } from "./components/editor/pagePrese
 import {
   EDITOR_PAGE_CONTAINER_CLASS
 } from "./components/layout/EditorPageLayout";
+import {
+  EditorHeaderIconButton,
+  EditorHeaderSidebarIcon
+} from "./components/layout/EditorHeaderIconButton";
 import { WorkspaceHeader } from "./components/layout/WorkspaceHeader";
-import { Sidebar, sidebarCreationParentPath } from "./components/sidebar/Sidebar";
+import {
+  RootCreateMenu,
+  Sidebar,
+  sidebarCreationParentPath
+} from "./components/sidebar/Sidebar";
 import type {
   SidebarCreateKind,
+  SidebarCreateTarget,
   SidebarSelection
 } from "./components/sidebar/Sidebar";
 import { Button } from "./components/ui/button";
@@ -289,6 +297,7 @@ export function App(): ReactElement {
     startupSnapshot?.settings?.uploads.allowedFileTypes ?? []
   );
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
+  const [sidebarCreateTarget, setSidebarCreateTarget] = useState<SidebarCreateTarget | null>(null);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [scrollRestoreRevision, setScrollRestoreRevision] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
@@ -1154,7 +1163,10 @@ export function App(): ReactElement {
       }
 
       const nextCollapsed = !sidebarCollapsed;
-      if (nextCollapsed) setRootCreateMenuOpen(false);
+      if (nextCollapsed) {
+        setRootCreateMenuOpen(false);
+        setSidebarCreateTarget(null);
+      }
       setSidebarCollapsedState(nextCollapsed, setSidebarCollapsed);
     };
 
@@ -2989,15 +3001,8 @@ export function App(): ReactElement {
             trashCount={trashItems.length}
             trashOpen={trashOpen}
             settingsOpen={settingsOpen}
-            collapsed={sidebarCollapsed}
-            rootCreateMenuOpen={rootCreateMenuOpen}
-            creationParentPath={creationParentPath}
-            onToggleCollapsed={() => {
-              const nextCollapsed = !sidebarCollapsed;
-              if (nextCollapsed) setRootCreateMenuOpen(false);
-              setSidebarCollapsedState(nextCollapsed, setSidebarCollapsed);
-            }}
-            onRootCreateMenuOpenChange={setRootCreateMenuOpen}
+            createTarget={sidebarCreateTarget}
+            onCreateTargetChange={setSidebarCreateTarget}
             onPrefetchNode={prefetchNode}
             onOpenNode={(node) => void openNode(node)}
             onCreatePage={createPage}
@@ -3023,31 +3028,7 @@ export function App(): ReactElement {
             />
           )}
         </div>
-      ) : !isNarrow ? (
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="fixed left-3 top-3 z-30 bg-background shadow-sm"
-          onClick={() => setSidebarCollapsedState(false, setSidebarCollapsed)}
-          title={`Open sidebar (${shortcutLabel.sidebar})`}
-        >
-          <SidebarSimple size={17} />
-        </Button>
       ) : null}
-
-      {isNarrow && sidebarCollapsed && !sidebarMounted && (
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="fixed left-3 top-3 z-30 bg-background shadow-sm"
-          onClick={() => setSidebarCollapsedState(false, setSidebarCollapsed)}
-          title={`Open sidebar (${shortcutLabel.sidebar})`}
-        >
-          <SidebarSimple size={17} />
-        </Button>
-      )}
 
       <section
         className={cn(
@@ -3070,6 +3051,42 @@ export function App(): ReactElement {
           copyUrlShortcut={shortcutLabel.copyUrl}
           copyRelativePathShortcut={shortcutLabel.copyRelativePath}
           onSeeRevisions={() => setRevisionHistoryOpen(true)}
+          leadingControls={(
+            <>
+              <RootCreateMenu
+                open={rootCreateMenuOpen}
+                parentPath={creationParentPath}
+                onOpenChange={setRootCreateMenuOpen}
+                onCreate={(parentPath, kind) => {
+                  if (sidebarCollapsed) {
+                    setSidebarCollapsedState(false, setSidebarCollapsed);
+                  }
+                  setSidebarCreateTarget({ parentPath, kind });
+                }}
+                onCreateDefault={async (parentPath, kind) => {
+                  if (sidebarCollapsed) {
+                    setSidebarCollapsedState(false, setSidebarCollapsed);
+                  }
+                  setSidebarCreateTarget(null);
+                  await createDefaultItem(parentPath, kind);
+                }}
+              />
+              <EditorHeaderIconButton
+                aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+                title={`${sidebarCollapsed ? "Open sidebar" : "Close sidebar"} (${shortcutLabel.sidebar})`}
+                onClick={() => {
+                  const nextCollapsed = !sidebarCollapsed;
+                  if (nextCollapsed) {
+                    setRootCreateMenuOpen(false);
+                    setSidebarCreateTarget(null);
+                  }
+                  setSidebarCollapsedState(nextCollapsed, setSidebarCollapsed);
+                }}
+              >
+                <EditorHeaderSidebarIcon collapsed={sidebarCollapsed} />
+              </EditorHeaderIconButton>
+            </>
+          )}
         />
 
         {settingsOpen ? (

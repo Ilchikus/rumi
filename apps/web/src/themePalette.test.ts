@@ -26,11 +26,12 @@ const settingsView = readFileSync(
 describe("release theme palette", () => {
   it("uses the requested Light and Dark neutral surfaces", () => {
     expect(styles).toContain("--background: 0 0% 100%;");
-    expect(styles).toContain("--sidebar: 0 0% 98%;");
+    expect(styles).toContain("--surface-subtle: 0 0% 96.1%;");
     expect(styles).toContain(".dark {");
     expect(styles).toContain("--background: 0 0% 15%;");
     expect(styles.match(/--surface-subtle: 0 0% 25\.1%;/gu)).toHaveLength(1);
-    expect(styles.match(/--sidebar: 0 0% 25\.1%;/gu)).toHaveLength(1);
+    expect(styles.match(/--sidebar: var\(--surface-subtle\);/gu)).toHaveLength(2);
+    expect(styles.match(/--secondary: var\(--surface-subtle\);/gu)).toHaveLength(2);
     expect(sidebar).toContain("bg-sidebar");
     expect(addressBar).toContain("bg-surface-subtle");
   });

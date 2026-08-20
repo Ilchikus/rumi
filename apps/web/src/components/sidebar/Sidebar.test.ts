@@ -109,7 +109,7 @@ describe("sidebar create-menu shortcuts", () => {
 
   it("passes the contextual parent to named and immediate root-menu creation", () => {
     expect(appSource).toContain("sidebarCreationParentPath(tree, selection)");
-    expect(appSource).toContain("creationParentPath={creationParentPath}");
+    expect(appSource).toContain("parentPath={creationParentPath}");
     expect(sidebarSource).toContain("onCreate(parentPath, option.kind)");
     expect(sidebarSource).toContain("onCreateDefault(parentPath, kind)");
   });

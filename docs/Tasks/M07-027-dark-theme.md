@@ -59,6 +59,10 @@ event and re-render with Mermaid's matching built-in theme.
 The final foreground pass keeps button labels and highlighted prose on the active theme foreground,
 while checked and indeterminate Sky controls use explicit white marks in both themes.
 
+The release header pass restores its opaque theme background, moves Create and Sidebar controls to
+the left of the editor header, keeps page actions right-aligned outside the address bar, and shares
+one borderless icon-button component across all three controls.
+
 ## Done When
 
 The full release checks pass, browser QA covers Light, Dark, and Auto at desktop and narrow widths,

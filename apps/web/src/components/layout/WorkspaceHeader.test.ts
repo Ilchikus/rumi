@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { WorkspaceHeader, workspaceBreadcrumbs } from "./WorkspaceHeader";
 
+const headerSource = readFileSync(new URL("./WorkspaceHeader.tsx", import.meta.url), "utf8");
+const headerControlSource = readFileSync(
+  new URL("./EditorHeaderIconButton.tsx", import.meta.url),
+  "utf8"
+);
+const sidebarSource = readFileSync(new URL("../sidebar/Sidebar.tsx", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
+
 const page: WorkspaceNode = {
   path: "Projects/Launch plan.md",
   name: "Launch plan.md",
@@ -59,13 +67,14 @@ describe("workspace address bar", () => {
         onCopyRelativePath: () => undefined,
         copyUrlShortcut: "⇧⌘C",
         copyRelativePathShortcut: "⇧⌘P",
-        onSeeRevisions: () => undefined
+        onSeeRevisions: () => undefined,
+        leadingControls: createElement("button", { "aria-label": "Create new" }, "+")
       })
     );
 
     expect(markup).toContain('aria-label="Current location"');
     expect(markup).toContain('data-rumi-workspace-header=""');
-    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("bg-background");
     expect(markup).toContain("absolute inset-x-0 top-0");
     expect(markup).toContain("pointer-events-none");
     expect(markup).toContain("pointer-events-auto");
@@ -76,7 +85,10 @@ describe("workspace address bar", () => {
     expect(markup).toContain('aria-label="Toggle search (Command K)"');
     expect(markup).toContain("⌘ K");
     expect(markup).toContain('data-rumi-header-actions=""');
-    expect(markup).toContain("absolute left-full");
+    expect(markup).toContain("justify-end");
+    expect(markup).toContain('data-rumi-header-sidebar-controls=""');
+    expect(markup).toContain('aria-label="Create new"');
+    expect(markup).not.toContain("absolute left-full");
     expect(markup).toContain('aria-label="File actions"');
     expect(markup).not.toContain(">History<");
     expect(markup).toContain("max-w-[820px]");
@@ -84,14 +96,24 @@ describe("workspace address bar", () => {
   });
 
   it("wires URL and relative-path actions into the current-page menu", () => {
-    const source = readFileSync(new URL("./WorkspaceHeader.tsx", import.meta.url), "utf8");
+    expect(headerSource).toContain("Copy URL");
+    expect(headerSource).toContain("Copy relative path");
+    expect(headerSource).toContain("onCopyUrl");
+    expect(headerSource).toContain("onCopyRelativePath");
+    expect(headerSource).toContain("copyUrlShortcut");
+    expect(headerSource).toContain("copyRelativePathShortcut");
+  });
 
-    expect(source).toContain("Copy URL");
-    expect(source).toContain("Copy relative path");
-    expect(source).toContain("onCopyUrl");
-    expect(source).toContain("onCopyRelativePath");
-    expect(source).toContain("copyUrlShortcut");
-    expect(source).toContain("copyRelativePathShortcut");
+  it("shares one borderless control across create, sidebar, and page actions", () => {
+    expect(headerControlSource).toContain("h-8 w-8");
+    expect(headerControlSource).toContain("border-0 bg-transparent");
+    expect(headerControlSource).toContain('collapsed ? "regular" : "fill"');
+    expect(headerControlSource).toContain('collapsed ? "fill" : "regular"');
+    expect(headerControlSource).toContain("group-hover:opacity-0");
+    expect(headerControlSource).toContain("group-hover:opacity-100");
+    expect(sidebarSource).toContain("<EditorHeaderIconButton aria-label=\"Create new\"");
+    expect(appSource).toContain("<EditorHeaderIconButton");
+    expect(headerSource).toContain("<EditorHeaderIconButton");
   });
 
   it("shows Trash as the current address without treating it as a workspace file", () => {

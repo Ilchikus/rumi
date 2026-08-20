@@ -12,7 +12,6 @@ import { Gear } from "@phosphor-icons/react/dist/csr/Gear";
 import { NotePencil } from "@phosphor-icons/react/dist/csr/NotePencil";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
-import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
@@ -45,6 +44,7 @@ import {
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
+import { EditorHeaderIconButton } from "../layout/EditorHeaderIconButton";
 import {
   readSidebarExpandedPaths,
   shouldRevealSelectionAncestors,
@@ -71,17 +71,14 @@ interface SidebarProps {
   trashCount: number;
   trashOpen: boolean;
   settingsOpen: boolean;
-  collapsed: boolean;
-  rootCreateMenuOpen: boolean;
-  onToggleCollapsed: () => void;
-  onRootCreateMenuOpenChange: (open: boolean) => void;
+  createTarget: SidebarCreateTarget | null;
+  onCreateTargetChange: (target: SidebarCreateTarget | null) => void;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
   onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onCreateDefault: (parentPath: string, kind: SidebarCreateKind) => Promise<void>;
-  creationParentPath: string;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
   onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
@@ -178,7 +175,7 @@ const TREE_ROW_PADDING_PX = 14;
 const CREATE_ROW_PADDING_PX = 39;
 const ENTITY_ICON_CLASS = "text-neutral-400";
 
-interface CreateTarget {
+export interface SidebarCreateTarget {
   parentPath: string;
   kind: CreateKind;
 }
@@ -229,17 +226,14 @@ export function Sidebar({
   trashCount,
   trashOpen,
   settingsOpen,
-  collapsed,
-  rootCreateMenuOpen,
-  onToggleCollapsed,
-  onRootCreateMenuOpenChange,
+  createTarget,
+  onCreateTargetChange,
   onPrefetchNode,
   onOpenNode,
   onCreatePage,
   onCreateFolder,
   onCreateDatabase,
   onCreateDefault,
-  creationParentPath,
   onRenameNode,
   onMoveNode,
   onConvertNode,
@@ -247,8 +241,6 @@ export function Sidebar({
   onOpenSettings,
   onOpenTrash
 }: SidebarProps): ReactElement {
-  const shortcutPlatform = appShortcutPlatform();
-  const labels = shortcutLabels(shortcutPlatform);
   const initialExpansionRef = useRef<InitialSidebarExpansion | null>(null);
   if (!initialExpansionRef.current) {
     initialExpansionRef.current = initialSidebarExpansion(tree, workspaceKey);
@@ -262,7 +254,6 @@ export function Sidebar({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
     () => initialExpansion.paths
   );
-  const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [floatingMenu, setFloatingMenu] = useState<FloatingMenu | null>(null);
   const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
@@ -315,6 +306,15 @@ export function Sidebar({
   }, [workspaceKey]);
 
   useEffect(() => {
+    if (!createTarget) return;
+    setFloatingMenu(null);
+    setRenamingPath(null);
+    if (createTarget.parentPath) {
+      updateExpandedPaths((current) => new Set(current).add(createTarget.parentPath));
+    }
+  }, [createTarget, updateExpandedPaths]);
+
+  useEffect(() => {
     if (!tree || initializedExpansionScope.current === workspaceKey) {
       return;
     }
@@ -361,51 +361,51 @@ export function Sidebar({
   const startCreate = useCallback((parentPath: string, kind: CreateKind) => {
     setFloatingMenu(null);
     setRenamingPath(null);
-    setCreateTarget({ parentPath, kind });
+    onCreateTargetChange({ parentPath, kind });
 
     if (parentPath) {
       updateExpandedPaths((current) => new Set(current).add(parentPath));
     }
-  }, [updateExpandedPaths]);
+  }, [onCreateTargetChange, updateExpandedPaths]);
 
   const createDefault = useCallback((parentPath: string, kind: CreateKind) => {
     setFloatingMenu(null);
     setRenamingPath(null);
-    setCreateTarget(null);
+    onCreateTargetChange(null);
 
     if (parentPath) {
       updateExpandedPaths((current) => new Set(current).add(parentPath));
     }
 
     return onCreateDefault(parentPath, kind);
-  }, [onCreateDefault, updateExpandedPaths]);
+  }, [onCreateDefault, onCreateTargetChange, updateExpandedPaths]);
 
   const startRename = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
+    onCreateTargetChange(null);
     setRenamingPath(node.path);
-  }, []);
+  }, [onCreateTargetChange]);
 
   const requestDelete = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
+    onCreateTargetChange(null);
     setRenamingPath(null);
     void onDeleteNode(node);
-  }, [onDeleteNode]);
+  }, [onCreateTargetChange, onDeleteNode]);
 
   const requestMove = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
+    onCreateTargetChange(null);
     setRenamingPath(null);
     setMoveTarget(node);
-  }, []);
+  }, [onCreateTargetChange]);
 
   const requestConvert = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
+    onCreateTargetChange(null);
     setRenamingPath(null);
     setConvertTarget(node);
-  }, []);
+  }, [onCreateTargetChange]);
 
   const confirmMove = useCallback(async (newParentPath: string) => {
     if (!moveTarget || moveBusy) {
@@ -493,7 +493,7 @@ export function Sidebar({
             depth={row.depth}
             kind={row.kind}
             parentPath={row.parentPath}
-            onCancel={() => setCreateTarget(null)}
+            onCancel={() => onCreateTargetChange(null)}
             onCreatePage={onCreatePage}
             onCreateFolder={onCreateFolder}
             onCreateDatabase={onCreateDatabase}
@@ -531,7 +531,7 @@ export function Sidebar({
   return (
     <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-sidebar text-foreground">
       <header className="relative z-30 bg-sidebar px-3 pb-5 pt-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <h1 className="min-w-0">
             <button
               type="button"
@@ -552,24 +552,6 @@ export function Sidebar({
               <span className="truncate text-lg font-semibold">{workspaceName}</span>
             </button>
           </h1>
-          <div className="flex shrink-0 gap-1">
-            <RootCreateMenu
-              open={rootCreateMenuOpen}
-              parentPath={creationParentPath}
-              onOpenChange={onRootCreateMenuOpenChange}
-              onCreate={startCreate}
-              onCreateDefault={createDefault}
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={onToggleCollapsed}
-              title={`${collapsed ? "Open sidebar" : "Close sidebar"} (${labels.sidebar})`}
-            >
-              <SidebarSimple size={17} />
-            </Button>
-          </div>
         </div>
       </header>
 
@@ -583,7 +565,7 @@ export function Sidebar({
               target={createTarget}
               parentPath=""
               depth={0}
-              onCancel={() => setCreateTarget(null)}
+              onCancel={() => onCreateTargetChange(null)}
               onCreatePage={onCreatePage}
               onCreateFolder={onCreateFolder}
               onCreateDatabase={onCreateDatabase}
@@ -938,7 +920,7 @@ function TreeDepthGuides({
   );
 }
 
-function RootCreateMenu({
+export function RootCreateMenu({
   open,
   parentPath,
   onOpenChange,
@@ -985,12 +967,12 @@ function RootCreateMenu({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" size="icon" variant="ghost" title={`Create (${labels.create})`}>
+        <EditorHeaderIconButton aria-label="Create new" title={`Create (${labels.create})`}>
           <Plus size={17} />
-        </Button>
+        </EditorHeaderIconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
+        align="start"
         className="min-w-48"
         onKeyDown={(event) => {
           const numberAction = createMenuNumberAction(
@@ -1404,7 +1386,7 @@ function CreateSlot({
   onCreateFolder,
   onCreateDatabase
 }: {
-  target: CreateTarget | null;
+  target: SidebarCreateTarget | null;
   parentPath: string;
   depth: number;
   onCancel: () => void;
@@ -1700,7 +1682,7 @@ function EntityIcon({
 function flattenVisibleTreeRows(
   nodes: WorkspaceNode[],
   expandedPaths: ReadonlySet<string>,
-  createTarget: CreateTarget | null,
+  createTarget: SidebarCreateTarget | null,
   depth = 0,
   rows: VisibleTreeRow[] = []
 ): VisibleTreeRow[] {

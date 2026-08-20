@@ -529,8 +529,8 @@ export function Sidebar({
   };
 
   return (
-    <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-neutral-50 text-foreground">
-      <header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">
+    <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-sidebar text-foreground">
+      <header className="relative z-30 bg-sidebar px-3 pb-5 pt-3">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0">
             <button
@@ -614,7 +614,7 @@ export function Sidebar({
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
             settingsOpen
-              ? "bg-neutral-100 text-accent-foreground"
+              ? "bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           onClick={onOpenSettings}
@@ -626,7 +626,7 @@ export function Sidebar({
           type="button"
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
-            trashOpen ? "bg-neutral-100 text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            trashOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           aria-current={trashOpen ? "page" : undefined}
           onClick={onOpenTrash}
@@ -743,9 +743,9 @@ function TreeNode({
     <div
       className={cn(
         "rumi-sidebar-node group relative flex h-8 items-center gap-1 rounded-md pr-3 text-sm",
-        isActiveAncestor && "pointer-events-auto bg-neutral-50 hover:bg-accent",
+        isActiveAncestor && "pointer-events-auto bg-sidebar hover:bg-accent",
         !isActiveAncestor && !isSelected && "hover:bg-accent",
-        isSelected && "bg-neutral-100 text-accent-foreground"
+        isSelected && "bg-accent text-accent-foreground"
       )}
       style={{
         paddingLeft: TREE_ROW_PADDING_PX + depth * TREE_INDENT_PX,

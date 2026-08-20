@@ -8,16 +8,16 @@ import type { ReactElement } from "react";
 import { cn } from "../../lib/utils";
 
 const OPTION_COLOR_CLASSES: Record<DatabasePropertyOptionColor, string> = {
-  neutral: "border-neutral-300 bg-neutral-100 text-neutral-600",
-  blue: "border-blue-300 bg-blue-100 text-blue-600",
-  orange: "border-orange-300 bg-orange-100 text-orange-600",
-  rose: "border-rose-300 bg-rose-100 text-rose-600",
-  yellow: "border-yellow-300 bg-yellow-100 text-yellow-600",
-  teal: "border-teal-300 bg-teal-100 text-teal-600",
-  violet: "border-violet-300 bg-violet-100 text-violet-600",
-  lime: "border-lime-300 bg-lime-100 text-lime-600",
-  cyan: "border-cyan-300 bg-cyan-100 text-cyan-600",
-  fuchsia: "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-600"
+  neutral: "border-neutral-300 bg-neutral-100 text-neutral-600 dark:border-neutral-500 dark:bg-neutral-600 dark:text-neutral-100",
+  blue: "border-blue-300 bg-blue-100 text-blue-600 dark:border-blue-400/60 dark:bg-blue-400/20 dark:text-blue-200",
+  orange: "border-orange-300 bg-orange-100 text-orange-600 dark:border-orange-400/60 dark:bg-orange-400/20 dark:text-orange-200",
+  rose: "border-rose-300 bg-rose-100 text-rose-600 dark:border-rose-400/60 dark:bg-rose-400/20 dark:text-rose-200",
+  yellow: "border-yellow-300 bg-yellow-100 text-yellow-600 dark:border-yellow-400/60 dark:bg-yellow-400/20 dark:text-yellow-200",
+  teal: "border-teal-300 bg-teal-100 text-teal-600 dark:border-teal-400/60 dark:bg-teal-400/20 dark:text-teal-200",
+  violet: "border-violet-300 bg-violet-100 text-violet-600 dark:border-violet-400/60 dark:bg-violet-400/20 dark:text-violet-200",
+  lime: "border-lime-300 bg-lime-100 text-lime-600 dark:border-lime-400/60 dark:bg-lime-400/20 dark:text-lime-200",
+  cyan: "border-cyan-300 bg-cyan-100 text-cyan-600 dark:border-cyan-400/60 dark:bg-cyan-400/20 dark:text-cyan-200",
+  fuchsia: "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-600 dark:border-fuchsia-400/60 dark:bg-fuchsia-400/20 dark:text-fuchsia-200"
 };
 
 export interface DatabaseOptionPillProps {

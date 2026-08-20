@@ -201,7 +201,7 @@ class BlockDragHandleView {
     this.styleEl.textContent = `
       .ProseMirror .ProseMirror-selectednode {
         outline: none !important;
-        background: hsl(213, 94%, 95%);
+        background: var(--selection-background);
         border-radius: 4px;
       }
       .block-drag-ghost {
@@ -209,7 +209,7 @@ class BlockDragHandleView {
         pointer-events: none;
         z-index: 102;
         opacity: 0.5;
-        background: white;
+        background: hsl(var(--background));
         border-radius: 4px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         overflow: hidden;
@@ -218,7 +218,8 @@ class BlockDragHandleView {
       .block-context-menu {
         position: fixed;
         z-index: 200;
-        background: #fff;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
         border: 1px solid hsl(var(--border));
         border-radius: 8px;
         padding: 4px;
@@ -305,7 +306,7 @@ class BlockDragHandleView {
         position: fixed;
         pointer-events: none;
         z-index: 50;
-        background: hsl(213, 94%, 55%, 0.2);
+        background: hsl(var(--primary) / 0.2);
         border: 0;
         border-radius: 4px;
       }
@@ -377,13 +378,13 @@ class BlockDragHandleView {
       border-radius: 4px;
       user-select: none;
       z-index: 100;
-      color: hsl(215.4, 16.3%, 46.9%);
+      color: hsl(var(--muted-foreground));
       transition: background 150ms;
     `
     el.innerHTML = GRIP_SVG
 
     el.addEventListener("mouseenter", () => {
-      el.style.background = "hsl(210, 40%, 96.1%)"
+      el.style.background = "hsl(var(--accent))"
     })
     el.addEventListener("mouseleave", () => {
       el.style.background = "transparent"
@@ -418,18 +419,18 @@ class BlockDragHandleView {
       border-radius: 4px;
       user-select: none;
       z-index: 100;
-      color: hsl(215.4, 16.3%, 46.9%);
+      color: hsl(var(--muted-foreground));
       transition: background 150ms, color 150ms;
     `
     el.innerHTML = PLUS_SVG
 
     el.addEventListener("mouseenter", () => {
-      el.style.background = "hsl(210, 40%, 96.1%)"
+      el.style.background = "hsl(var(--accent))"
       el.style.color = "hsl(var(--foreground))"
     })
     el.addEventListener("mouseleave", () => {
       el.style.background = "transparent"
-      el.style.color = "hsl(215.4, 16.3%, 46.9%)"
+      el.style.color = "hsl(var(--muted-foreground))"
     })
     el.addEventListener("mousedown", (event) => {
       event.preventDefault()
@@ -445,7 +446,7 @@ class BlockDragHandleView {
     el.style.cssText = `
       position: fixed;
       height: 2px;
-      background: hsl(222.2, 47.4%, 41.2%);
+      background: hsl(var(--primary));
       border-radius: 1px;
       display: none;
       z-index: 101;
@@ -458,7 +459,7 @@ class BlockDragHandleView {
     const el = document.createElement("div")
     el.style.cssText = `
       position: fixed;
-      background: hsl(213, 94%, 95%);
+      background: var(--selection-background);
       border-radius: 4px;
       pointer-events: none;
       z-index: 101;
@@ -1705,7 +1706,7 @@ class BlockDragHandleView {
       if (this.draggedMultiBlocks && this.draggedMultiBlocks.length > 1) {
         // Add a badge showing count of blocks being dragged
         const badge = document.createElement("div")
-        badge.style.cssText = `position:absolute;top:4px;right:4px;background:hsl(222.2,47.4%,41.2%);color:white;border-radius:10px;padding:1px 6px;font-size:11px;font-weight:600;`
+        badge.style.cssText = `position:absolute;top:4px;right:4px;background:hsl(var(--primary));color:hsl(var(--primary-foreground));border-radius:10px;padding:1px 6px;font-size:11px;font-weight:600;`
         badge.textContent = String(this.draggedMultiBlocks.length)
         ghost.style.position = "relative"
         ghost.appendChild(badge)

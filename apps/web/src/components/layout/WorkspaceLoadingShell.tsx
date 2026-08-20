@@ -21,8 +21,8 @@ export function WorkspaceLoadingShell(): ReactElement {
       {!sidebarCollapsed ? (
         <aside
           className={isNarrow
-            ? "fixed inset-y-0 left-0 z-40 h-screen min-h-0 border-r border-border bg-neutral-50 shadow-xl"
-            : "h-screen min-h-0 shrink-0 border-r border-border bg-neutral-50"
+            ? "fixed inset-y-0 left-0 z-40 h-screen min-h-0 border-r border-border bg-sidebar shadow-xl"
+            : "h-screen min-h-0 shrink-0 border-r border-border bg-sidebar"
           }
           style={{ width: sidebarWidth }}
           aria-hidden="true"

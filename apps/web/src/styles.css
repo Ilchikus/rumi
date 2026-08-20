@@ -7,20 +7,64 @@
     --background: 0 0% 100%;
     --foreground: 0 0% 9%;
     --surface-subtle: 0 0% 96.1%;
+    --sidebar: 0 0% 98%;
     --muted: var(--surface-subtle);
     --muted-foreground: 0 0% 45%;
     --accent: var(--surface-subtle);
     --accent-foreground: 0 0% 9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 199 89% 48%;
+    --primary-hover: 198 93% 60%;
+    --primary-foreground: 0 0% 9%;
     --secondary: var(--surface-subtle);
     --secondary-foreground: 0 0% 9%;
-    --destructive: 0 0% 9%;
+    --destructive: 347 77% 50%;
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 90%;
     --input: 0 0% 83%;
-    --ring: 0 0% 64%;
+    --ring: var(--primary);
+    --popover-foreground: var(--foreground);
+    --highlight-background: hsl(48 96% 53% / 0.3);
+    --selection-background: hsl(199 89% 48% / 0.14);
+    --selection-strong: hsl(199 89% 48% / 0.42);
+    --inline-code: 347 77% 40%;
+    --syntax-keyword: 271 43% 50%;
+    --syntax-string: 81 100% 27%;
+    --syntax-number: 28 91% 54%;
+    --syntax-comment: 0 0% 55%;
+    --syntax-title: 214 45% 47%;
+    --syntax-attribute: 0 66% 47%;
     --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 15%;
+    --foreground: 0 0% 96.1%;
+    --surface-subtle: 0 0% 25.1%;
+    --sidebar: 0 0% 25.1%;
+    --muted: var(--surface-subtle);
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 32.2%;
+    --accent-foreground: 0 0% 98%;
+    --primary: 199 89% 48%;
+    --primary-hover: 198 93% 60%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 25.1%;
+    --secondary-foreground: 0 0% 96.1%;
+    --destructive: 350 89% 60%;
+    --destructive-foreground: 0 0% 9%;
+    --border: 0 0% 32.2%;
+    --input: 0 0% 45.1%;
+    --ring: var(--primary);
+    --highlight-background: hsl(48 96% 53% / 0.2);
+    --selection-background: hsl(199 89% 48% / 0.22);
+    --selection-strong: hsl(198 93% 60% / 0.58);
+    --inline-code: 343 88% 71%;
+    --syntax-keyword: 258 90% 76%;
+    --syntax-string: 82 85% 67%;
+    --syntax-number: 31 97% 72%;
+    --syntax-comment: 0 0% 63.9%;
+    --syntax-title: 199 95% 74%;
+    --syntax-attribute: 351 94% 81%;
   }
 
   * {
@@ -35,6 +79,10 @@
     -moz-osx-font-smoothing: grayscale;
     font-family:
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
   }
 
   button,
@@ -374,7 +422,7 @@
   .rumi-prosemirror .rumi-inline-code-pending {
     border-radius: 0.25rem;
     background: hsl(var(--surface-subtle));
-    color: #be123c;
+    color: hsl(var(--inline-code));
     padding: 0.08rem 0.25rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 0.9em;
@@ -394,7 +442,7 @@
 
   .rumi-prosemirror mark {
     border-radius: 0.15rem;
-    background: hsl(var(--muted));
+    background: var(--highlight-background);
     padding: 0 0.08rem;
   }
 
@@ -535,6 +583,6 @@
     position: absolute;
     inset: 0;
     content: "";
-    background: hsl(213, 94%, 95%);
+    background: var(--selection-background);
   }
 }

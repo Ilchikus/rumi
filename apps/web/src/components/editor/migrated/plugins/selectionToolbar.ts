@@ -422,7 +422,7 @@ export function selectionToolbarPlugin(
           font-style: ${btn.name === "italic" ? "italic" : "normal"};
           text-decoration: ${btn.name === "underline" ? "underline" : btn.name === "strikethrough" ? "line-through" : "none"};
           font-size: 14px;
-          color: hsl(222.2, 84%, 4.9%);
+          color: hsl(var(--foreground));
           display: flex;
           align-items: center;
           justify-content: center;
@@ -450,7 +450,7 @@ export function selectionToolbarPlugin(
         highlightBtn.style.cssText = `
           width: 28px; height: 28px; border: none; background: transparent;
           border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;
-          color: hsl(222.2, 84%, 4.9%); display: flex; flex-direction: column;
+          color: hsl(var(--foreground)); display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 1px;
         `
 
@@ -460,7 +460,7 @@ export function selectionToolbarPlugin(
 
         const highlightIndicator = document.createElement("div")
         highlightIndicator.className = "highlight-indicator"
-        highlightIndicator.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: #fef08a;`
+        highlightIndicator.style.cssText = `width: 14px; height: 4px; border-radius: 1px; background: var(--highlight-background);`
 
         highlightBtn.appendChild(letterA)
         highlightBtn.appendChild(highlightIndicator)
@@ -493,7 +493,7 @@ export function selectionToolbarPlugin(
         linkBtn.style.cssText = `
           width: 28px; height: 28px; border: none; background: transparent;
           border-radius: 4px; cursor: pointer; display: flex;
-          align-items: center; justify-content: center; color: hsl(222.2, 84%, 4.9%);
+          align-items: center; justify-content: center; color: hsl(var(--foreground));
         `
 
         // Link input popup
@@ -501,7 +501,7 @@ export function selectionToolbarPlugin(
         linkPopup.className = "link-input-popup"
         linkPopup.style.cssText = `
           position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-          margin-top: 8px; background: white; border: 1px solid hsl(214.3, 31.8%, 91.4%);
+          margin-top: 8px; background: hsl(var(--background)); border: 1px solid hsl(var(--border));
           border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
           padding: 8px; display: none; width: 360px; max-width: calc(100vw - 32px);
         `
@@ -519,8 +519,9 @@ export function selectionToolbarPlugin(
         linkTextInput.placeholder = "Link text..."
         linkTextInput.style.cssText = `
           display: none; width: 100%; box-sizing: border-box; margin-bottom: 8px;
-          padding: 6px 10px; border: 1px solid hsl(214.3, 31.8%, 91.4%);
-          border-radius: 6px; font-size: 13px; outline: none;
+          padding: 6px 10px; border: 1px solid hsl(var(--input));
+          border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground));
+          font-size: 13px; outline: none;
         `
 
         const linkInput = document.createElement("input")
@@ -530,8 +531,9 @@ export function selectionToolbarPlugin(
         linkInput.setAttribute("aria-autocomplete", "inline")
         linkInput.style.cssText = `
           position: relative; width: 100%; box-sizing: border-box; padding: 6px 0 5px;
-          border: 0; border-bottom: 1px solid hsl(214.3, 31.8%, 91.4%);
-          background: transparent; border-radius: 0; font-size: 13px;
+          border: 0; border-bottom-width: 1px; border-bottom-style: solid;
+          border-bottom-color: hsl(var(--border));
+          background: transparent; color: hsl(var(--foreground)); border-radius: 0; font-size: 13px;
           font-weight: 400; line-height: 18px; outline: none;
         `
 
@@ -553,13 +555,13 @@ export function selectionToolbarPlugin(
         const linkSuggestionSuffix = document.createElement("span")
         const linkSuggestionBeforeMatch = document.createElement("span")
         linkSuggestionBeforeMatch.className = "link-url-suggestion-muted"
-        linkSuggestionBeforeMatch.style.color = "hsl(215, 16%, 57%)"
+        linkSuggestionBeforeMatch.style.color = "hsl(var(--muted-foreground))"
         const linkSuggestionMatch = document.createElement("span")
         linkSuggestionMatch.className = "link-url-suggestion-match"
-        linkSuggestionMatch.style.color = "#0f172a"
+        linkSuggestionMatch.style.color = "hsl(var(--foreground))"
         const linkSuggestionAfterMatch = document.createElement("span")
         linkSuggestionAfterMatch.className = "link-url-suggestion-muted"
-        linkSuggestionAfterMatch.style.color = "hsl(215, 16%, 57%)"
+        linkSuggestionAfterMatch.style.color = "hsl(var(--muted-foreground))"
         linkSuggestionSuffix.append(
           linkSuggestionBeforeMatch,
           linkSuggestionMatch,
@@ -608,7 +610,8 @@ export function selectionToolbarPlugin(
         linkApplyBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg>`
         linkApplyBtn.style.cssText = `
           width: 28px; height: 28px; flex: 0 0 28px; padding: 0;
-          background: #0284c7; color: white; border: 1px solid #0284c7;
+          background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+          border: 1px solid hsl(var(--primary));
           border-radius: 6px; cursor: pointer; display: inline-flex;
           align-items: center; justify-content: center;
         `
@@ -618,8 +621,8 @@ export function selectionToolbarPlugin(
         for (const actionButton of [linkCopyBtn, linkOpenBtn, linkUnlinkBtn]) {
           actionButton.style.cssText = `
             width: 28px; height: 28px; flex: 0 0 28px; padding: 0;
-            background: transparent; color: hsl(222.2, 47.4%, 11.2%);
-            border: 1px solid hsl(214.3, 31.8%, 91.4%);
+            background: transparent; color: hsl(var(--foreground));
+            border: 1px solid hsl(var(--border));
             border-radius: 6px; cursor: pointer; display: inline-flex;
             align-items: center; justify-content: center;
           `
@@ -1132,7 +1135,7 @@ export function selectionToolbarPlugin(
           const button = container.querySelector(`[data-mark="${btn.mark}"]`) as HTMLElement
           if (button) {
             const markType = schema.marks[btn.mark]
-            button.style.background = isInlineMarkActive(state, markType) ? "hsl(210, 40%, 96.1%)" : "transparent"
+            button.style.background = isInlineMarkActive(state, markType) ? "hsl(var(--accent))" : "transparent"
           }
         })
 
@@ -1140,14 +1143,14 @@ export function selectionToolbarPlugin(
         const highlightBtn = container.querySelector(".highlight-btn") as HTMLElement
         if (highlightBtn && schema.marks.highlight) {
           const markType = schema.marks.highlight
-          highlightBtn.style.background = isInlineMarkActive(state, markType) ? "hsl(210, 40%, 96.1%)" : "transparent"
+          highlightBtn.style.background = isInlineMarkActive(state, markType) ? "hsl(var(--accent))" : "transparent"
         }
 
         // Update link button
         const linkBtn = container.querySelector(".link-btn") as HTMLElement
         if (linkBtn && schema.marks.link) {
           const markType = schema.marks.link
-          linkBtn.style.background = isInlineMarkActive(state, markType) ? "hsl(210, 40%, 96.1%)" : "transparent"
+          linkBtn.style.background = isInlineMarkActive(state, markType) ? "hsl(var(--accent))" : "transparent"
         }
       }
 

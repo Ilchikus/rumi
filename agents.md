@@ -139,11 +139,13 @@ For menus, dialogs, popovers, inputs, buttons, and similar UI, first look for an
 
 ## Frontend Color Rule
 
-Default the official web client to Tailwind's neutral palette, plus white and black. Sky 600 is the
-product accent for checked checkboxes and other explicitly accented interactive states. Do not
+Default the official web client to Tailwind's neutral palette, plus white and black. Sky 500 is the
+product accent for checked checkboxes and other explicitly accented interactive states; Sky 400 is
+the related hover color. Do not
 introduce other colored palettes for general layout, controls, borders, messages, decoration, or
-entity icons unless a product decision explicitly calls for color. Rose 700 is reserved for inline
-code text, while Rose 600 is reserved for explicit destructive hover emphasis.
+entity icons unless a product decision explicitly calls for color. Theme-aware Rose is reserved for
+inline code text, while the semantic destructive token is reserved for explicit destructive hover
+emphasis.
 
 Sidebar entity icons use neutral `400` Phosphor outline icons: file for page, folder/folder-open for collapsed/expanded folders and workspaces, and table for database.
 

@@ -43,7 +43,7 @@ describe("TrashView", () => {
     expect(markup).toContain("Delete");
     expect(markup).not.toContain("Delete forever");
     expect(viewSource).toContain("forever. This action is irreversible.");
-    expect(markup).toContain("hover:text-rose-600");
+    expect(markup).toContain("hover:text-destructive");
     expect(markup).toContain("Deleted page.md");
     expect(markup).toContain("Command/Control-click to restore and open");
     expect(viewSource).toContain("isViewableItem(item.kind) && (event.metaKey || event.ctrlKey)");

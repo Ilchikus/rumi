@@ -175,7 +175,7 @@
 }
 
 .prosemirror-editor .ProseMirror :not(pre) > code {
-  color: #be123c;
+  color: hsl(var(--inline-code));
 }
 
 .prosemirror-editor .ProseMirror-focused {
@@ -206,7 +206,7 @@
 }
 
 .prosemirror-editor .ProseMirror li::marker {
-  color: #d4d4d4;
+  color: hsl(var(--muted-foreground));
 }
 
 .prosemirror-editor .ProseMirror ol li::marker {
@@ -327,18 +327,18 @@
 }
 
 .prosemirror-editor .ProseMirror .selectedCell {
-  background: hsl(213, 94%, 95%);
+  background: var(--selection-background);
 }
 
 .prosemirror-editor .ProseMirror .selectedCell::after {
-  background: hsl(213, 94%, 95%);
+  background: var(--selection-background);
 }
 
 .prosemirror-editor .ProseMirror > .tableWrapper.ProseMirror-selectednode > table th,
 .prosemirror-editor .ProseMirror > .tableWrapper.ProseMirror-selectednode > table td,
 .prosemirror-editor .ProseMirror > .tableWrapper.multi-block-selected > table th,
 .prosemirror-editor .ProseMirror > .tableWrapper.multi-block-selected > table td {
-  background: hsl(213, 94%, 95%);
+  background: var(--selection-background);
 }
 
 .prosemirror-editor .ProseMirror .column-resize-handle {
@@ -347,7 +347,7 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background: hsl(222.2, 47.4%, 41.2%);
+  background: hsl(var(--primary));
   pointer-events: none;
   z-index: 20;
 }
@@ -396,42 +396,42 @@
 .prosemirror-editor .ProseMirror pre code .hljs-keyword,
 .prosemirror-editor .ProseMirror pre code .hljs-selector-tag,
 .prosemirror-editor .ProseMirror pre code .hljs-built_in {
-  color: #8959a8;
+  color: hsl(var(--syntax-keyword));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-string,
 .prosemirror-editor .ProseMirror pre code .hljs-addition {
-  color: #718c00;
+  color: hsl(var(--syntax-string));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-number,
 .prosemirror-editor .ProseMirror pre code .hljs-literal {
-  color: #f5871f;
+  color: hsl(var(--syntax-number));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-comment,
 .prosemirror-editor .ProseMirror pre code .hljs-quote {
-  color: #8e908c;
+  color: hsl(var(--syntax-comment));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-title,
 .prosemirror-editor .ProseMirror pre code .hljs-section {
-  color: #4271ae;
+  color: hsl(var(--syntax-title));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-attr,
 .prosemirror-editor .ProseMirror pre code .hljs-attribute {
-  color: #c82829;
+  color: hsl(var(--syntax-attribute));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-type,
 .prosemirror-editor .ProseMirror pre code .hljs-name,
 .prosemirror-editor .ProseMirror pre code .hljs-tag {
-  color: #c82829;
+  color: hsl(var(--syntax-attribute));
 }
 
 .prosemirror-editor .ProseMirror pre code .hljs-deletion {
-  color: #c82829;
+  color: hsl(var(--syntax-attribute));
 }
 
 /* Horizontal rule — 1 line-height tall, border centered via ::after */
@@ -458,12 +458,12 @@
 }
 
 .prosemirror-editor .ProseMirror hr.ProseMirror-selectednode {
-  background: hsl(213, 94%, 95%);
+  background: var(--selection-background);
   outline: none;
 }
 
 .prosemirror-editor .ProseMirror hr.ProseMirror-selectednode::after {
-  background: hsl(213, 70%, 72%);
+  background: var(--selection-strong);
 }
 
 .prosemirror-editor .ProseMirror.rumi-inactive-block-selection .ProseMirror-selectednode {
@@ -523,7 +523,7 @@
 
 /* Links */
 .prosemirror-editor .ProseMirror a {
-  color: #0284c7;
+  color: hsl(var(--primary));
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 0.18em;
@@ -531,7 +531,7 @@
 }
 
 .prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover {
-  color: #0369a1;
+  color: hsl(var(--primary-hover));
   cursor: pointer;
 }
 
@@ -558,7 +558,7 @@
   bottom: -0.16em;
   width: 1.2em;
   height: 1.2em;
-  background-color: #0284c7;
+  background-color: hsl(var(--primary));
   -webkit-mask: var(--rumi-link-icon) center / contain no-repeat;
   mask: var(--rumi-link-icon) center / contain no-repeat;
 }
@@ -575,7 +575,7 @@
   bottom: -0.23em;
   width: calc(100% + 0.12em);
   height: 1.35em;
-  background: Highlight;
+  background: var(--selection-background);
 }
 
 .prosemirror-editor .ProseMirror.rumi-link-boundary-native-caret-hidden {
@@ -637,11 +637,11 @@
   box-sizing: border-box;
   place-content: center;
   margin: 0;
-  border: 1px solid #d4d4d4;
+  border: 1px solid hsl(var(--input));
   border-radius: 3px;
   background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: #0284c7;
+  accent-color: hsl(var(--primary));
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item .task-content {
@@ -674,7 +674,7 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 var(--rumi-list-decoration-width);
-  color: #d4d4d4;
+  color: hsl(var(--muted-foreground));
 }
 
 .prosemirror-editor .ProseMirror .list-item-content {
@@ -721,8 +721,8 @@
   background-image: linear-gradient(
     to right,
     transparent calc(var(--rumi-list-guide-x) - 0.5px),
-    #f5f5f5 calc(var(--rumi-list-guide-x) - 0.5px),
-    #f5f5f5 calc(var(--rumi-list-guide-x) + 0.5px),
+    hsl(var(--border)) calc(var(--rumi-list-guide-x) - 0.5px),
+    hsl(var(--border)) calc(var(--rumi-list-guide-x) + 0.5px),
     transparent calc(var(--rumi-list-guide-x) + 0.5px)
   );
   background-repeat: repeat-x;
@@ -827,17 +827,17 @@
   box-sizing: border-box;
   place-content: center;
   margin: 0;
-  border: 1px solid #d4d4d4;
+  border: 1px solid hsl(var(--input));
   border-radius: 3px;
   background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: #0284c7;
+  accent-color: hsl(var(--primary));
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]:checked,
 .prosemirror-editor .ProseMirror .task-item input[type="checkbox"]:checked {
-  border-color: #0284c7;
-  background-color: #0284c7;
+  border-color: hsl(var(--primary));
+  background-color: hsl(var(--primary));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: center;
   background-repeat: no-repeat;
@@ -850,7 +850,7 @@
 
 /* Highlight mark */
 .prosemirror-editor .ProseMirror mark {
-  background-color: #fef08a;
+  background-color: var(--highlight-background);
   border-radius: 0.2em;
   padding: 0.1em 0.2em;
 }
@@ -1077,8 +1077,8 @@
 }
 
 .selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .editor-toolbar-delete-button:hover:not(:disabled) {
-  background-color: #fff1f2 !important;
-  color: #e11d48;
+  background-color: hsl(var(--destructive) / 0.1) !important;
+  color: hsl(var(--destructive));
 }
 
 .selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .toolbar-button:focus-visible {
@@ -1087,11 +1087,11 @@
 }
 
 .toolbar-button:hover {
-  background-color: hsl(210, 40%, 96.1%) !important;
+  background-color: hsl(var(--accent)) !important;
 }
 
 .highlight-btn:hover {
-  background-color: hsl(210, 40%, 96.1%) !important;
+  background-color: hsl(var(--accent)) !important;
 }
 
 /* Placeholder when editor is empty */
@@ -1108,7 +1108,7 @@
 }
 
 .link-popover input:focus {
-  border-color: hsl(222.2, 47.4%, 41.2%);
+  border-color: hsl(var(--primary));
 }
 
 .link-popover button:hover {
@@ -1121,20 +1121,20 @@
 }
 
 .link-input-popup input:focus {
-  border-color: #0284c7;
+  border-color: hsl(var(--primary));
 }
 
 .link-btn:hover {
-  background-color: hsl(210, 40%, 96.1%) !important;
+  background-color: hsl(var(--accent)) !important;
 }
 
 .link-input-popup .link-action-icon:hover {
-  background-color: hsl(210, 40%, 96.1%);
+  background-color: hsl(var(--accent));
 }
 
 .link-input-popup .link-apply-btn:hover {
-  background-color: #0369a1 !important;
-  border-color: #0369a1 !important;
+  background-color: hsl(var(--primary-hover)) !important;
+  border-color: hsl(var(--primary-hover)) !important;
 }
 
 /* @ mention menu */
@@ -1314,7 +1314,7 @@
   transform: translateY(-50%);
   border: 2px solid hsl(var(--background));
   border-radius: 9999px;
-  background: #0284c7;
+  background: hsl(var(--primary));
   box-shadow: 0 0 0 1px hsl(var(--border));
   cursor: ew-resize;
   opacity: 0;
@@ -1336,7 +1336,7 @@
 
 .prosemirror-editor .ProseMirror figure.image-block .image-resize-handle:hover,
 .prosemirror-editor .ProseMirror figure.image-block .image-resize-handle.active {
-  background: #0369a1;
+  background: hsl(var(--primary-hover));
 }
 
 .prosemirror-editor .ProseMirror figure.image-block .image-toolbar {
@@ -1494,7 +1494,7 @@
   height: auto;
   border-radius: 8px;
   box-shadow: 0 12px 24px hsl(0 0% 0% / 0.12);
-  background: white;
+  background: hsl(var(--background));
 }
 
 .prosemirror-editor .ProseMirror .file-preview-empty {
@@ -1650,6 +1650,6 @@
 
 /* Multi-block selection */
 .prosemirror-editor .ProseMirror .multi-block-selected {
-  background: hsl(213, 94%, 95%);
+  background: var(--selection-background);
   border-radius: 4px;
 }

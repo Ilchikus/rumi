@@ -234,8 +234,8 @@ function RevisionDiff({
               key={`${index}-${entry.kind}`}
               className={cn(
                 "grid grid-cols-[3rem_3rem_1.75rem_minmax(20rem,1fr)] border-b border-border/40",
-                entry.kind === "added" && "bg-neutral-200/70 text-foreground",
-                entry.kind === "removed" && "bg-neutral-100 text-muted-foreground",
+                entry.kind === "added" && "bg-accent text-foreground",
+                entry.kind === "removed" && "bg-surface-subtle text-muted-foreground",
                 entry.kind === "unchanged" && "bg-background text-foreground"
               )}
               role="row"

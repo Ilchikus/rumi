@@ -216,7 +216,7 @@ function DatabaseEmbedSourceControl({
     >
       <button
         type="button"
-        className="inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-sky-600 underline decoration-sky-600 underline-offset-[0.18em] hover:text-sky-700"
+        className="inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-primary underline decoration-primary underline-offset-[0.18em] hover:text-primary-hover"
         onClick={onOpen}
         title={`Open ${sourceDocument?.title ?? source}`}
       >
@@ -227,7 +227,7 @@ function DatabaseEmbedSourceControl({
         <button
           type="button"
           aria-label="Change database source"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-sky-600 outline-none hover:bg-accent hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-primary outline-none hover:bg-accent hover:text-primary-hover focus-visible:ring-2 focus-visible:ring-ring"
         >
           <CaretDown size={13} aria-hidden="true" />
         </button>

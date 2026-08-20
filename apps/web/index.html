@@ -3,6 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        let preference = "auto";
+        try {
+          const snapshot = JSON.parse(
+            localStorage.getItem("rumi-new-workspace-startup:v1") || "null"
+          );
+          const workspaceRootPath = snapshot?.workspace?.rootPath;
+          const saved = workspaceRootPath
+            ? localStorage.getItem(`rumi-new-theme:${workspaceRootPath}`)
+            : null;
+          if (saved === "auto" || saved === "light" || saved === "dark") {
+            preference = saved;
+          }
+        } catch {
+          // Theme persistence is optional; system appearance remains the default.
+        }
+        const dark = preference === "dark" || (
+          preference === "auto" && matchMedia("(prefers-color-scheme: dark)").matches
+        );
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" sizes="any" href="/rumi-logo.svg?v=20260819-1" />
     <title>Rumi</title>
   </head>

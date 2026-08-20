@@ -3,7 +3,6 @@
 - [ ] context actions on items from breadcrumbs (rmb)
     - [ ] include copy path and copy url to context actions. these context actions should be synced with sidebar and breadcrumbs - basically the same component and actions
 - [ ] add favorite pages/folders/dbs
-- [ ] dark theme
 - [ ] drag-n-drop block into db:
     - [ ] into page - append to it
     - [ ] between rows - create new item
@@ -58,3 +57,4 @@
 - [x] cold visit inner url should always open this url regardless of what should be opened on start
 - [x] improve link behaviour
     - [x] highlight → remove link makes viewport jump down, it should remain
+- [x] dark theme

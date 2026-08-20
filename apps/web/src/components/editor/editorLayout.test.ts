@@ -148,17 +148,17 @@ describe("editor layout contracts", () => {
     expect(flatListRule).toContain("gap: var(--rumi-list-decoration-gap);");
     expect(decorationRule).toContain("width: var(--rumi-list-decoration-width);");
     expect(decorationRule).toContain("flex: 0 0 var(--rumi-list-decoration-width);");
-    expect(decorationRule).toContain("color: #d4d4d4;");
+    expect(decorationRule).toContain("color: hsl(var(--muted-foreground));");
     expect(bulletDecorationRule).toContain("font-size: 2em;");
     expect(bulletDecorationRule).toContain("line-height: 0.8;");
     expect(numberedDecorationRule).toContain("font-variant-numeric: tabular-nums;");
     expect(numberedDecorationRule).toContain("text-align: left;");
     expect(checkboxRule).toContain("margin-top: 2px;");
     expect(checkboxInputRule).toContain("appearance: none;");
-    expect(checkboxInputRule).toContain("border: 1px solid #d4d4d4;");
+    expect(checkboxInputRule).toContain("border: 1px solid hsl(var(--input));");
     expect(indentGuideRule).toContain("width: var(--rumi-list-indent-offset);");
     expect(indentGuideRule).toContain("background-size: 1.5em 100%;");
-    expect(indentGuideRule).toContain("#f5f5f5");
+    expect(indentGuideRule).toContain("hsl(var(--border))");
     expect(indentGuideRule).toContain("var(--rumi-list-guide-x)");
     expect(counterRestartRule).toContain("counter-set: numbered-item-0 1;");
     expect(counterRestartRule).not.toContain("counter-reset:");
@@ -185,7 +185,7 @@ describe("editor layout contracts", () => {
     expect(sharedWrapperRule).toContain("overflow: visible;");
   });
 
-  it("uses the standard blue block highlight for table selection", () => {
+  it("uses the theme-aware selection color for table selection", () => {
     const cellRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror .selectedCell"
@@ -199,9 +199,9 @@ describe("editor layout contracts", () => {
       ".rumi-prosemirror .selectedCell::after"
     );
 
-    expect(cellRule).toContain("background: hsl(213, 94%, 95%);");
-    expect(cellOverlayRule).toContain("background: hsl(213, 94%, 95%);");
-    expect(sharedCellOverlayRule).toContain("background: hsl(213, 94%, 95%);");
+    expect(cellRule).toContain("background: var(--selection-background);");
+    expect(cellOverlayRule).toContain("background: var(--selection-background);");
+    expect(sharedCellOverlayRule).toContain("background: var(--selection-background);");
     expect(editorStyles).toContain(
       ".tableWrapper.ProseMirror-selectednode > table th"
     );
@@ -282,7 +282,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).not.toMatch(/\.prosemirror-editor \.ProseMirror th\s*,/u);
   });
 
-  it("uses neutral unchecked task boxes and the Sky 600 checked state", () => {
+  it("uses semantic unchecked task boxes and the product accent checked state", () => {
     const nestedTaskRule = cssRule(
       editorStyles,
       '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]'
@@ -296,23 +296,23 @@ describe("editor layout contracts", () => {
       '.prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]:checked,\n.prosemirror-editor .ProseMirror .task-item input[type="checkbox"]:checked'
     );
 
-    expect(nestedTaskRule).toContain("border: 1px solid #d4d4d4;");
-    expect(flatTaskRule).toContain("border: 1px solid #d4d4d4;");
-    expect(checkedTaskRule).toContain("border-color: #0284c7;");
-    expect(checkedTaskRule).toContain("background-color: #0284c7;");
+    expect(nestedTaskRule).toContain("border: 1px solid hsl(var(--input));");
+    expect(flatTaskRule).toContain("border: 1px solid hsl(var(--input));");
+    expect(checkedTaskRule).toContain("border-color: hsl(var(--primary));");
+    expect(checkedTaskRule).toContain("background-color: hsl(var(--primary));");
   });
 
-  it("uses Sky 600 semibold links and matching link icons", () => {
+  it("uses the product accent for semibold links and matching link icons", () => {
     const linkRule = cssRule(editorStyles, ".prosemirror-editor .ProseMirror a");
     const iconRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror .rumi-link-icon::before"
     );
 
-    expect(linkRule).toContain("color: #0284c7;");
+    expect(linkRule).toContain("color: hsl(var(--primary));");
     expect(linkRule).toContain("font-weight: 600;");
     expect(linkRule).toContain("text-decoration: underline;");
-    expect(iconRule).toContain("background-color: #0284c7;");
+    expect(iconRule).toContain("background-color: hsl(var(--primary));");
     expect(editorStyles).not.toContain(".rumi-link-icon-selected::before");
     expect(editorStyles).toContain(".rumi-link-icon::before");
     expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="folder"]');
@@ -320,7 +320,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="page"]');
   });
 
-  it("uses rose 700 text for inline code without tinting code blocks", () => {
+  it("uses theme-aware inline-code text without tinting code blocks", () => {
     const inlineCodeRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror :not(pre) > code"
@@ -334,9 +334,9 @@ describe("editor layout contracts", () => {
       ".rumi-prosemirror :not(pre) > code,\n  .rumi-prosemirror .rumi-inline-code-pending"
     );
 
-    expect(inlineCodeRule).toContain("color: #be123c;");
-    expect(sharedInlineCodeRule).toContain("color: #be123c;");
-    expect(codeBlockRule).not.toContain("color: #be123c;");
+    expect(inlineCodeRule).toContain("color: hsl(var(--inline-code));");
+    expect(sharedInlineCodeRule).toContain("color: hsl(var(--inline-code));");
+    expect(codeBlockRule).not.toContain("var(--inline-code)");
   });
 
   it("keeps the mention picker on current colors and applies pointer selections", () => {
@@ -414,7 +414,7 @@ describe("editor layout contracts", () => {
     expect(editorStyles).toContain(".selection-toolbar-history-group,");
     expect(editorStyles).toContain(".selection-toolbar-delete-group {");
     expect(editorStyles).toContain(".editor-toolbar-delete-button:hover:not(:disabled)");
-    expect(editorStyles).toContain("color: #e11d48;");
+    expect(editorStyles).toContain("color: hsl(var(--destructive));");
     expect(editorStyles).toContain("border-left: 1px solid hsl(var(--border));");
     expect(selectionToolbar).toContain('mode === "none"');
     expect(selectionToolbar).toContain("isExpandedEditorToolbarMode(mode)");

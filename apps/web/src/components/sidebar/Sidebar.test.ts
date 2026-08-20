@@ -181,7 +181,7 @@ describe("sidebar settings entry", () => {
 
   it("keeps the sidebar free of top and bottom horizontal rules", () => {
     expect(sidebarSource).toContain(
-      '<header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">'
+      '<header className="relative z-30 bg-sidebar px-3 pb-5 pt-3">'
     );
     expect(sidebarSource).toContain('<footer className="space-y-0.5 p-2">');
     expect(sidebarSource).not.toContain('<header className="border-b');
@@ -237,8 +237,8 @@ describe("sidebar active ancestor trail", () => {
   });
 
   it("uses solid neutral surfaces for the sidebar and active item", () => {
-    expect(sidebarSource).toContain("border-border bg-neutral-50 text-foreground");
-    expect(sidebarSource).toContain('isSelected && "bg-neutral-100 text-accent-foreground"');
+    expect(sidebarSource).toContain("border-border bg-sidebar text-foreground");
+    expect(sidebarSource).toContain('isSelected && "bg-accent text-accent-foreground"');
     expect(sidebarSource).not.toContain("bg-muted/35");
     expect(sidebarSource).not.toContain("bg-muted/95");
   });

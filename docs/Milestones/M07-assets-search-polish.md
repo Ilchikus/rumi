@@ -51,3 +51,6 @@ commands. `/settings` and `/trash` reserve their application views while equally
 content receives deterministic route suffixes. Automated browser smoke coverage remains open.
 Workspace startup and per-history-entry scroll restoration are implemented and in release
 verification under M07-015.
+The `0.1.17` candidate adds M07-027's system-default Light/Dark theme with workspace-scoped browser
+preferences and theme-aware shell, editor, database, overlay, syntax, Mermaid, and notification
+surfaces.

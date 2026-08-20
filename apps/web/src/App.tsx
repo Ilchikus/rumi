@@ -116,6 +116,15 @@ import {
   type StartupPageMode,
   type WorkspaceStartupSnapshot
 } from "./lib/workspaceStartup";
+import {
+  applyTheme,
+  readThemePreference,
+  resolveTheme,
+  SYSTEM_DARK_THEME_QUERY,
+  THEME_CHANGE_EVENT,
+  writeThemePreference,
+  type ThemePreference
+} from "./lib/themePreferences";
 
 const rumiBlockEditorModule = import("./components/editor/RumiBlockEditor");
 const RumiBlockEditor = lazy(async () => {
@@ -185,7 +194,7 @@ function showReservedSystemRouteToast(
   toast.info(
     <span>
       “{route.label}” is reserved for the system page{" "}
-      <a className="text-sky-600 underline underline-offset-2" href={route.url}>
+      <a className="text-primary underline underline-offset-2 hover:text-primary-hover" href={route.url}>
         {route.label}
       </a>.
     </span>
@@ -266,6 +275,15 @@ export function App(): ReactElement {
   const [editorToolbar, setEditorToolbar] = useState<EditorToolbarMode>(
     startupSnapshot?.settings?.editor.inlineToolbar ?? "floating"
   );
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
+    readThemePreference(
+      window.localStorage,
+      startupSnapshot?.workspace.rootPath ?? ""
+    )
+  );
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    getSystemDarkThemeQuery()?.matches ?? false
+  );
   const [startupPageMode, setStartupPageMode] = useState<StartupPageMode>(initialStartupPageMode);
   const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>(
     startupSnapshot?.settings?.uploads.allowedFileTypes ?? []
@@ -319,6 +337,7 @@ export function App(): ReactElement {
   const visibleSidebarWidth = sidebarWidthForViewport(sidebarWidth, viewportWidth);
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
+  const resolvedTheme = resolveTheme(themePreference, systemPrefersDark);
   const pageTitle = page
     ? selection?.kind === "workspace"
       ? workspaceName
@@ -355,6 +374,39 @@ export function App(): ReactElement {
         ? "Trash"
         : pageTitle ?? "Rumi";
   }, [activeTrashPage, pageTitle, settingsOpen, trashOpen]);
+
+  useLayoutEffect(() => {
+    if (!workspaceRootPath) return;
+    setThemePreference(readThemePreference(window.localStorage, workspaceRootPath));
+  }, [workspaceRootPath]);
+
+  useEffect(() => {
+    const query = getSystemDarkThemeQuery();
+    if (!query) return;
+
+    const updateSystemTheme = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+    setSystemPrefersDark(query.matches);
+    query.addEventListener("change", updateSystemTheme);
+    return () => query.removeEventListener("change", updateSystemTheme);
+  }, []);
+
+  useLayoutEffect(() => {
+    const theme = applyTheme(
+      document.documentElement,
+      themePreference,
+      systemPrefersDark
+    );
+    window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, {
+      detail: { theme }
+    }));
+  }, [systemPrefersDark, themePreference]);
+
+  const changeThemePreference = useCallback((preference: ThemePreference) => {
+    setThemePreference(preference);
+    writeThemePreference(window.localStorage, workspaceRootPath, preference);
+  }, [workspaceRootPath]);
 
   const loadTree = useCallback(async () => {
     setLoadState("loading");
@@ -3025,9 +3077,11 @@ export function App(): ReactElement {
             <WorkspaceSettingsView
               result={workspaceSettingsResult}
               startupPageMode={startupPageMode}
+              themePreference={themePreference}
               loadState={settingsLoadState}
               onReload={() => void loadWorkspaceSettings()}
               onSave={saveWorkspaceSettings}
+              onThemePreferenceChange={changeThemePreference}
             />
           </Suspense>
         ) : trashOpen && !activeTrashPage ? (
@@ -3063,7 +3117,7 @@ export function App(): ReactElement {
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   disabled={restoringTrashId !== null || deletingTrashId !== null}
                   onClick={() => setDeleteForeverTarget(activeTrashPage.item)}
                 >
@@ -3249,7 +3303,7 @@ export function App(): ReactElement {
           />
         </Suspense>
       )}
-      <Toaster />
+      <Toaster theme={resolvedTheme} />
     </main>
   );
 }
@@ -3264,6 +3318,12 @@ function hasUnsavedPageChanges(state: SaveState): boolean {
 
 function getViewportWidth(): number {
   return typeof window === "undefined" ? 1024 : window.innerWidth;
+}
+
+function getSystemDarkThemeQuery(): MediaQueryList | null {
+  return typeof window === "undefined" || typeof window.matchMedia !== "function"
+    ? null
+    : window.matchMedia(SYSTEM_DARK_THEME_QUERY);
 }
 
 function setSidebarCollapsedState(

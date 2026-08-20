@@ -90,7 +90,7 @@ export function WorkspaceHeader({
         <div className="relative">
           <div
             data-rumi-address-bar=""
-            className="flex h-9 w-full min-w-0 items-center gap-1 rounded-lg bg-surface-subtle px-2 text-sm text-muted-foreground transition-colors hover:bg-neutral-200/70"
+            className="flex h-9 w-full min-w-0 items-center gap-1 rounded-lg bg-surface-subtle px-2 text-sm text-muted-foreground transition-colors hover:bg-accent"
             onClick={(event) => {
               if (event.target === event.currentTarget) onToggleSearch();
             }}
@@ -105,7 +105,7 @@ export function WorkspaceHeader({
               <ol className="flex min-w-0 items-center overflow-hidden whitespace-nowrap">
                 {breadcrumbs.map((breadcrumb, index) => (
                   <li key={breadcrumb.key} className="flex min-w-0 items-center">
-                    {index > 0 && <span className="mx-1 text-neutral-400">/</span>}
+                    {index > 0 && <span className="mx-1 text-muted-foreground">/</span>}
                     {breadcrumb.node ? (
                       <button
                         type="button"
@@ -136,7 +136,7 @@ export function WorkspaceHeader({
 
             <button
               type="button"
-              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs text-neutral-500 transition-colors hover:bg-white/80 hover:text-foreground"
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
               aria-label="Toggle search (Command K)"
               title="Search (Command K)"
               onClick={(event) => {
@@ -145,7 +145,7 @@ export function WorkspaceHeader({
               }}
             >
               <MagnifyingGlass size={15} />
-              <kbd className="rounded border border-neutral-300 bg-white/80 px-1.5 py-0.5 font-sans text-[11px] leading-none shadow-sm">
+              <kbd className="rounded border border-input bg-background/80 px-1.5 py-0.5 font-sans text-[11px] leading-none shadow-sm">
                 ⌘ K
               </kbd>
             </button>
@@ -161,7 +161,7 @@ export function WorkspaceHeader({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-foreground data-[state=open]:bg-neutral-100 sm:h-7 sm:w-7"
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent sm:h-7 sm:w-7"
                     aria-label="File actions"
                     title="File actions"
                   >

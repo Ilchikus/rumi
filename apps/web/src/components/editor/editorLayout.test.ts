@@ -302,7 +302,7 @@ describe("editor layout contracts", () => {
     expect(checkedTaskRule).toContain("background-color: hsl(var(--primary));");
   });
 
-  it("uses the product accent for semibold links and matching link icons", () => {
+  it("uses the product accent with normal-weight links and matching link icons", () => {
     const linkRule = cssRule(editorStyles, ".prosemirror-editor .ProseMirror a");
     const iconRule = cssRule(
       editorStyles,
@@ -310,9 +310,10 @@ describe("editor layout contracts", () => {
     );
 
     expect(linkRule).toContain("color: hsl(var(--primary));");
-    expect(linkRule).toContain("font-weight: 600;");
+    expect(linkRule).toContain("font-weight: 400;");
     expect(linkRule).toContain("text-decoration: underline;");
     expect(iconRule).toContain("background-color: hsl(var(--primary));");
+    expect(databaseEmbedNodeView).toContain("text-sm font-normal text-primary underline");
     expect(editorStyles).not.toContain(".rumi-link-icon-selected::before");
     expect(editorStyles).toContain(".rumi-link-icon::before");
     expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="folder"]');

@@ -524,7 +524,7 @@
 /* Links */
 .prosemirror-editor .ProseMirror a {
   color: hsl(var(--primary));
-  font-weight: 600;
+  font-weight: 400;
   text-decoration: underline;
   text-underline-offset: 0.18em;
   cursor: text;

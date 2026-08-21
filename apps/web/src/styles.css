@@ -460,6 +460,7 @@
 
   .rumi-prosemirror a {
     color: hsl(var(--foreground));
+    font-weight: 400;
     text-decoration: underline;
     text-underline-offset: 0.18em;
   }

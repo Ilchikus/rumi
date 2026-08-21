@@ -19,7 +19,7 @@ can be overridden from Settings.
 ## Scope
 
 - Keep the approved logo unchanged.
-- Use Sky 500 for product accents and Sky 400 for their hover states.
+- Use Sky 500 for product accents, darkening to Sky 600 on Light hover and lightening to Sky 400 on Dark hover.
 - Use Neutral 800 for the dark application canvas and Neutral 700 for the sidebar, address bar,
   code blocks, and other subtle surfaces.
 - Render the Markdown highlight as Yellow 500 at 30% opacity in Light and 20% in Dark.

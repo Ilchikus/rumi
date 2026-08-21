@@ -36,8 +36,9 @@ describe("release theme palette", () => {
     expect(addressBar).toContain("bg-surface-subtle");
   });
 
-  it("uses Sky 500/Sky 400 accents and theme-specific Yellow 500 highlights", () => {
+  it("darkens Sky accents on Light hover and lightens them on Dark hover", () => {
     expect(styles).toContain("--primary: 199 89% 48%;");
+    expect(styles).toContain("--primary-hover: 200 98% 39%;");
     expect(styles).toContain("--primary-hover: 198 93% 60%;");
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.3);");
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.2);");

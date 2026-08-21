@@ -14,7 +14,7 @@ export function Toaster(props: ToasterProps) {
         classNames: {
           toast: "border-border bg-background text-foreground shadow-lg",
           description: "text-muted-foreground",
-          actionButton: "bg-primary text-primary-foreground",
+          actionButton: "bg-action text-action-foreground hover:bg-action-hover",
           cancelButton: "bg-muted text-muted-foreground"
         }
       }}

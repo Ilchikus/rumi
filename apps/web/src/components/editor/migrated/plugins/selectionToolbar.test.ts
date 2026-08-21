@@ -887,7 +887,7 @@ describe("selection toolbar mode", () => {
     })
   })
 
-  it("shows a checkmark for 500ms after copying before closing the link editor", async () => {
+  it("shows a checkmark for 100ms after copying before closing the link editor", async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
@@ -923,7 +923,7 @@ describe("selection toolbar mode", () => {
       expect(copyButton.classList.contains("copied")).toBe(true)
       expect(popup.style.display).toBe("block")
 
-      vi.advanceTimersByTime(499)
+      vi.advanceTimersByTime(99)
       expect(popup.style.display).toBe("block")
       vi.advanceTimersByTime(1)
       expect(popup.style.display).toBe("none")

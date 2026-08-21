@@ -216,7 +216,7 @@ function DatabaseEmbedSourceControl({
     >
       <button
         type="button"
-        className="inline-flex min-w-0 items-center gap-1 text-sm font-normal text-primary underline decoration-primary underline-offset-[0.18em] hover:text-primary-hover"
+        className="inline-flex min-w-0 items-center gap-1 text-sm font-normal text-primary no-underline decoration-primary underline-offset-[0.18em] hover:text-primary-hover hover:underline"
         onClick={onOpen}
         title={`Open ${sourceDocument?.title ?? source}`}
       >

@@ -525,9 +525,15 @@
 .prosemirror-editor .ProseMirror a {
   color: hsl(var(--primary));
   font-weight: 400;
-  text-decoration: underline;
+  text-decoration: none;
   text-underline-offset: 0.18em;
   cursor: text;
+}
+
+.prosemirror-editor .ProseMirror a:hover,
+.prosemirror-editor .ProseMirror .rumi-link-icon:hover + a,
+.prosemirror-editor.rumi-command-link-mode .ProseMirror a {
+  text-decoration: underline;
 }
 
 .prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover {
@@ -1064,6 +1070,11 @@
   bottom: 100%;
   margin-top: 0 !important;
   margin-bottom: 8px;
+}
+
+.selection-toolbar .link-apply-btn:hover {
+  background: hsl(var(--action-hover)) !important;
+  border-color: hsl(var(--action-hover)) !important;
 }
 
 .selection-toolbar:is([data-mode="top"], [data-mode="bottom"]) .toolbar-button {

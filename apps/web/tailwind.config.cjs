@@ -22,6 +22,11 @@ module.exports = {
           hover: "hsl(var(--primary-hover))",
           foreground: "hsl(var(--primary-foreground))"
         },
+        action: {
+          DEFAULT: "hsl(var(--action))",
+          hover: "hsl(var(--action-hover))",
+          foreground: "hsl(var(--action-foreground))"
+        },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))"

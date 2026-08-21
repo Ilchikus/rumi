@@ -116,9 +116,8 @@ describe("database table presentation", () => {
     expect(markup.indexOf('data-database-source="true"')).toBeLessThan(
       markup.indexOf(">New</button>")
     );
-    expect(databaseViewSource).toContain(
-      'className="bg-foreground text-background hover:bg-foreground/80"'
-    );
+    expect(markup).toContain("bg-action text-action-foreground hover:bg-action-hover");
+    expect(databaseViewSource).not.toContain("bg-foreground text-background");
     expect(databaseColumnWidthClass("title")).toBe("w-60 min-w-60");
     expect(databaseColumnWidthClass("status")).toBe("w-44 min-w-44");
     expect(databaseColumnStyle({}, "title")).toEqual({

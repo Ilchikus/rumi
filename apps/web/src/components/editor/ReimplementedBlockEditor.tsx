@@ -1577,7 +1577,7 @@ function LinkEditorPopover({
           value={text}
           onChange={(event) => setText(event.target.value)}
         />
-        <button type="submit" className="h-8 rounded bg-primary px-2.5 text-xs text-primary-foreground">
+        <button type="submit" className="h-8 rounded bg-action px-2.5 text-xs text-action-foreground hover:bg-action-hover">
           Apply
         </button>
       </div>

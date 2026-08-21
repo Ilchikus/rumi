@@ -15,6 +15,9 @@
     --primary: 199 89% 48%;
     --primary-hover: 200 98% 39%;
     --primary-foreground: var(--foreground);
+    --action: 200 98% 39%;
+    --action-hover: 201 96% 32%;
+    --action-foreground: 0 0% 98%;
     --secondary: var(--surface-subtle);
     --secondary-foreground: var(--foreground);
     --destructive: 347 77% 50%;
@@ -46,6 +49,8 @@
     --accent: 0 0% 32.2%;
     --primary: 199 89% 48%;
     --primary-hover: 198 93% 60%;
+    --action: 199 89% 48%;
+    --action-hover: 198 93% 60%;
     --secondary: var(--surface-subtle);
     --destructive: 350 89% 60%;
     --border: 0 0% 32.2%;
@@ -461,8 +466,12 @@
   .rumi-prosemirror a {
     color: hsl(var(--foreground));
     font-weight: 400;
-    text-decoration: underline;
+    text-decoration: none;
     text-underline-offset: 0.18em;
+  }
+
+  .rumi-prosemirror a:hover {
+    text-decoration: underline;
   }
 
   .rumi-prosemirror hr {

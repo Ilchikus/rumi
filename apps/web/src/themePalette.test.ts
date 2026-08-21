@@ -40,6 +40,9 @@ describe("release theme palette", () => {
     expect(styles).toContain("--primary: 199 89% 48%;");
     expect(styles).toContain("--primary-hover: 200 98% 39%;");
     expect(styles).toContain("--primary-hover: 198 93% 60%;");
+    expect(styles).toContain("--action: 200 98% 39%;");
+    expect(styles).toContain("--action: 199 89% 48%;");
+    expect(styles).toContain("--action-foreground: 0 0% 98%;");
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.3);");
     expect(styles).toContain("--highlight-background: hsl(48 96% 53% / 0.2);");
     expect(styles).toContain("background: var(--highlight-background);");

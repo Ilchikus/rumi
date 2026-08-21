@@ -610,8 +610,8 @@ export function selectionToolbarPlugin(
         linkApplyBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg>`
         linkApplyBtn.style.cssText = `
           width: 28px; height: 28px; flex: 0 0 28px; padding: 0;
-          background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
-          border: 1px solid hsl(var(--primary));
+          background: hsl(var(--action)); color: hsl(var(--action-foreground));
+          border: 1px solid hsl(var(--action));
           border-radius: 6px; cursor: pointer; display: inline-flex;
           align-items: center; justify-content: center;
         `
@@ -864,7 +864,7 @@ export function selectionToolbarPlugin(
             linkCopyFeedbackTimer = null
             closeLinkEditorSession()
             update()
-          }, 500)
+          }, 100)
         })
 
         linkOpenBtn.addEventListener("click", (event) => {
@@ -1026,7 +1026,10 @@ export function selectionToolbarPlugin(
           : mode
 
         placeContainer(presentationMode)
-        container.classList.toggle("link-editor-only", mode === "none" && forceLinkEditor)
+        container.classList.toggle(
+          "link-editor-only",
+          forceLinkEditor && !hasTextSelection && !hasBlockSelection
+        )
         container.toggleAttribute(
           "data-rumi-preserve-block-selection",
           isExpandedEditorToolbarMode(mode)

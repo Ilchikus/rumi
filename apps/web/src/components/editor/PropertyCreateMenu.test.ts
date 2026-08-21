@@ -57,7 +57,7 @@ describe("property create menu", () => {
     expect(markup).toContain("Add property");
     expect(markup).not.toContain("New property type");
     expect(propertyCreateMenuSource).toContain(
-      "bg-foreground px-3 text-xs font-medium text-background hover:bg-foreground/80"
+      "bg-action px-3 text-xs font-medium text-action-foreground hover:bg-action-hover"
     );
     expect(propertyCreateMenuSource).not.toContain("bg-primary px-3");
   });

@@ -311,9 +311,13 @@ describe("editor layout contracts", () => {
 
     expect(linkRule).toContain("color: hsl(var(--primary));");
     expect(linkRule).toContain("font-weight: 400;");
-    expect(linkRule).toContain("text-decoration: underline;");
+    expect(linkRule).toContain("text-decoration: none;");
+    expect(editorStyles).toContain(".rumi-link-icon:hover + a");
     expect(iconRule).toContain("background-color: hsl(var(--primary));");
-    expect(databaseEmbedNodeView).toContain("text-sm font-normal text-primary underline");
+    expect(databaseEmbedNodeView).toContain("text-sm font-normal text-primary no-underline");
+    expect(selectionToolbar).toContain(
+      "background: hsl(var(--action)); color: hsl(var(--action-foreground));"
+    );
     expect(editorStyles).not.toContain(".rumi-link-icon-selected::before");
     expect(editorStyles).toContain(".rumi-link-icon::before");
     expect(editorStyles).toContain('.rumi-link-icon[data-link-type="internal"][data-link-kind="folder"]');

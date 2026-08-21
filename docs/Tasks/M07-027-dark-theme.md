@@ -63,6 +63,10 @@ The release header pass restores its opaque theme background, moves Create and S
 the left of the editor header, keeps page actions right-aligned outside the address bar, and shares
 one borderless icon-button component across all three controls.
 
+Strong action buttons use Sky 600 in Light and Sky 500 in Dark with a light foreground. Links stay
+undecorated until hover or modifier activation, and their marker participates in selection only when
+the selection explicitly crosses the marker position.
+
 ## Done When
 
 The full release checks pass, browser QA covers Light, Dark, and Auto at desktop and narrow widths,

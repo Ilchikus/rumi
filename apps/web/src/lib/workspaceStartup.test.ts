@@ -84,6 +84,8 @@ describe("workspace startup persistence", () => {
     "/tasks/my-task",
     "/settings",
     "/settings-2",
+    "/uploads",
+    "/uploads-2",
     "/trash",
     "/trash/item-1"
   ])("never lets a startup snapshot replace the explicit cold route %s", (pathname) => {
@@ -98,7 +100,9 @@ describe("workspace startup persistence", () => {
     expect(appSource).toContain("loadPage(homeOpenPath)");
     expect(appSource).toContain("Promise.all([api.getWorkspace(), api.getTree()])");
     expect(appSource).toContain("snapshotMatchesWorkspace");
-    expect(appSource).toContain('if (route?.view === "node" && !treeRevalidated)');
+    expect(appSource).toContain(
+      'if ((route?.view === "node" || route?.view === "home") && !treeRevalidated)'
+    );
     expect(appSource.indexOf('if (route?.view === "node")')).toBeLessThan(
       appSource.indexOf('if (route?.view === "home")')
     );

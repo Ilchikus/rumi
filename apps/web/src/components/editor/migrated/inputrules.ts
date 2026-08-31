@@ -255,6 +255,22 @@ function markInputRule(regexp: RegExp, markType: MarkType, getAttrs?: (match: Re
   })
 }
 
+function replaceInlineBlockPreservingSuffix(
+  state: import("prosemirror-state").EditorState,
+  nodeType: NodeType,
+  attrs: Record<string, unknown>
+) {
+  const $from = state.selection.$from
+  const blockStart = $from.before()
+  // The final trigger character is not in the handler state, so the cursor
+  // separates the recognized marker from the pre-existing inline content.
+  const suffix = $from.parent.content.cut($from.parentOffset)
+  const replacement = nodeType.create(attrs, suffix)
+  const tr = state.tr.replaceWith(blockStart, $from.after(), replacement)
+  tr.setSelection(TextSelection.create(tr.doc, blockStart + 1))
+  return tr
+}
+
 export function buildInputRules(schema: Schema) {
   const rules: InputRule[] = []
 
@@ -275,10 +291,11 @@ export function buildInputRules(schema: Schema) {
       // Only in paragraph
       if ($from.parent.type !== schema.nodes.paragraph) return null
 
-      const bulletItem = schema.nodes.bullet_item.create({ indent: 0 })
-      const tr = state.tr.replaceWith($from.before(), $from.after(), bulletItem)
-      tr.setSelection(TextSelection.create(tr.doc, $from.before() + 1))
-      return tr
+      return replaceInlineBlockPreservingSuffix(
+        state,
+        schema.nodes.bullet_item,
+        { indent: 0 }
+      )
     }))
   }
 
@@ -308,14 +325,14 @@ export function buildInputRules(schema: Schema) {
         parent.type !== schema.nodes.bullet_item
       ) return null
 
-      const blockStart = $from.before()
-      const taskItem = schema.nodes.task_item.create({
-        indent: parent.type === schema.nodes.bullet_item ? parent.attrs.indent || 0 : 0,
-        checked: match[1]?.toLowerCase() === "x"
-      })
-      const tr = state.tr.replaceWith(blockStart, $from.after(), taskItem)
-      tr.setSelection(TextSelection.create(tr.doc, blockStart + 1))
-      return tr
+      return replaceInlineBlockPreservingSuffix(
+        state,
+        schema.nodes.task_item,
+        {
+          indent: parent.type === schema.nodes.bullet_item ? parent.attrs.indent || 0 : 0,
+          checked: match[1]?.toLowerCase() === "x"
+        }
+      )
     }))
   }
 

@@ -22,6 +22,11 @@ const settingsView = readFileSync(
   new URL("./components/settings/WorkspaceSettingsView.tsx", import.meta.url),
   "utf8"
 );
+const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const themeBootstrap = readFileSync(
+  new URL("../public/theme-bootstrap.js", import.meta.url),
+  "utf8"
+);
 
 describe("release theme palette", () => {
   it("uses the requested Light and Dark neutral surfaces", () => {
@@ -34,6 +39,13 @@ describe("release theme palette", () => {
     expect(styles.match(/--secondary: var\(--surface-subtle\);/gu)).toHaveLength(2);
     expect(sidebar).toContain("bg-sidebar");
     expect(addressBar).toContain("bg-surface-subtle");
+  });
+
+  it("loads the pre-render theme bootstrap through the production CSP", () => {
+    expect(indexHtml).toContain('<script src="/theme-bootstrap.js?v=20260831-1"></script>');
+    expect(indexHtml).not.toContain("localStorage.getItem");
+    expect(themeBootstrap).toContain('localStorage.getItem("rumi-new-workspace-startup:v1")');
+    expect(themeBootstrap).toContain('matchMedia("(prefers-color-scheme: dark)")');
   });
 
   it("darkens Sky accents on Light hover and lightens them on Dark hover", () => {

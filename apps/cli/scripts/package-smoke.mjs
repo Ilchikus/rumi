@@ -48,7 +48,14 @@ try {
   }
 
   const packagedFiles = new Set(packResult.files.map((file) => file.path));
-  for (const requiredPath of ["dist/index.js", "dist/web/index.html", "README.md", "LICENSE", "package.json"]) {
+  for (const requiredPath of [
+    "dist/index.js",
+    "dist/web/index.html",
+    "dist/web/theme-bootstrap.js",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ]) {
     if (!packagedFiles.has(requiredPath)) {
       throw new Error(`The npm package is missing ${requiredPath}`);
     }
@@ -153,6 +160,18 @@ try {
   if (applicationResponse.status !== 200 || !applicationHtml.includes('<div id="root"></div>')) {
     throw new Error("Installed CLI did not serve the packaged official web client");
   }
+  const themeBootstrapResponse = await fetch(
+    new URL("/theme-bootstrap.js?v=20260831-1", serving.url)
+  );
+  const themeBootstrap = await themeBootstrapResponse.text();
+  if (
+    themeBootstrapResponse.status !== 200 ||
+    !themeBootstrap.includes("rumi-new-workspace-startup:v1") ||
+    !applicationHtml.includes('<script src="/theme-bootstrap.js?v=20260831-1"></script>') ||
+    !applicationResponse.headers.get("content-security-policy")?.includes("script-src 'self'")
+  ) {
+    throw new Error("Installed CLI did not serve the CSP-compatible theme bootstrap");
+  }
 
   const svgSource = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
   const svgUploadResponse = await fetch(new URL("/api/assets?fileName=package-smoke.svg", serving.url), {
@@ -175,6 +194,18 @@ try {
     await svgReadResponse.text() !== svgSource
   ) {
     throw new Error("Installed CLI could not read the uploaded SVG safely");
+  }
+  const assetListResponse = await fetch(new URL("/api/assets", serving.url));
+  const assetList = await assetListResponse.json();
+  const listedSvg = assetList?.items?.find((item) => item.path === svgUpload.path);
+  if (
+    assetListResponse.status !== 200 ||
+    listedSvg?.fileName !== "package-smoke.svg" ||
+    listedSvg?.contentType !== "image/svg+xml" ||
+    typeof listedSvg?.size !== "number" ||
+    typeof listedSvg?.modifiedAt !== "string"
+  ) {
+    throw new Error(`Installed CLI could not list the uploaded SVG: ${JSON.stringify(assetList)}`);
   }
 
   const activeSvgResponse = await fetch(new URL("/api/assets?fileName=active.svg", serving.url), {

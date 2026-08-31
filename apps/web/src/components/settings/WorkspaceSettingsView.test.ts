@@ -7,6 +7,10 @@ const viewSource = readFileSync(
 );
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../../../index.html", import.meta.url), "utf8");
+const themeBootstrapSource = readFileSync(
+  new URL("../../../public/theme-bootstrap.js", import.meta.url),
+  "utf8"
+);
 
 describe("workspace settings page", () => {
   it("uses the editor page layout and setting rows instead of a dialog or sections", () => {
@@ -116,9 +120,9 @@ describe("workspace settings page", () => {
     expect(appSource).toContain("writeThemePreference(window.localStorage, workspaceRootPath, preference)");
     expect(appSource).toContain('query.addEventListener("change", updateSystemTheme)');
     expect(appSource).toContain("applyTheme(");
-    expect(indexSource).toContain("prefers-color-scheme: dark");
-    expect(indexSource).toContain("document.documentElement.classList.toggle");
-    expect(indexSource.indexOf("document.documentElement.classList.toggle")).toBeLessThan(
+    expect(themeBootstrapSource).toContain("prefers-color-scheme: dark");
+    expect(themeBootstrapSource).toContain("document.documentElement.classList.toggle");
+    expect(indexSource.indexOf('<script src="/theme-bootstrap.js?v=20260831-1"></script>')).toBeLessThan(
       indexSource.indexOf('<script type="module" src="/src/main.tsx"></script>')
     );
   });

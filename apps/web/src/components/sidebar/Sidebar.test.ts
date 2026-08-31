@@ -8,6 +8,10 @@ import {
 import type { WorkspaceNode } from "@rumi/contracts";
 
 const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+const workspaceItemMenuSource = readFileSync(
+  new URL("../workspace/WorkspaceItemMenu.tsx", import.meta.url),
+  "utf8"
+);
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../../../index.html", import.meta.url), "utf8");
 const publicLogoSource = readFileSync(
@@ -125,7 +129,7 @@ describe("sidebar create-menu shortcuts", () => {
     expect(shouldCreatePageImmediately("page", commandClick, "mac")).toBe(true);
     expect(shouldCreatePageImmediately("folder", commandClick, "mac")).toBe(false);
     expect(shouldCreatePageImmediately("database", commandClick, "mac")).toBe(false);
-    expect(sidebarSource).toContain("void onCreateDefault(node.path, kind)");
+    expect(workspaceItemMenuSource).toContain("void onCreateDefault(node.path, createKind)");
     expect(sidebarSource).toContain("onCreateDefault={onCreateDefault}");
     expect(sidebarSource).toContain(
       "updateExpandedPaths((current) => new Set(current).add(parentPath))"
@@ -147,7 +151,7 @@ describe("sidebar create-menu shortcuts", () => {
   it("keeps inline create and rename input spaces during typing", () => {
     expect(sidebarSource.match(
       /onChange=\{\(event\) => setName\(sanitizeWorkspaceName\(event\.target\.value\)\.sanitized\)\}/g
-    )).toHaveLength(2);
+    )).toHaveLength(3);
     expect(sidebarSource).toContain(
       "const finalName = sanitizeWorkspaceName(name).sanitized.trim();"
     );
@@ -156,27 +160,46 @@ describe("sidebar create-menu shortcuts", () => {
 
 describe("sidebar context-menu keyboard focus", () => {
   it("wires explicit open focus and close restoration into sidebar menus", () => {
-    expect(sidebarSource).toContain(
-      "if (contentRef.current) focusFirstSidebarMenuItem(contentRef.current)"
+    expect(workspaceItemMenuSource).toContain(
+      "if (contentRef.current) focusFirstWorkspaceItemMenuAction(contentRef.current)"
     );
-    expect(sidebarSource).toContain('event.key !== "ArrowDown" && event.key !== "ArrowUp"');
-    expect(sidebarSource).toContain("moveSidebarMenuFocus(");
-    expect(sidebarSource).toContain("ref={contentRef}");
-    expect(sidebarSource).toContain("onCloseAutoFocus={(event) => {");
-    expect(sidebarSource).toContain("window.setTimeout(() => restoreSidebarContextFocus(returnFocus), 0)");
-    expect(sidebarSource).toContain("restoreSidebarContextFocus(menu.returnFocus)");
+    expect(workspaceItemMenuSource).toContain('event.key !== "ArrowDown" && event.key !== "ArrowUp"');
+    expect(workspaceItemMenuSource).toContain("moveWorkspaceItemMenuFocus(");
+    expect(workspaceItemMenuSource).toContain("ref={contentRef}");
+    expect(workspaceItemMenuSource).toContain("onCloseAutoFocus={(event) => {");
+    expect(workspaceItemMenuSource).toContain("window.setTimeout(() => restoreWorkspaceItemMenuFocus(returnFocus), 0)");
+    expect(workspaceItemMenuSource).toContain("restoreWorkspaceItemMenuFocus(menu.returnFocus)");
+  });
+
+  it("places a stateful direct pin control after the stable context-menu trigger", () => {
+    expect(sidebarSource.indexOf("<NodeMenu")).toBeLessThan(
+      sidebarSource.indexOf('data-sidebar-pin-button="true"')
+    );
+    expect(sidebarSource).toContain("text-neutral-300 hover:bg-background/70");
+    expect(sidebarSource).toContain("hover:text-muted-foreground");
+    expect(sidebarSource).toContain("pinned && !projected");
+    expect(sidebarSource).toContain("group-hover:opacity-100 group-focus-within:opacity-100");
+    expect(sidebarSource).toContain(
+      '<PushPin size={16} weight={pinned ? "fill" : "regular"} />'
+    );
+    expect(sidebarSource).toContain("onPinnedChange(node, !pinned)");
+    expect(workspaceItemMenuSource).toContain("return <PushPin size={16} />;");
   });
 });
 
-describe("sidebar settings entry", () => {
-  it("places a Phosphor Gear settings action above Trash", () => {
+describe("sidebar system-page entries", () => {
+  it("places Settings and Uploads above Trash in the bottom group", () => {
     expect(sidebarSource).toContain(
       'import { Gear } from "@phosphor-icons/react/dist/csr/Gear"'
     );
     expect(sidebarSource).toContain("onOpenSettings");
+    expect(sidebarSource).toContain("onOpenMedia");
     expect(sidebarSource).toContain("title={`Settings (${settingsShortcut})`}");
     expect(sidebarSource).toContain("title={`Trash (${trashShortcut})`}");
     expect(sidebarSource.indexOf(">Settings</span>")).toBeLessThan(
+      sidebarSource.indexOf(">Uploads</span>")
+    );
+    expect(sidebarSource.indexOf(">Uploads</span>")).toBeLessThan(
       sidebarSource.indexOf(">Trash</span>")
     );
   });

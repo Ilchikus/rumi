@@ -33,6 +33,10 @@ describe("Rumi server API", () => {
     expect(routeResponse.statusCode).toBe(200);
     expect(routeResponse.body).toContain("Rumi client");
 
+    const uploadsRouteResponse = await server.inject({ method: "GET", url: "/uploads" });
+    expect(uploadsRouteResponse.statusCode).toBe(200);
+    expect(uploadsRouteResponse.body).toContain("Rumi client");
+
     const assetResponse = await server.inject({ method: "GET", url: "/assets/app.js" });
     expect(assetResponse.statusCode).toBe(200);
     expect(assetResponse.body).toContain("globalThis.rumi");
@@ -138,6 +142,8 @@ describe("Rumi server API", () => {
     const root = await tempWorkspace();
     await fs.mkdir(path.join(root, ".assets"), { recursive: true });
     await fs.writeFile(path.join(root, ".assets", "pixel.png"), Buffer.from([137, 80, 78, 71]));
+    await fs.writeFile(path.join(root, "outside.png"), Buffer.from([137, 80, 78, 71]));
+    await fs.symlink(path.join(root, "outside.png"), path.join(root, ".assets", "linked.png"));
     await fs.writeFile(path.join(root, "Secret.md"), "private", "utf8");
     const { server } = await createRumiServer({ workspacePath: root });
 
@@ -151,6 +157,12 @@ describe("Rumi server API", () => {
 
     const traversal = await server.inject({ method: "GET", url: "/api/asset?path=..%2Foutside.png" });
     expect(traversal.statusCode).toBe(400);
+
+    const outside = await server.inject({ method: "GET", url: "/api/asset?path=outside.png" });
+    expect(outside.statusCode).toBe(400);
+
+    const symlink = await server.inject({ method: "GET", url: "/api/asset?path=.assets%2Flinked.png" });
+    expect(symlink.statusCode).toBe(400);
 
     await server.close();
   });
@@ -211,6 +223,62 @@ describe("Rumi server API", () => {
       )
     });
     expect(unsafe.statusCode).toBe(400);
+
+    await server.close();
+  });
+
+  it("lists safe asset metadata on the same resource used for uploads", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".assets", "nested"), { recursive: true });
+    await fs.writeFile(path.join(root, ".assets", "external.png"), Buffer.alloc(7));
+    await fs.writeFile(path.join(root, ".assets", "nested", "document.pdf"), "%PDF-1.7", "utf8");
+    await fs.writeFile(path.join(root, ".assets", "ignored.txt"), "ignored", "utf8");
+    await fs.symlink(
+      path.join(root, ".assets", "external.png"),
+      path.join(root, ".assets", "linked.png")
+    );
+    const modifiedAt = new Date("2026-08-22T09:30:00.000Z");
+    await fs.utimes(path.join(root, ".assets", "external.png"), modifiedAt, modifiedAt);
+    await fs.utimes(path.join(root, ".assets", "nested", "document.pdf"), modifiedAt, modifiedAt);
+    const { server } = await createRumiServer({ workspacePath: root });
+
+    const list = await server.inject({ method: "GET", url: "/api/assets" });
+    expect(list.statusCode).toBe(200);
+    expect(list.headers["cache-control"]).toContain("private");
+    expect(list.json()).toEqual({
+      items: [
+        {
+          path: ".assets/external.png",
+          fileName: "external.png",
+          contentType: "image/png",
+          size: 7,
+          modifiedAt: modifiedAt.toISOString()
+        },
+        {
+          path: ".assets/nested/document.pdf",
+          fileName: "document.pdf",
+          contentType: "application/pdf",
+          size: 8,
+          modifiedAt: modifiedAt.toISOString()
+        }
+      ]
+    });
+    expect(list.body).not.toContain(root);
+
+    const payload = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const upload = await server.inject({
+      method: "POST",
+      url: "/api/assets?fileName=uploaded.png",
+      headers: { "content-type": "application/octet-stream" },
+      payload
+    });
+    expect(upload.statusCode).toBe(200);
+    expect((await server.inject({ method: "GET", url: "/api/assets" })).json())
+      .toMatchObject({
+        items: expect.arrayContaining([
+          expect.objectContaining({ path: ".assets/uploaded.png" })
+        ])
+      });
 
     await server.close();
   });

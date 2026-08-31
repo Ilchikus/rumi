@@ -453,6 +453,10 @@ describe("editor layout contracts", () => {
   });
 
   it("uses modifier-aware link text and a Phosphor external-link atom", () => {
+    const modifierHoverRule = cssRule(
+      editorStyles,
+      ".prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover"
+    );
     const markerRule = cssRule(
       editorStyles,
       ".prosemirror-editor .ProseMirror .rumi-link-icon"
@@ -467,6 +471,11 @@ describe("editor layout contracts", () => {
     );
 
     expect(editorStyles).toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover");
+    expect(modifierHoverRule).toContain("text-decoration: underline;");
+    expect(modifierHoverRule).toContain("color: hsl(var(--primary-hover));");
+    expect(modifierHoverRule).toContain("cursor: pointer;");
+    expect(editorStyles).not.toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a {");
+    expect(editorStyles).not.toContain(".prosemirror-editor .ProseMirror a:hover,");
     expect(markerRule).toContain("height: 0;");
     expect(markerRule).toContain("line-height: 0;");
     expect(markerRule).toContain("width: 1.2em;");

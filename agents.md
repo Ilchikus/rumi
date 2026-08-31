@@ -102,6 +102,19 @@ When a change affects the public `@rumi-md/server` distribution:
 Documentation-only or internal planning changes do not require an npm release unless they alter the
 published package.
 
+## Multiple Tasks Per Release Rule
+
+Treat a release as a set of independently scoped tasks, not as one oversized task. Create one task
+record per feature or independently verifiable fix and assign the same quoted `release` frontmatter
+value to every task committed to that release. Each task keeps its own owner layer, dependencies,
+coverage, and done conditions; the complete tagged set receives one integrated release check after
+the individual tasks pass.
+
+If scope changes, move the unfinished task's `release` value to the intended later version and
+record the change. Do not backfill historical tasks or assign release tags to uncommitted research
+work unless the user explicitly requests it. The full workflow lives in
+[docs/workflow.md](docs/workflow.md#multiple-tasks-per-release).
+
 ## Statuses
 
 Use these task statuses:
@@ -190,6 +203,9 @@ runtime | api | web | cli | editor | docs
 
 ## Done When
 ```
+
+For release-bound work, also include a quoted semantic-version frontmatter field such as
+`release: "0.1.17"`. Leave it absent when the work is not committed to a release.
 
 Only check coverage types that make sense for the feature.
 

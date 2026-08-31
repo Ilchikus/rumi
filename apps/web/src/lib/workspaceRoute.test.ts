@@ -61,6 +61,18 @@ const tree: WorkspaceNode = {
       name: "settings",
       kind: "folder",
       companionPath: "settings/settings.index.md"
+    },
+    {
+      path: "uploads",
+      name: "uploads",
+      kind: "folder",
+      companionPath: "uploads/uploads.index.md"
+    },
+    {
+      path: "media",
+      name: "media",
+      kind: "folder",
+      companionPath: "media/media.index.md"
     }
   ]
 };
@@ -129,6 +141,32 @@ describe("workspace browser routes", () => {
     expect(reservedSystemRouteForName("Projects", "Settings", "folder")).toBeNull();
   });
 
+  it("keeps application Uploads distinct from a workspace item named uploads", () => {
+    const workspaceUploads = tree.children![10]!;
+    expect(parseWorkspaceRoute("/uploads")).toEqual({ view: "uploads" });
+    expect(parseWorkspaceRoute("/UPLOADS/")).toEqual({ view: "uploads" });
+    expect(workspaceUrlForNode(workspaceUploads, tree)).toBe("/uploads-2");
+    expect(workspaceUrlForNode(workspaceUploads)).toBe("/uploads-2");
+    expect(reservedSystemRouteForNode(workspaceUploads)).toEqual({
+      view: "uploads",
+      label: "Uploads",
+      url: "/uploads"
+    });
+    const route = parseWorkspaceRoute("/uploads-2");
+    expect(route).toEqual({ view: "node", slugPath: "uploads-2" });
+    expect(route && findWorkspaceNodeForRoute(tree, route)).toBe(workspaceUploads);
+    expect(reservedSystemRouteForName("", "Uploads.md", "page")?.url).toBe("/uploads");
+  });
+
+  it("leaves media available as an ordinary workspace slug", () => {
+    const workspaceMedia = tree.children![11]!;
+    expect(parseWorkspaceRoute("/media")).toEqual({ view: "node", slugPath: "media" });
+    expect(workspaceUrlForNode(workspaceMedia, tree)).toBe("/media");
+    expect(workspaceUrlForNode(workspaceMedia)).toBe("/media");
+    expect(reservedSystemRouteForNode(workspaceMedia)).toBeNull();
+    expect(findWorkspaceNodeForRoute(tree, parseWorkspaceRoute("/media")!)).toBe(workspaceMedia);
+  });
+
   it("parses direct read-only Trash item routes", () => {
     expect(parseWorkspaceRoute("/trash/1720000000000-acde-1234")).toEqual({
       view: "trash-item",
@@ -145,6 +183,7 @@ describe("workspace browser routes", () => {
     });
     expect(parseWorkspaceRoute("/TRASH")).toEqual({ view: "trash" });
     expect(parseWorkspaceRoute("/SETTINGS")).toEqual({ view: "settings" });
+    expect(parseWorkspaceRoute("/UPLOADS")).toEqual({ view: "uploads" });
     expect(parseWorkspaceRoute("/%2E%2E")).toBeNull();
   });
 

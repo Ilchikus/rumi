@@ -54,6 +54,11 @@ properties:
         color: lime
       - name: later
         color: neutral
+  release:
+    type: select
+    options:
+      - name: "0.1.17"
+        color: sky
   owner_layer:
     type: select
     options:
@@ -101,6 +106,7 @@ views:
     columns:
       - status
       - milestone
+      - release
       - owner_layer
       - coverage
       - updated
@@ -109,8 +115,19 @@ views:
     type: table
     columns:
       - milestone
+      - release
       - owner_layer
       - coverage
+  - id: by-release
+    name: By Release
+    type: table
+    columns:
+      - release
+      - status
+      - milestone
+      - owner_layer
+      - coverage
+      - updated
 recordPage:
   hiddenProperties: []
 ---
@@ -119,3 +136,6 @@ recordPage:
 Implementation units for Rumi New.
 
 Each task must include required test coverage. A task is not done until its important behavior is protected.
+
+Release-bound work uses the optional `release` property. One release may contain several separately
+owned tasks; historical records without this property remain valid and are not backfilled by default.

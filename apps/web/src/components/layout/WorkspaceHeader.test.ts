@@ -58,15 +58,17 @@ describe("workspace address bar", () => {
         tree,
         selection: { nodePath: page.path, openPath: page.path, kind: "page" },
         systemView: null,
-        hasOpenPage: true,
         onNavigate: () => undefined,
         onToggleSearch: () => undefined,
-        onMoveNode: async () => true,
+        onCreateNode: () => undefined,
+        onCreateDefault: async () => undefined,
+        onCopyNode: () => undefined,
+        onRenameNode: () => undefined,
+        onMoveNode: () => undefined,
+        onConvertNode: () => undefined,
+        pinnedPaths: [],
+        onPinnedChange: () => undefined,
         onMoveToTrash: async () => true,
-        onCopyUrl: () => undefined,
-        onCopyRelativePath: () => undefined,
-        copyUrlShortcut: "⇧⌘C",
-        copyRelativePathShortcut: "⇧⌘P",
         onSeeRevisions: () => undefined,
         leadingControls: createElement("button", { "aria-label": "Create new" }, "+")
       })
@@ -95,13 +97,23 @@ describe("workspace address bar", () => {
     expect(markup).not.toContain("max-w-[1120px]");
   });
 
-  it("wires URL and relative-path actions into the current-page menu", () => {
-    expect(headerSource).toContain("Copy URL");
-    expect(headerSource).toContain("Copy relative path");
-    expect(headerSource).toContain("onCopyUrl");
-    expect(headerSource).toContain("onCopyRelativePath");
-    expect(headerSource).toContain("copyUrlShortcut");
-    expect(headerSource).toContain("copyRelativePathShortcut");
+  it("renders current-page actions through the shared workspace-item menu", () => {
+    expect(headerSource).toContain("<WorkspaceItemMenuItems");
+    expect(headerSource).toContain("onCopy={onCopyNode}");
+    expect(headerSource).toContain("onPinnedChange={onPinnedChange}");
+    expect(headerSource).toContain("onSeeRevisions={onSeeRevisions}");
+    expect(headerSource).not.toContain("<DropdownMenuItem");
+  });
+
+  it("routes breadcrumb actions through the clicked node and App-owned action hosts", () => {
+    expect(headerSource).toContain("node: breadcrumb.node!");
+    expect(headerSource).toContain("onCopy={onCopyNode}");
+    expect(headerSource).toContain("onRename={onRenameNode}");
+    expect(headerSource).toContain("onMove={onMoveNode}");
+    expect(appSource).toContain("onRenameNode={setWorkspaceRenameTarget}");
+    expect(appSource).toContain("onMoveNode={setWorkspaceMoveTarget}");
+    expect(appSource).toContain("onConvertNode={setWorkspaceConvertTarget}");
+    expect(appSource).toContain("copyWorkspaceNodeReference(node, action)");
   });
 
   it("shares one borderless control across create, sidebar, and page actions", () => {
@@ -132,5 +144,11 @@ describe("workspace address bar", () => {
     expect(workspaceBreadcrumbs("notes", tree, null, "settings").map((breadcrumb) => (
       breadcrumb.label
     ))).toEqual(["notes", "Settings"]);
+  });
+
+  it("shows Uploads as a system-page address", () => {
+    expect(workspaceBreadcrumbs("notes", tree, null, "uploads").map((breadcrumb) => (
+      breadcrumb.label
+    ))).toEqual(["notes", "Uploads"]);
   });
 });

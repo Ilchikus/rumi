@@ -1,43 +1,45 @@
 import { useMemo, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
-import { ClockCounterClockwise } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
-import { Copy } from "@phosphor-icons/react/dist/csr/Copy";
 import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
-import { LinkSimple } from "@phosphor-icons/react/dist/csr/LinkSimple";
 import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
-import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { findWorkspaceNode } from "../../lib/lastOpenedPage";
+import { appShortcutPlatform } from "../../lib/appShortcuts";
+import { isSecondaryContextGesture } from "../../lib/appBrowserInteractions";
+import type { PageCopyAction } from "../../lib/pageCopyActions";
 import type { WorkspaceSystemView } from "../../lib/workspaceRoute";
 import { cn } from "../../lib/utils";
 import type { SidebarSelection } from "../sidebar/Sidebar";
-import { MoveNodeDialog } from "../sidebar/Sidebar";
+import {
+  FloatingWorkspaceItemMenu,
+  WorkspaceItemMenuItems,
+  workspaceItemActionModel
+} from "../workspace/WorkspaceItemMenu";
+import type {
+  FloatingWorkspaceItemMenuState,
+  WorkspaceItemCreateKind
+} from "../workspace/WorkspaceItemMenu";
 import { EDITOR_ADDRESS_BAR_CONTAINER_CLASS } from "./EditorPageLayout";
 import { EditorHeaderIconButton } from "./EditorHeaderIconButton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from "../ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../ui/dropdown-menu";
 
 interface WorkspaceHeaderProps {
   workspaceName: string;
   tree: WorkspaceNode | null;
   selection: SidebarSelection | null;
   systemView: WorkspaceSystemView | null;
-  hasOpenPage: boolean;
   onNavigate: (node: WorkspaceNode) => void;
   onToggleSearch: () => void;
-  onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
+  onCreateNode: (parentPath: string, kind: WorkspaceItemCreateKind) => void;
+  onCreateDefault: (parentPath: string, kind: WorkspaceItemCreateKind) => Promise<void>;
+  onCopyNode: (node: WorkspaceNode, action: PageCopyAction) => void;
+  onRenameNode: (node: WorkspaceNode) => void;
+  onMoveNode: (node: WorkspaceNode) => void;
+  onConvertNode: (node: WorkspaceNode) => void;
+  pinnedPaths: readonly string[];
+  onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
+  onSeeRevisions: (node: WorkspaceNode) => void;
   onMoveToTrash: (node: WorkspaceNode) => Promise<boolean>;
-  onCopyUrl: () => void;
-  onCopyRelativePath: () => void;
-  copyUrlShortcut: string;
-  copyRelativePathShortcut: string;
-  onSeeRevisions: () => void;
   leadingControls: ReactNode;
 }
 
@@ -53,16 +55,18 @@ export function WorkspaceHeader({
   tree,
   selection,
   systemView,
-  hasOpenPage,
   onNavigate,
   onToggleSearch,
+  onCreateNode,
+  onCreateDefault,
+  onCopyNode,
+  onRenameNode,
   onMoveNode,
-  onMoveToTrash,
-  onCopyUrl,
-  onCopyRelativePath,
-  copyUrlShortcut,
-  copyRelativePathShortcut,
+  onConvertNode,
+  pinnedPaths,
+  onPinnedChange,
   onSeeRevisions,
+  onMoveToTrash,
   leadingControls
 }: WorkspaceHeaderProps): ReactElement {
   const breadcrumbs = useMemo(
@@ -70,19 +74,12 @@ export function WorkspaceHeader({
     [selection, systemView, tree, workspaceName]
   );
   const activeNode = selection && tree ? findWorkspaceNode(tree, selection.nodePath) : null;
-  const canManageActiveNode = Boolean(activeNode && activeNode.kind !== "workspace" && !systemView);
-  const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
-  const [moveBusy, setMoveBusy] = useState(false);
-
-  const confirmMove = async (newParentPath: string) => {
-    if (!moveTarget || moveBusy) return;
-    setMoveBusy(true);
-    try {
-      if (await onMoveNode(moveTarget, newParentPath)) setMoveTarget(null);
-    } finally {
-      setMoveBusy(false);
-    }
-  };
+  const activeNodePinned = Boolean(activeNode && pinnedPaths.includes(activeNode.path));
+  const hasActiveNodeActions = Boolean(
+    !systemView && workspaceItemActionModel(activeNode, { pinned: activeNodePinned }).length > 0
+  );
+  const [breadcrumbMenu, setBreadcrumbMenu] = useState<FloatingWorkspaceItemMenuState | null>(null);
+  const shortcutPlatform = appShortcutPlatform();
 
   return (
     <header
@@ -122,8 +119,32 @@ export function WorkspaceHeader({
                         )}
                         aria-current={breadcrumb.current ? "page" : undefined}
                         onClick={(event) => {
+                          if (isSecondaryContextGesture(event.nativeEvent, shortcutPlatform)) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            return;
+                          }
                           event.stopPropagation();
                           onNavigate(breadcrumb.node!);
+                        }}
+                        onMouseDown={(event) => {
+                          if (!isSecondaryContextGesture(event.nativeEvent, shortcutPlatform)) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setBreadcrumbMenu({
+                            node: breadcrumb.node!,
+                            point: { x: event.clientX, y: event.clientY },
+                            returnFocus: event.currentTarget
+                          });
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setBreadcrumbMenu({
+                            node: breadcrumb.node!,
+                            point: { x: event.clientX, y: event.clientY },
+                            returnFocus: event.currentTarget
+                          });
                         }}
                       >
                         {breadcrumb.label}
@@ -161,7 +182,7 @@ export function WorkspaceHeader({
         </div>
 
         <div className="flex justify-end" data-rumi-header-actions="">
-          {(canManageActiveNode || hasOpenPage) && (
+          {hasActiveNodeActions && activeNode && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <EditorHeaderIconButton
@@ -172,62 +193,43 @@ export function WorkspaceHeader({
                   </EditorHeaderIconButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {hasOpenPage && (
-                    <>
-                      <DropdownMenuItem onSelect={onCopyUrl}>
-                        <LinkSimple size={16} />
-                        Copy URL
-                        <span className="ml-auto pl-4 text-xs text-muted-foreground" aria-hidden="true">
-                          {copyUrlShortcut}
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={onCopyRelativePath}>
-                        <Copy size={16} />
-                        Copy relative path
-                        <span className="ml-auto pl-4 text-xs text-muted-foreground" aria-hidden="true">
-                          {copyRelativePathShortcut}
-                        </span>
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {hasOpenPage && canManageActiveNode && <DropdownMenuSeparator />}
-                  {canManageActiveNode && activeNode && (
-                    <>
-                      <DropdownMenuItem onSelect={() => setMoveTarget(activeNode)}>
-                        <ArrowRight size={16} />
-                        Move file
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onSelect={() => void onMoveToTrash(activeNode)}
-                      >
-                        <Trash size={16} />
-                        Move to Trash
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {(canManageActiveNode || hasOpenPage) && hasOpenPage && <DropdownMenuSeparator />}
-                  {hasOpenPage && (
-                    <DropdownMenuItem onSelect={onSeeRevisions}>
-                      <ClockCounterClockwise size={16} />
-                      See revisions
-                    </DropdownMenuItem>
-                  )}
+                  <WorkspaceItemMenuItems
+                    node={activeNode}
+                    pinned={activeNodePinned}
+                    onCreate={onCreateNode}
+                    onCreateDefault={onCreateDefault}
+                    onCopy={onCopyNode}
+                    onRename={onRenameNode}
+                    onMove={onMoveNode}
+                    onConvert={onConvertNode}
+                    onPinnedChange={onPinnedChange}
+                    onSeeRevisions={onSeeRevisions}
+                    onDelete={(node) => void onMoveToTrash(node)}
+                  />
                 </DropdownMenuContent>
               </DropdownMenu>
           )}
         </div>
       </div>
 
-      <MoveNodeDialog
-        tree={tree}
-        node={moveTarget}
-        busy={moveBusy}
-        onOpenChange={(open) => {
-          if (!open && !moveBusy) setMoveTarget(null);
-        }}
-        onConfirm={confirmMove}
-      />
+      {breadcrumbMenu && (
+        <FloatingWorkspaceItemMenu
+          menu={breadcrumbMenu}
+          onOpenChange={(open) => {
+            if (!open) setBreadcrumbMenu(null);
+          }}
+          onCreate={onCreateNode}
+          onCreateDefault={onCreateDefault}
+          onCopy={onCopyNode}
+          pinned={pinnedPaths.includes(breadcrumbMenu.node.path)}
+          onRename={onRenameNode}
+          onMove={onMoveNode}
+          onConvert={onConvertNode}
+          onPinnedChange={onPinnedChange}
+          onSeeRevisions={onSeeRevisions}
+          onDelete={(node) => void onMoveToTrash(node)}
+        />
+      )}
 
     </header>
   );
@@ -247,7 +249,11 @@ export function workspaceBreadcrumbs(
   }];
 
   if (systemView) {
-    const label = systemView === "settings" ? "Settings" : "Trash";
+    const label = systemView === "settings"
+      ? "Settings"
+      : systemView === "uploads"
+        ? "Uploads"
+        : "Trash";
     breadcrumbs.push({ key: systemView, label, node: null, current: true });
     return breadcrumbs;
   }

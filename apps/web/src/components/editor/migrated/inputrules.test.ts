@@ -8,7 +8,7 @@ import {
   inlineCodeInputSessionPlugin
 } from "./inputrules"
 import { buildKeymap } from "./keymap"
-import { serializeMarkdown } from "./markdown"
+import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { schema } from "./schema"
 
 function createTypingHarness(
@@ -249,6 +249,125 @@ describe("live editor task input rules", () => {
     expect(state.doc.firstChild?.type.name).toBe("task_item")
     expect(state.doc.firstChild?.attrs.checked).toBe(false)
     expect(serializeMarkdown(state.doc)).toBe("- [ ]\n")
+  })
+
+  it.each([
+    ["bare unchecked", "[] ", false],
+    ["bare checked", "[x] ", true],
+    ["compact-dash unchecked", "-[] ", false],
+    ["compact-dash checked", "-[x] ", true],
+    ["spaced-dash unchecked", "- [] ", false],
+    ["spaced-dash checked", "- [x] ", true],
+    ["GFM unchecked", "- [ ] ", false]
+  ])("preserves existing content after the %s marker", (_name, shortcut, checked) => {
+    const suffix = "keep this 👍🏽"
+    const harness = createTypingHarness(
+      schema.nodes.doc!.create(null, schema.nodes.paragraph!.create(null, schema.text(suffix)))
+    )
+
+    harness.type(shortcut)
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+    expect(harness.state.doc.firstChild?.attrs.checked).toBe(checked)
+    expect(harness.state.doc.firstChild?.textContent).toBe(suffix)
+    expect(harness.state.selection.from).toBe(1)
+  })
+
+  it("preserves marked, linked, and line-break content through Markdown roundtrip", () => {
+    const original = parseMarkdown(
+      "**Marked** [Rumi](https://rumi.md) ❤️\nsoft break  \nhard break\n",
+      schema
+    )
+    const originalContent = original.firstChild!.content
+    const harness = createTypingHarness(original)
+
+    harness.type("-[] ")
+
+    const task = harness.state.doc.firstChild!
+    expect(task.type).toBe(schema.nodes.task_item)
+    expect(task.content.eq(originalContent)).toBe(true)
+    expect(task.content.content.map((node) => node.type.name)).toContain("soft_break")
+    expect(task.content.content.map((node) => node.type.name)).toContain("hard_break")
+    expect(task.content.content.some((node) => node.marks.some((mark) => mark.type === schema.marks.bold))).toBe(true)
+    expect(task.content.content.some((node) => node.marks.some((mark) => mark.type === schema.marks.link))).toBe(true)
+
+    const markdown = serializeMarkdown(harness.state.doc)
+    expect(markdown).toBe(
+      "- [ ] **Marked** [Rumi](https://rumi.md) ❤️\nsoft break  \nhard break\n"
+    )
+    expect(parseMarkdown(markdown, schema).toJSON()).toEqual(harness.state.doc.toJSON())
+  })
+
+  it("keeps the source bullet indentation when upgrading it to a task", () => {
+    const suffix = schema.text("nested content")
+    const harness = createTypingHarness(
+      schema.nodes.doc!.create(
+        null,
+        schema.nodes.bullet_item!.create({ indent: 2 }, suffix)
+      )
+    )
+
+    harness.type("[x] ")
+
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+    expect(harness.state.doc.firstChild?.attrs).toMatchObject({ checked: true, indent: 2 })
+    expect(harness.state.doc.firstChild?.textContent).toBe("nested content")
+    expect(harness.state.selection.from).toBe(1)
+  })
+
+  it("preserves content through the spaced marker's intermediate bullet item", () => {
+    const harness = createTypingHarness(
+      schema.nodes.doc!.create(null, schema.nodes.paragraph!.create(null, schema.text("existing")))
+    )
+
+    harness.type("- ")
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.bullet_item)
+    expect(harness.state.doc.firstChild?.textContent).toBe("existing")
+    expect(harness.state.selection.from).toBe(1)
+
+    harness.type("[x] ")
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+    expect(harness.state.doc.firstChild?.attrs).toMatchObject({ checked: true, indent: 0 })
+    expect(harness.state.doc.firstChild?.textContent).toBe("existing")
+    expect(harness.state.selection.from).toBe(1)
+  })
+
+  it("places immediate subsequent typing before the preserved content", () => {
+    const harness = createTypingHarness(
+      schema.nodes.doc!.create(null, schema.nodes.paragraph!.create(null, schema.text("existing")))
+    )
+
+    harness.type("-[] ")
+    harness.type("new ")
+
+    expect(harness.state.doc.firstChild?.textContent).toBe("new existing")
+    expect(serializeMarkdown(harness.state.doc)).toBe("- [ ] new existing\n")
+  })
+
+  it("undoes the conversion to the complete literal marker and untouched suffix", () => {
+    const original = parseMarkdown("**Keep** this content\n", schema)
+    const originalContent = original.firstChild!.content
+    const harness = createTypingHarness(original)
+
+    harness.type("-[] ")
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.task_item)
+    expect(harness.undoShortcut()).toBe(true)
+
+    const paragraph = harness.state.doc.firstChild!
+    expect(paragraph.type).toBe(schema.nodes.paragraph)
+    expect(paragraph.textContent).toBe("-[] Keep this content")
+    expect(paragraph.content.cut("-[] ".length).eq(originalContent)).toBe(true)
+
+    expect(harness.undoShortcut()).toBe(true)
+    expect(harness.state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(harness.state.doc.firstChild?.content.eq(originalContent)).toBe(true)
+  })
+
+  it("keeps task-like text literal away from the start of a paragraph", () => {
+    const state = typeText("before -[] ")
+
+    expect(state.doc.firstChild?.type).toBe(schema.nodes.paragraph)
+    expect(state.doc.firstChild?.textContent).toBe("before -[] ")
   })
 })
 

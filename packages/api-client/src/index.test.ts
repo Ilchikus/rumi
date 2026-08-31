@@ -43,3 +43,34 @@ describe("RumiApiClient image presentation", () => {
     });
   });
 });
+
+describe("RumiApiClient media inventory", () => {
+  it("gets the typed asset list from the upload resource with the client identity", async () => {
+    let requestedUrl: Parameters<typeof fetch>[0] | undefined;
+    let requestedInit: RequestInit | undefined;
+    const fetchImpl: typeof fetch = async (url, init) => {
+      requestedUrl = url;
+      requestedInit = init;
+      return new Response(JSON.stringify({
+        items: [{
+          path: ".assets/photo.png",
+          fileName: "photo.png",
+          contentType: "image/png",
+          size: 12,
+          modifiedAt: "2026-08-22T10:00:00.000Z"
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    };
+    const client = new RumiApiClient({ fetchImpl, clientId: "media-client" });
+
+    await expect(client.listAssets()).resolves.toMatchObject({
+      items: [{ path: ".assets/photo.png", size: 12 }]
+    });
+    expect(requestedUrl).toBe("/api/assets");
+    expect(requestedInit?.method).toBeUndefined();
+    expect(new Headers(requestedInit?.headers).get("x-rumi-client-id")).toBe("media-client");
+  });
+});

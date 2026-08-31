@@ -59,9 +59,11 @@ describe("sidebar context-menu focus helpers", () => {
   it("restores focus only while the originating row control still exists", () => {
     const origin = document.createElement("button");
     document.body.appendChild(origin);
+    const focus = vi.spyOn(origin, "focus");
 
     expect(restoreSidebarContextFocus(origin)).toBe(true);
     expect(document.activeElement).toBe(origin);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
 
     origin.remove();
     expect(restoreSidebarContextFocus(origin)).toBe(false);

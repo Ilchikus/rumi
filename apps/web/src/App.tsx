@@ -20,6 +20,7 @@ import {
 } from "@rumi/markdown";
 import { cleanWorkspaceName } from "@rumi/workspace-format";
 import type {
+  AssetListItem,
   EditorToolbarMode,
   DatabasePropertyOptionColor,
   DatabasePropertyType,
@@ -60,6 +61,9 @@ import {
 } from "./components/layout/EditorHeaderIconButton";
 import { WorkspaceHeader } from "./components/layout/WorkspaceHeader";
 import {
+  ConvertNodeDialog,
+  MoveNodeDialog,
+  RenameNodeDialog,
   RootCreateMenu,
   Sidebar,
   sidebarCreationParentPath
@@ -90,11 +94,25 @@ import {
   isSelectAllShortcut
 } from "./lib/appBrowserInteractions";
 import { rememberVisitedPath, takePreviousVisitedNode } from "./lib/pageVisitHistory";
-import { pageCopyValue, type PageCopyAction } from "./lib/pageCopyActions";
+import {
+  findWorkspaceDocumentNode,
+  recordRecentDocument,
+  replaceRecentDocumentPath
+} from "./lib/recentDocuments";
+import { workspaceNodeCopyValue, type PageCopyAction } from "./lib/pageCopyActions";
+import {
+  isPinnableWorkspaceNode,
+  readPinnedItemPaths,
+  replacePinnedItemPath,
+  resolvePinnedItemPaths,
+  setPinnedItemPath,
+  writePinnedItemPaths
+} from "./lib/pinnedItems";
 import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
+import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
   mergeEditorScrollState,
   pageScrollKey,
@@ -155,6 +173,10 @@ const WorkspaceSettingsView = lazy(async () => {
   const module = await import("./components/settings/WorkspaceSettingsView");
   return { default: module.WorkspaceSettingsView };
 });
+const MediaLibraryView = lazy(async () => {
+  const module = await import("./components/media/MediaLibraryView");
+  return { default: module.MediaLibraryView };
+});
 const TrashView = lazy(async () => {
   const module = await import("./components/trash/TrashView");
   return { default: module.TrashView };
@@ -185,6 +207,14 @@ type PageTitleEditRequest = {
   path: string;
   caretOffset?: number;
   selectAll?: boolean;
+};
+type PinnedItemsState = {
+  workspaceRootPath: string;
+  paths: string[];
+};
+type RevisionHistoryTarget = {
+  path: string;
+  currentMarkdown: string;
 };
 
 const MOBILE_SIDEBAR_TRANSITION_MS = 200;
@@ -240,6 +270,11 @@ export function App(): ReactElement {
   const [workspaceRootPath, setWorkspaceRootPath] = useState(startupSnapshot?.workspace.rootPath ?? "");
   const [tree, setTree] = useState<WorkspaceNode | null>(startupSnapshot?.tree ?? null);
   const [treeRevalidated, setTreeRevalidated] = useState(false);
+  const [assets, setAssets] = useState<AssetListItem[]>([]);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [mediaLoadState, setMediaLoadState] = useState<LoadState>("idle");
+  const [renamingAssetPath, setRenamingAssetPath] = useState<string | null>(null);
+  const [movingAssetToTrashPath, setMovingAssetToTrashPath] = useState<string | null>(null);
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashLoadState, setTrashLoadState] = useState<LoadState>("idle");
@@ -263,7 +298,8 @@ export function App(): ReactElement {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [editorRevision, setEditorRevision] = useState(0);
   const [databaseRefreshRevisions, setDatabaseRefreshRevisions] = useState<DatabaseRefreshRevisions>({});
-  const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
+  const [revisionHistoryTarget, setRevisionHistoryTarget] =
+    useState<RevisionHistoryTarget | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceSettingsResult, setWorkspaceSettingsResult] =
@@ -296,8 +332,23 @@ export function App(): ReactElement {
   const [allowedUploadFileTypes, setAllowedUploadFileTypes] = useState<string[]>(
     startupSnapshot?.settings?.uploads.allowedFileTypes ?? []
   );
+  const [pinnedItemsState, setPinnedItemsState] = useState<PinnedItemsState>(() => {
+    const initialWorkspaceRootPath = startupSnapshot?.workspace.rootPath ?? "";
+    return {
+      workspaceRootPath: initialWorkspaceRootPath,
+      paths: readPinnedItemPaths(window.localStorage, initialWorkspaceRootPath)
+    };
+  });
+  const pinnedPaths = pinnedItemsState.workspaceRootPath === workspaceRootPath
+    ? pinnedItemsState.paths
+    : [];
   const [rootCreateMenuOpen, setRootCreateMenuOpen] = useState(false);
   const [sidebarCreateTarget, setSidebarCreateTarget] = useState<SidebarCreateTarget | null>(null);
+  const [workspaceRenameTarget, setWorkspaceRenameTarget] = useState<WorkspaceNode | null>(null);
+  const [workspaceMoveTarget, setWorkspaceMoveTarget] = useState<WorkspaceNode | null>(null);
+  const [workspaceMoveBusy, setWorkspaceMoveBusy] = useState(false);
+  const [workspaceConvertTarget, setWorkspaceConvertTarget] = useState<WorkspaceNode | null>(null);
+  const [workspaceConvertBusy, setWorkspaceConvertBusy] = useState(false);
   const [routeSyncReady, setRouteSyncReady] = useState(false);
   const [scrollRestoreRevision, setScrollRestoreRevision] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState(() => getSavedSidebarWidth());
@@ -357,32 +408,38 @@ export function App(): ReactElement {
   const editorDocuments = useMemo(() => collectEditorDocuments(tree), [tree]);
   const renderedScrollKey = settingsOpen
     ? "system:settings"
-    : activeTrashPage
-      ? `trash:${activeTrashPage.item.id}`
-      : trashOpen
-        ? "system:trash"
-        : page
-          ? pageScrollKey(page.path)
-          : null;
+    : mediaOpen
+      ? "system:uploads"
+      : activeTrashPage
+        ? `trash:${activeTrashPage.item.id}`
+        : trashOpen
+          ? "system:trash"
+          : page
+            ? pageScrollKey(page.path)
+            : null;
   const destinationScrollKey = settingsOpen
     ? "system:settings"
-    : activeTrashPage
-      ? `trash:${activeTrashPage.item.id}`
-      : trashOpen
-        ? "system:trash"
-        : selection?.openPath
-          ? pageScrollKey(selection.openPath)
-          : null;
+    : mediaOpen
+      ? "system:uploads"
+      : activeTrashPage
+        ? `trash:${activeTrashPage.item.id}`
+        : trashOpen
+          ? "system:trash"
+          : selection?.openPath
+            ? pageScrollKey(selection.openPath)
+            : null;
 
   useEffect(() => {
     document.title = activeTrashPage
       ? pageTitleFromPath(activeTrashPage.page.path, activeTrashPage.page.kind)
       : settingsOpen
         ? "Settings"
-      : trashOpen
-        ? "Trash"
-        : pageTitle ?? "Rumi";
-  }, [activeTrashPage, pageTitle, settingsOpen, trashOpen]);
+        : mediaOpen
+          ? "Uploads"
+          : trashOpen
+            ? "Trash"
+            : pageTitle ?? "Rumi";
+  }, [activeTrashPage, mediaOpen, pageTitle, settingsOpen, trashOpen]);
 
   useLayoutEffect(() => {
     if (!workspaceRootPath) return;
@@ -470,6 +527,10 @@ export function App(): ReactElement {
       setWorkspaceName(workspace.name);
       setWorkspaceRootPath(workspace.rootPath);
       setTree(nextTree);
+      setPinnedItemsState({
+        workspaceRootPath: workspace.rootPath,
+        paths: readPinnedItemPaths(window.localStorage, workspace.rootPath)
+      });
       setStartupPageMode(readStartupPageMode(window.localStorage, workspace.rootPath));
       setTreeRevalidated(true);
       setLoadState("idle");
@@ -490,6 +551,18 @@ export function App(): ReactElement {
       setMessage(errorMessage(error));
     }
   }, [api]);
+
+  const loadAssets = useCallback(async () => {
+    setMediaLoadState("loading");
+    try {
+      const result = await api.listAssets();
+      setAssets(result.items);
+      setMediaLoadState("idle");
+    } catch (error) {
+      setMediaLoadState("error");
+      setMessage(errorMessage(error));
+    }
+  }, [api, setMessage]);
 
   const loadWorkspaceSettings = useCallback(async () => {
     setSettingsLoadState("loading");
@@ -518,6 +591,10 @@ export function App(): ReactElement {
   }, [loadTrash]);
 
   useEffect(() => {
+    void loadAssets();
+  }, [loadAssets]);
+
+  useEffect(() => {
     void loadWorkspaceSettings();
   }, [loadWorkspaceSettings]);
 
@@ -534,8 +611,25 @@ export function App(): ReactElement {
   }, [page]);
 
   useEffect(() => {
-    setRevisionHistoryOpen(false);
+    setRevisionHistoryTarget(null);
   }, [page?.path]);
+
+  useEffect(() => {
+    if (!tree || !workspaceRootPath) return;
+
+    const storedPaths = readPinnedItemPaths(window.localStorage, workspaceRootPath);
+    const nextPaths = resolvePinnedItemPaths(tree, storedPaths);
+    if (!sameStringList(storedPaths, nextPaths)) {
+      writePinnedItemPaths(window.localStorage, workspaceRootPath, nextPaths);
+    }
+    setPinnedItemsState((current) => {
+      if (
+        current.workspaceRootPath === workspaceRootPath &&
+        sameStringList(current.paths, nextPaths)
+      ) return current;
+      return { workspaceRootPath, paths: nextPaths };
+    });
+  }, [tree, workspaceRootPath]);
 
   useEffect(() => {
     draftBodyRef.current = draftBody;
@@ -1023,6 +1117,12 @@ export function App(): ReactElement {
     [api, cacheResolvedPage]
   );
 
+  const rememberRecentOpen = useCallback((
+    node: Pick<WorkspaceNode, "path" | "kind" | "companionPath">
+  ) => {
+    recordRecentDocument(window.localStorage, workspaceRootPath, node);
+  }, [workspaceRootPath]);
+
   const prefetchNode = useCallback(
     (node: WorkspaceNode) => {
       const openPath = openPathForNode(node);
@@ -1036,28 +1136,94 @@ export function App(): ReactElement {
     [loadPage]
   );
 
-  const copyOpenPageReference = useCallback(
-    async (action: PageCopyAction) => {
-      if (!page || !selection) return;
-      const route = workspaceUrlForNode(
-        { path: selection.nodePath, kind: selection.kind },
-        tree
-      );
-      const value = pageCopyValue(action, {
+  const copyWorkspaceNodeReference = useCallback(
+    async (node: WorkspaceNode, action: PageCopyAction) => {
+      const value = workspaceNodeCopyValue(action, {
         origin: window.location.origin,
-        route,
-        relativePath: page.path
+        node,
+        tree
       });
+      if (!value) return;
 
       try {
         if (!navigator.clipboard) throw new Error("Clipboard access is unavailable.");
         await navigator.clipboard.writeText(value);
-        toast.success(action === "url" ? "Page URL copied" : "Relative path copied");
+        const subject = node.kind === "workspace"
+          ? "Workspace"
+          : node.kind === "folder"
+            ? "Folder"
+            : node.kind === "database"
+              ? "Database"
+              : "Page";
+        toast.success(action === "url" ? `${subject} URL copied` : "Relative path copied");
       } catch (error) {
         setMessage(errorMessage(error));
       }
     },
-    [page, selection, setMessage, tree]
+    [setMessage, tree]
+  );
+
+  const changePinnedNode = useCallback((node: WorkspaceNode, pinned: boolean) => {
+    if (!workspaceRootPath || !isPinnableWorkspaceNode(node)) return;
+
+    const currentPaths = readPinnedItemPaths(window.localStorage, workspaceRootPath);
+    const nextPaths = setPinnedItemPath(currentPaths, node.path, pinned);
+    writePinnedItemPaths(window.localStorage, workspaceRootPath, nextPaths);
+    setPinnedItemsState({ workspaceRootPath, paths: nextPaths });
+  }, [workspaceRootPath]);
+
+  const repairPinnedNodePath = useCallback((previousPath: string, nextPath: string) => {
+    if (!workspaceRootPath) return;
+
+    const currentPaths = readPinnedItemPaths(window.localStorage, workspaceRootPath);
+    const nextPaths = replacePinnedItemPath(currentPaths, previousPath, nextPath);
+    writePinnedItemPaths(window.localStorage, workspaceRootPath, nextPaths);
+    setPinnedItemsState({ workspaceRootPath, paths: nextPaths });
+  }, [workspaceRootPath]);
+
+  const openWorkspaceNodeRevisions = useCallback(async (node: WorkspaceNode) => {
+    const revisionPath = openPathForNode(node);
+    if (!revisionPath || node.kind === "workspace") return;
+
+    try {
+      const currentPage = pageRef.current;
+      if (currentPage?.path === revisionPath) {
+        setRevisionHistoryTarget({
+          path: revisionPath,
+          currentMarkdown: serializeMarkdownFile(
+            currentPage.frontmatter,
+            getCurrentDraftBody()
+          )
+        });
+        return;
+      }
+
+      const revisionPage = await loadPage(revisionPath);
+      setRevisionHistoryTarget({
+        path: revisionPath,
+        currentMarkdown: serializeMarkdownFile(
+          revisionPage.frontmatter,
+          revisionPage.markdownBody
+        )
+      });
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, [getCurrentDraftBody, loadPage, setMessage]);
+
+  const copyOpenPageReference = useCallback(
+    (action: PageCopyAction) => {
+      if (!page || !selection) return Promise.resolve();
+      const node = tree ? findWorkspaceNode(tree, selection.nodePath) : null;
+      const copyNode: WorkspaceNode = node ?? {
+        path: selection.nodePath,
+        name: selection.nodePath.split("/").at(-1) ?? workspaceName,
+        kind: selection.kind,
+        ...(selection.kind === "page" ? {} : { companionPath: page.path })
+      };
+      return copyWorkspaceNodeReference(copyNode, action);
+    },
+    [copyWorkspaceNodeReference, page, selection, tree, workspaceName]
   );
 
   useEffect(() => {
@@ -1138,7 +1304,7 @@ export function App(): ReactElement {
       if (action === "open-create-menu" && !tree) return;
       if (
         (action === "copy-page-url" || action === "copy-page-relative-path") &&
-        (!page || !selection || trashOpen || settingsOpen)
+        (!page || !selection || mediaOpen || trashOpen || settingsOpen)
       ) return;
 
       event.preventDefault();
@@ -1157,6 +1323,7 @@ export function App(): ReactElement {
       if (action === "open-settings") {
         pendingHistoryActionRef.current = "push";
         setSettingsOpen(true);
+        setMediaOpen(false);
         setTrashOpen(false);
         setActiveTrashPage(null);
         setMessage("");
@@ -1168,6 +1335,7 @@ export function App(): ReactElement {
       if (action === "open-trash") {
         pendingHistoryActionRef.current = "push";
         setSettingsOpen(false);
+        setMediaOpen(false);
         setTrashOpen(true);
         setActiveTrashPage(null);
         setMessage("");
@@ -1199,6 +1367,7 @@ export function App(): ReactElement {
     isNarrow,
     loadTrash,
     loadWorkspaceSettings,
+    mediaOpen,
     page,
     selection,
     settingsOpen,
@@ -1294,6 +1463,7 @@ export function App(): ReactElement {
       setSaveState("idle");
       setMessage("");
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
 
@@ -1324,6 +1494,7 @@ export function App(): ReactElement {
           return;
         }
 
+        rememberRecentOpen(node);
         pageRef.current = nextPage;
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
@@ -1337,11 +1508,11 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [isNarrow, loadPage]
+    [isNarrow, loadPage, rememberRecentOpen]
   );
 
   const redirectAfterDeletedNode = useCallback(async (deletedPath: string): Promise<void> => {
-    if (trashOpen) return;
+    if (mediaOpen || settingsOpen || trashOpen) return;
     const currentSelection = selectionRef.current;
     if (!currentSelection || !isSameOrDescendant(currentSelection.nodePath, deletedPath)) return;
 
@@ -1370,12 +1541,13 @@ export function App(): ReactElement {
     setDraftBody("");
     setSelection(null);
     setSettingsOpen(false);
+    setMediaOpen(false);
     setTrashOpen(false);
     setActiveTrashPage(null);
     clearLastOpenedPage(window.localStorage, workspaceRootPath);
     clearWorkspaceStartupSnapshot(window.localStorage);
     startupSnapshotRef.current = null;
-  }, [openNode, trashOpen, tree, workspaceRootPath]);
+  }, [mediaOpen, openNode, settingsOpen, trashOpen, tree, workspaceRootPath]);
 
   const openDocumentLink = useCallback((
     path: string,
@@ -1399,9 +1571,10 @@ export function App(): ReactElement {
 
   const uploadEditorAsset = useCallback(async (file: File): Promise<string> => {
     const result = await api.uploadAsset(file.name, file);
+    await loadAssets();
     setMessage("");
     return result.path;
-  }, [api]);
+  }, [api, loadAssets]);
 
   const openTrashPage = useCallback(async (
     itemOrId: TrashItem | string,
@@ -1419,6 +1592,7 @@ export function App(): ReactElement {
       setSelection(null);
       setSaveState("idle");
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(true);
       setActiveTrashPage(result);
       setLoadState("idle");
@@ -1436,7 +1610,7 @@ export function App(): ReactElement {
 
     const route = parseWorkspaceRoute(window.location.pathname);
 
-    if (route?.view === "node" && !treeRevalidated) {
+    if ((route?.view === "node" || route?.view === "home") && !treeRevalidated) {
       return;
     }
 
@@ -1445,6 +1619,7 @@ export function App(): ReactElement {
     if (route?.view === "settings") {
       pendingHistoryActionRef.current = "replace";
       setSettingsOpen(true);
+      setMediaOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       setRouteSyncReady(true);
@@ -1452,9 +1627,21 @@ export function App(): ReactElement {
       return;
     }
 
+    if (route?.view === "uploads") {
+      pendingHistoryActionRef.current = "replace";
+      setSettingsOpen(false);
+      setMediaOpen(true);
+      setTrashOpen(false);
+      setActiveTrashPage(null);
+      setRouteSyncReady(true);
+      void loadAssets();
+      return;
+    }
+
     if (route?.view === "trash") {
       pendingHistoryActionRef.current = "replace";
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(true);
       setActiveTrashPage(null);
       setRouteSyncReady(true);
@@ -1512,6 +1699,7 @@ export function App(): ReactElement {
       return;
     }
   }, [
+    loadAssets,
     loadTrash,
     loadWorkspaceSettings,
     openNode,
@@ -1536,6 +1724,7 @@ export function App(): ReactElement {
 
       if (route?.view === "settings") {
         setSettingsOpen(true);
+        setMediaOpen(false);
         setTrashOpen(false);
         setActiveTrashPage(null);
         setMessage("");
@@ -1543,8 +1732,19 @@ export function App(): ReactElement {
         return;
       }
 
+      if (route?.view === "uploads") {
+        setSettingsOpen(false);
+        setMediaOpen(true);
+        setTrashOpen(false);
+        setActiveTrashPage(null);
+        setMessage("");
+        void loadAssets();
+        return;
+      }
+
       if (route?.view === "trash") {
         setSettingsOpen(false);
+        setMediaOpen(false);
         setTrashOpen(true);
         setActiveTrashPage(null);
         setMessage("");
@@ -1573,6 +1773,7 @@ export function App(): ReactElement {
 
       openRequestIdRef.current += 1;
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       setPage(null);
@@ -1585,6 +1786,7 @@ export function App(): ReactElement {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [
+    loadAssets,
     loadTrash,
     loadWorkspaceSettings,
     openNode,
@@ -1597,15 +1799,17 @@ export function App(): ReactElement {
     if (!routeSyncReady) return;
     const nextUrl = settingsOpen
       ? "/settings"
-      : activeTrashPage
-      ? `/trash/${activeTrashPage.item.id}?${new URLSearchParams({
-          path: activeTrashPage.page.path
-        }).toString()}`
-      : trashOpen
-      ? "/trash"
-      : selection
-        ? workspaceUrlForNode({ path: selection.nodePath, kind: selection.kind }, tree)
-        : "/";
+      : mediaOpen
+        ? "/uploads"
+        : activeTrashPage
+          ? `/trash/${activeTrashPage.item.id}?${new URLSearchParams({
+              path: activeTrashPage.page.path
+            }).toString()}`
+          : trashOpen
+            ? "/trash"
+            : selection
+              ? workspaceUrlForNode({ path: selection.nodePath, kind: selection.kind }, tree)
+              : "/";
 
     if (`${window.location.pathname}${window.location.search}` === nextUrl) {
       pendingHistoryActionRef.current = "replace";
@@ -1644,6 +1848,7 @@ export function App(): ReactElement {
   }, [
     activeTrashPage,
     destinationScrollKey,
+    mediaOpen,
     routeSyncReady,
     selection,
     settingsOpen,
@@ -1666,6 +1871,7 @@ export function App(): ReactElement {
     page?.path,
     scrollRestoreRevision,
     selection?.openPath,
+    mediaOpen,
     settingsOpen,
     trashOpen
   ]);
@@ -1799,6 +2005,12 @@ export function App(): ReactElement {
       if (openPath) {
         try {
           const nextPage = await loadPage(openPath);
+          const nodeKind = pageKindToNodeKind(nextPage.kind);
+          rememberRecentOpen({
+            path: openPath,
+            kind: nodeKind,
+            ...(nodeKind === "page" ? {} : { companionPath: nextPage.path })
+          });
           pendingHistoryActionRef.current = "push";
           setPage(nextPage);
           setDraftBody(nextPage.markdownBody);
@@ -1819,7 +2031,7 @@ export function App(): ReactElement {
 
       return null;
     },
-    [loadPage, loadTree]
+    [loadPage, loadTree, rememberRecentOpen]
   );
 
   const createPage = useCallback(async (
@@ -1883,6 +2095,11 @@ export function App(): ReactElement {
       clearPageLoadCache();
       await loadTree();
       const nextPage = await loadPage(result.path);
+      rememberRecentOpen({
+        path: result.path,
+        kind: "database",
+        companionPath: nextPage.path
+      });
       pendingHistoryActionRef.current = "push";
       setPage(nextPage);
       setDraftBody(nextPage.markdownBody);
@@ -1896,7 +2113,7 @@ export function App(): ReactElement {
       setSaveState("error");
       throw error;
     }
-  }, [api, clearPageLoadCache, loadPage, loadTree, requestPageTitleSelection]);
+  }, [api, clearPageLoadCache, loadPage, loadTree, rememberRecentOpen, requestPageTitleSelection]);
 
   const createDefaultItem = useCallback(async (
     parentPath: string,
@@ -1919,9 +2136,11 @@ export function App(): ReactElement {
   ) => {
     try {
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(false);
       setActiveTrashPage(null);
       const nextPage = await loadPage(recordPath);
+      rememberRecentOpen({ path: recordPath, kind: "page" });
       pendingHistoryActionRef.current = "push";
       setPage(nextPage);
       setDraftBody(nextPage.markdownBody);
@@ -1936,7 +2155,7 @@ export function App(): ReactElement {
       setMessage(errorMessage(error));
       setSaveState("error");
     }
-  }, [loadPage, requestPageTitleSelection]);
+  }, [loadPage, rememberRecentOpen, requestPageTitleSelection]);
 
   const openCreatedRecordPath = useCallback((recordPath: string) => {
     insertPageIntoSidebar(recordPath);
@@ -1944,27 +2163,13 @@ export function App(): ReactElement {
   }, [insertPageIntoSidebar, openRecordPath]);
 
   const openSearchResult = useCallback(async (item: SearchWorkspaceResultItem) => {
-    try {
-      setSettingsOpen(false);
-      setTrashOpen(false);
-      setActiveTrashPage(null);
-      const nextPage = await loadPage(item.path);
-      pendingHistoryActionRef.current = "push";
-      setPage(nextPage);
-      setDraftBody(nextPage.markdownBody);
-      setSelection({
-        nodePath: item.kind === "page" ? item.path : parentPathForPage(item.path),
-        openPath: nextPage.path,
-        kind: item.kind
-      });
-      saveStateRef.current = "idle";
-      setSaveState("idle");
-      setMessage("");
-    } catch (error) {
-      setMessage(errorMessage(error));
-      setSaveState("error");
+    const node = tree ? findWorkspaceDocumentNode(tree, item.path) : null;
+    if (!node) {
+      setMessage("That workspace document is no longer available.");
+      return;
     }
-  }, [loadPage]);
+    await openNode(node);
+  }, [openNode, tree]);
 
   const renameNode = useCallback(
     async (node: WorkspaceNode, nextName: string): Promise<boolean> => {
@@ -1975,6 +2180,13 @@ export function App(): ReactElement {
       try {
         const currentSelection = selectionRef.current;
         const result = await api.renameNode({ path: node.path, newName: nextName.trim() });
+        replaceRecentDocumentPath(
+          window.localStorage,
+          workspaceRootPath,
+          node.path,
+          result.path
+        );
+        repairPinnedNodePath(node.path, result.path);
         showReservedSystemRouteToast(
           parentPathForPage(node.path),
           nextName,
@@ -2017,7 +2229,7 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, clearPageLoadCache, loadPage, loadTree]
+    [api, clearPageLoadCache, loadPage, loadTree, repairPinnedNodePath, workspaceRootPath]
   );
 
   const deleteNode = useCallback(
@@ -2063,6 +2275,7 @@ export function App(): ReactElement {
   const openTrash = useCallback(() => {
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(false);
+    setMediaOpen(false);
     setTrashOpen(true);
     setActiveTrashPage(null);
     setMessage("");
@@ -2073,12 +2286,97 @@ export function App(): ReactElement {
   const openSettings = useCallback(() => {
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(true);
+    setMediaOpen(false);
     setTrashOpen(false);
     setActiveTrashPage(null);
     setMessage("");
     void loadWorkspaceSettings();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
   }, [isNarrow, loadWorkspaceSettings]);
+
+  const openMedia = useCallback(() => {
+    pendingHistoryActionRef.current = "push";
+    setSettingsOpen(false);
+    setMediaOpen(true);
+    setTrashOpen(false);
+    setActiveTrashPage(null);
+    setMessage("");
+    void loadAssets();
+    if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
+  }, [isNarrow, loadAssets]);
+
+  const previewMediaAsset = useCallback((asset: AssetListItem) => {
+    const opened = window.open(
+      assetEndpointUrl(asset.path),
+      "_blank",
+      "noopener,noreferrer"
+    );
+    opened?.focus();
+  }, []);
+
+  const downloadMediaAsset = useCallback((asset: AssetListItem) => {
+    const link = document.createElement("a");
+    link.href = assetEndpointUrl(asset.path);
+    link.download = asset.fileName;
+    link.rel = "noopener";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }, []);
+
+  const copyMediaAssetValue = useCallback(async (
+    asset: AssetListItem,
+    action: "url" | "relative-path"
+  ): Promise<void> => {
+    const value = mediaAssetCopyValue(action, {
+      origin: window.location.origin,
+      path: asset.path
+    });
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard access is unavailable.");
+      await navigator.clipboard.writeText(value);
+      toast.success(action === "url" ? "Upload URL copied" : "Relative path copied");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, [setMessage]);
+
+  const renameMediaAsset = useCallback(async (
+    asset: AssetListItem,
+    nextName: string
+  ): Promise<boolean> => {
+    if (renamingAssetPath) return false;
+    setRenamingAssetPath(asset.path);
+    try {
+      const result = await api.renameNode({ path: asset.path, newName: nextName });
+      await loadAssets();
+      toast.success(
+        result.path === asset.path ? "Upload name is unchanged" : `Renamed to ${result.path}`
+      );
+      setMessage("");
+      return true;
+    } catch (error) {
+      setMessage(errorMessage(error));
+      return false;
+    } finally {
+      setRenamingAssetPath(null);
+    }
+  }, [api, loadAssets, renamingAssetPath, setMessage]);
+
+  const moveMediaAssetToTrash = useCallback(async (asset: AssetListItem): Promise<void> => {
+    if (movingAssetToTrashPath) return;
+    setMovingAssetToTrashPath(asset.path);
+    try {
+      await api.deleteNode({ path: asset.path });
+      await Promise.all([loadAssets(), loadTrash()]);
+      toast.success(`${asset.fileName} moved to Trash`);
+      setMessage("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setMovingAssetToTrashPath(null);
+    }
+  }, [api, loadAssets, loadTrash, movingAssetToTrashPath, setMessage]);
 
   const saveWorkspaceSettings = useCallback((
     settings: WorkspaceSettings,
@@ -2115,7 +2413,7 @@ export function App(): ReactElement {
     try {
       const result = await api.restoreTrashItem({ id: item.id });
       clearPageLoadCache();
-      await Promise.all([loadTree(), loadTrash()]);
+      await Promise.all([loadTree(), loadAssets(), loadTrash()]);
       if (openAfterRestore) {
         const restoringActivePage = activeTrashPage?.item.id === item.id;
         const restoringTrashRootPage = restoringActivePage && (
@@ -2129,18 +2427,25 @@ export function App(): ReactElement {
           ? replacePathPrefix(activeTrashPage.page.path, item.originalPath, result.path)
           : result.path;
         const nextPage = await loadPage(restoredOpenPath);
+        const restoredNodePath = nextPage.kind === "page"
+          ? nextPage.path
+          : parentPathForPage(nextPage.path);
+        rememberRecentOpen({
+          path: restoredNodePath,
+          kind: pageKindToNodeKind(nextPage.kind),
+          ...(nextPage.kind === "page" ? {} : { companionPath: nextPage.path })
+        });
         pendingHistoryActionRef.current = "replace";
         pageRef.current = nextPage;
         setPage(nextPage);
         setDraftBody(nextPage.markdownBody);
         setSelection({
-          nodePath: nextPage.kind === "page"
-            ? nextPage.path
-            : parentPathForPage(nextPage.path),
+          nodePath: restoredNodePath,
           openPath: nextPage.path,
           kind: pageKindToNodeKind(nextPage.kind)
         });
         setSettingsOpen(false);
+        setMediaOpen(false);
         setTrashOpen(false);
         setActiveTrashPage(null);
         saveStateRef.current = "idle";
@@ -2153,7 +2458,7 @@ export function App(): ReactElement {
     } finally {
       setRestoringTrashId(null);
     }
-  }, [activeTrashPage, api, clearPageLoadCache, loadPage, loadTrash, loadTree, restoringTrashId, setMessage]);
+  }, [activeTrashPage, api, clearPageLoadCache, loadAssets, loadPage, loadTrash, loadTree, rememberRecentOpen, restoringTrashId, setMessage]);
 
   const deleteTrashItemForever = useCallback(async (): Promise<void> => {
     if (!deleteForeverTarget || deletingTrashId) return;
@@ -2166,6 +2471,7 @@ export function App(): ReactElement {
       pendingHistoryActionRef.current = "replace";
       setActiveTrashPage((current) => current?.item.id === item.id ? null : current);
       setSettingsOpen(false);
+      setMediaOpen(false);
       setTrashOpen(true);
       setDeleteForeverTarget(null);
       setMessage("");
@@ -2187,6 +2493,13 @@ export function App(): ReactElement {
         const currentPage = pageRef.current;
         const wasDirty = saveStateRef.current === "dirty";
         const result = await api.moveNode({ path: node.path, newParentPath });
+        replaceRecentDocumentPath(
+          window.localStorage,
+          workspaceRootPath,
+          node.path,
+          result.path
+        );
+        repairPinnedNodePath(node.path, result.path);
         clearPageLoadCache();
         await loadTree();
 
@@ -2239,8 +2552,20 @@ export function App(): ReactElement {
         return false;
       }
     },
-    [api, clearPageLoadCache, getCurrentDraftBody, loadPage, loadTree]
+    [api, clearPageLoadCache, getCurrentDraftBody, loadPage, loadTree, repairPinnedNodePath, workspaceRootPath]
   );
+
+  const confirmWorkspaceMove = useCallback(async (newParentPath: string) => {
+    if (!workspaceMoveTarget || workspaceMoveBusy) return;
+    setWorkspaceMoveBusy(true);
+    try {
+      if (await moveNode(workspaceMoveTarget, newParentPath)) {
+        setWorkspaceMoveTarget(null);
+      }
+    } finally {
+      setWorkspaceMoveBusy(false);
+    }
+  }, [moveNode, workspaceMoveBusy, workspaceMoveTarget]);
 
   const savePage = useCallback((): Promise<boolean> => {
     if (saveInFlightRef.current) return saveInFlightRef.current;
@@ -2418,6 +2743,18 @@ export function App(): ReactElement {
     }
   }, [api, clearPageLoadCache, loadPage, loadTree, savePage]);
 
+  const confirmWorkspaceConvert = useCallback(async () => {
+    if (!workspaceConvertTarget || workspaceConvertBusy) return;
+    setWorkspaceConvertBusy(true);
+    try {
+      if (await convertNode(workspaceConvertTarget)) {
+        setWorkspaceConvertTarget(null);
+      }
+    } finally {
+      setWorkspaceConvertBusy(false);
+    }
+  }, [convertNode, workspaceConvertBusy, workspaceConvertTarget]);
+
   const renameOpenPage = useCallback(async (requestedTitle: string): Promise<boolean> => {
     const currentPage = pageRef.current;
     const currentSelection = selectionRef.current;
@@ -2472,6 +2809,13 @@ export function App(): ReactElement {
       }
 
       const result = await api.renameNode({ path: intent.previousNodePath, newName: finalNodeName });
+      replaceRecentDocumentPath(
+        window.localStorage,
+        workspaceRootPath,
+        intent.previousNodePath,
+        result.path
+      );
+      repairPinnedNodePath(intent.previousNodePath, result.path);
       showReservedSystemRouteToast(parentPath, finalNodeName, currentPage.kind);
       intent.expectedNodePath = result.path;
       intent.expectedPagePath = pagePathForRenamedNode(result.path, currentPage.kind);
@@ -2545,7 +2889,7 @@ export function App(): ReactElement {
       }
       return false;
     }
-  }, [api, clearPageLoadCache, getCurrentDraftBody, loadTree, savePage]);
+  }, [api, clearPageLoadCache, getCurrentDraftBody, loadTree, repairPinnedNodePath, savePage, workspaceRootPath]);
 
   const renameOpenPageTitle = useCallback(async (requestedTitle: string): Promise<boolean> => {
     const currentPage = pageRef.current;
@@ -2856,9 +3200,17 @@ export function App(): ReactElement {
     async (event: RumiEvent) => {
       if (!event.path || !event.previousPath) {
         clearPageLoadCache();
-        await loadTree();
+        await Promise.all([loadTree(), loadAssets()]);
         return;
       }
+
+      replaceRecentDocumentPath(
+        window.localStorage,
+        workspaceRootPath,
+        event.previousPath,
+        event.path
+      );
+      repairPinnedNodePath(event.previousPath, event.path);
 
       const renameIntent = pageRenameIntentRef.current;
       if (
@@ -2872,11 +3224,12 @@ export function App(): ReactElement {
         }
         clearPageLoadCache();
         void loadTree();
+        void loadAssets();
         return;
       }
 
       clearPageLoadCache();
-      await loadTree();
+      await Promise.all([loadTree(), loadAssets()]);
 
       const currentSelection = selectionRef.current;
 
@@ -2925,23 +3278,23 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [clearPageLoadCache, getCurrentDraftBody, loadPage, loadTree]
+    [clearPageLoadCache, getCurrentDraftBody, loadAssets, loadPage, loadTree, repairPinnedNodePath, workspaceRootPath]
   );
 
   const handleDeletedEvent = useCallback(
     async (event: RumiEvent) => {
       if (!event.path) {
         clearPageLoadCache();
-        await Promise.all([loadTree(), loadTrash()]);
+        await Promise.all([loadTree(), loadAssets(), loadTrash()]);
         return;
       }
 
       clearPageLoadCache();
-      await Promise.all([loadTree(), loadTrash()]);
+      await Promise.all([loadTree(), loadAssets(), loadTrash()]);
 
       await redirectAfterDeletedNode(event.path);
     },
-    [clearPageLoadCache, loadTrash, loadTree, redirectAfterDeletedNode]
+    [clearPageLoadCache, loadAssets, loadTrash, loadTree, redirectAfterDeletedNode]
   );
 
   useEffect(() => {
@@ -2956,6 +3309,10 @@ export function App(): ReactElement {
 
       if (event.name === "page.deleted") {
         void handleDeletedEvent(event);
+      }
+
+      if (event.name === "asset.changed") {
+        void loadAssets();
       }
 
       if (event.name === "trash.changed") {
@@ -2973,7 +3330,10 @@ export function App(): ReactElement {
       if (event.name === "folder.childrenChanged" || event.name === "workspace.treeChanged") {
         clearPageLoadCache();
         void loadTree();
-        if (event.name === "workspace.treeChanged") void loadTrash();
+        if (event.name === "workspace.treeChanged") {
+          void loadAssets();
+          void loadTrash();
+        }
       }
 
       if (event.name === "database.recordsChanged" || event.name === "database.schemaChanged") {
@@ -2989,7 +3349,7 @@ export function App(): ReactElement {
         void refreshOpenPageDatabaseContext();
       }
     });
-  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
+  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadAssets, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
 
   return (
     <main className="relative flex h-screen max-h-screen min-h-0 overflow-hidden bg-background text-foreground">
@@ -3022,9 +3382,10 @@ export function App(): ReactElement {
             workspaceName={workspaceName}
             workspaceKey={workspaceRootPath}
             tree={tree}
-            selection={trashOpen || settingsOpen ? null : selection}
+            selection={mediaOpen || trashOpen || settingsOpen ? null : selection}
             trashCount={trashItems.length}
             trashOpen={trashOpen}
+            mediaOpen={mediaOpen}
             settingsOpen={settingsOpen}
             createTarget={sidebarCreateTarget}
             onCreateTargetChange={setSidebarCreateTarget}
@@ -3034,11 +3395,17 @@ export function App(): ReactElement {
             onCreateFolder={createFolder}
             onCreateDatabase={createDatabase}
             onCreateDefault={createDefaultItem}
+            onCopyNode={(node, action) => void copyWorkspaceNodeReference(node, action)}
             onRenameNode={renameNode}
-            onMoveNode={moveNode}
-            onConvertNode={convertNode}
+            onRequestRenameNode={setWorkspaceRenameTarget}
+            onMoveNode={setWorkspaceMoveTarget}
+            onConvertNode={setWorkspaceConvertTarget}
+            pinnedPaths={pinnedPaths}
+            onPinnedChange={changePinnedNode}
+            onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
             onDeleteNode={deleteNode}
             onOpenSettings={openSettings}
+            onOpenMedia={openMedia}
             onOpenTrash={openTrash}
             settingsShortcut={shortcutLabel.settings}
             trashShortcut={shortcutLabel.trash}
@@ -3067,17 +3434,24 @@ export function App(): ReactElement {
           workspaceName={workspaceName}
           tree={tree}
           selection={selection}
-          systemView={settingsOpen ? "settings" : trashOpen ? "trash" : null}
-          hasOpenPage={Boolean(page && !trashOpen && !settingsOpen)}
+          systemView={settingsOpen ? "settings" : mediaOpen ? "uploads" : trashOpen ? "trash" : null}
           onNavigate={(node) => void openNode(node)}
           onToggleSearch={() => setSearchOpen((open) => !open)}
-          onMoveNode={moveNode}
+          onCreateNode={(parentPath, kind) => {
+            if (sidebarCollapsed) {
+              setSidebarCollapsedState(false, setSidebarCollapsed);
+            }
+            setSidebarCreateTarget({ parentPath, kind });
+          }}
+          onCreateDefault={createDefaultItem}
+          onCopyNode={(node, action) => void copyWorkspaceNodeReference(node, action)}
+          onRenameNode={setWorkspaceRenameTarget}
+          onMoveNode={setWorkspaceMoveTarget}
+          onConvertNode={setWorkspaceConvertTarget}
+          pinnedPaths={pinnedPaths}
+          onPinnedChange={changePinnedNode}
+          onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
           onMoveToTrash={deleteNode}
-          onCopyUrl={() => void copyOpenPageReference("url")}
-          onCopyRelativePath={() => void copyOpenPageReference("relative-path")}
-          copyUrlShortcut={shortcutLabel.copyUrl}
-          copyRelativePathShortcut={shortcutLabel.copyRelativePath}
-          onSeeRevisions={() => setRevisionHistoryOpen(true)}
           leadingControls={(
             <>
               <RootCreateMenu
@@ -3126,6 +3500,22 @@ export function App(): ReactElement {
               onReload={() => void loadWorkspaceSettings()}
               onSave={saveWorkspaceSettings}
               onThemePreferenceChange={changeThemePreference}
+            />
+          </Suspense>
+        ) : mediaOpen ? (
+          <Suspense fallback={<div className="min-h-0 flex-1" data-rumi-editor-canvas="" />}>
+            <MediaLibraryView
+              assets={assets}
+              loadState={mediaLoadState}
+              renamingPath={renamingAssetPath}
+              movingToTrashPath={movingAssetToTrashPath}
+              onReload={() => void loadAssets()}
+              onPreview={previewMediaAsset}
+              onDownload={downloadMediaAsset}
+              onCopyUrl={(asset) => void copyMediaAssetValue(asset, "url")}
+              onCopyRelativePath={(asset) => void copyMediaAssetValue(asset, "relative-path")}
+              onRename={renameMediaAsset}
+              onMoveToTrash={moveMediaAssetToTrash}
             />
           </Suspense>
         ) : trashOpen && !activeTrashPage ? (
@@ -3309,6 +3699,35 @@ export function App(): ReactElement {
         )}
       </section>
 
+      <RenameNodeDialog
+        node={workspaceRenameTarget}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceRenameTarget(null);
+        }}
+        onConfirm={(nextName) => workspaceRenameTarget
+          ? renameNode(workspaceRenameTarget, nextName)
+          : Promise.resolve(false)}
+      />
+
+      <MoveNodeDialog
+        tree={tree}
+        node={workspaceMoveTarget}
+        busy={workspaceMoveBusy}
+        onOpenChange={(open) => {
+          if (!open && !workspaceMoveBusy) setWorkspaceMoveTarget(null);
+        }}
+        onConfirm={confirmWorkspaceMove}
+      />
+
+      <ConvertNodeDialog
+        node={workspaceConvertTarget}
+        busy={workspaceConvertBusy}
+        onOpenChange={(open) => {
+          if (!open && !workspaceConvertBusy) setWorkspaceConvertTarget(null);
+        }}
+        onConfirm={confirmWorkspaceConvert}
+      />
+
       {deleteForeverTarget && (
         <Suspense fallback={null}>
           <DeleteTrashItemDialog
@@ -3322,16 +3741,28 @@ export function App(): ReactElement {
         </Suspense>
       )}
 
-      {page && !trashOpen && !settingsOpen && revisionHistoryOpen && (
+      {revisionHistoryTarget && (
         <Suspense fallback={null}>
           <RevisionHistoryDialog
             api={api}
-            path={page.path}
+            path={revisionHistoryTarget.path}
             open
-            dirty={saveState === "dirty" || saveState === "saving"}
-            currentMarkdown={() => serializeMarkdownFile(page.frontmatter, getCurrentDraftBody())}
-            onOpenChange={setRevisionHistoryOpen}
-            onRestored={refreshOpenPage}
+            dirty={Boolean(
+              page?.path === revisionHistoryTarget.path &&
+              (saveState === "dirty" || saveState === "saving")
+            )}
+            currentMarkdown={() => pageRef.current?.path === revisionHistoryTarget.path
+              ? serializeMarkdownFile(pageRef.current.frontmatter, getCurrentDraftBody())
+              : revisionHistoryTarget.currentMarkdown}
+            onOpenChange={(open) => {
+              if (!open) setRevisionHistoryTarget(null);
+            }}
+            onRestored={async () => {
+              forgetCachedPage(revisionHistoryTarget.path);
+              if (pageRef.current?.path === revisionHistoryTarget.path) {
+                await refreshOpenPage();
+              }
+            }}
             onMessage={setMessage}
           />
         </Suspense>
@@ -3340,6 +3771,8 @@ export function App(): ReactElement {
         <Suspense fallback={null}>
           <SearchDialog
             api={api}
+            tree={tree}
+            workspaceRootPath={workspaceRootPath}
             open
             onOpenChange={setSearchOpen}
             onOpenItem={(item) => void openSearchResult(item)}
@@ -3392,6 +3825,10 @@ function replacePathPrefix(path: string, previousPrefix: string, nextPrefix: str
   }
 
   return path;
+}
+
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function pageKindToNodeKind(kind: PageDocument["kind"]): WorkspaceNode["kind"] {

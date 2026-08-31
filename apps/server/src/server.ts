@@ -9,6 +9,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import type {
+  AssetListResult,
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
@@ -407,6 +408,8 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
       });
     }
   });
+
+  server.get("/api/assets", async (): Promise<AssetListResult> => runtime.listAssets());
 
   server.post<{
     Querystring: { fileName?: string };

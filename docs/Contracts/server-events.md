@@ -3,7 +3,7 @@ status: draft
 area: events
 owner: server
 created: "2026-06-22"
-updated: "2026-07-20"
+updated: "2026-08-29"
 ---
 # Server Events
 
@@ -58,6 +58,11 @@ Restoring from Trash publishes `workspace.treeChanged` with the restored path, o
 Permanent deletion publishes `trash.changed` with `changedBy: "trash.deleteForever"` and the
 removed `trashItemId`, allowing every client to refresh its Trash list or leave the removed
 read-only Trash route.
+
+The official Uploads view treats inventory as server-owned derived state. It refetches `listAssets`
+after normalized `asset.changed`, tree, move, delete, and restore notifications that may affect
+`.assets/`; upload, rename, and Move-to-Trash actions also trigger an immediate refresh. Event
+payloads invalidate the inventory but do not reconstruct it in the browser.
 
 ## Transport
 

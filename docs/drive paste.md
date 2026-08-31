@@ -9,7 +9,7 @@ An internal document link points to the inner folder
 This line ends with a hard break.  
 This text remains in the same paragraph after the break.
 
-Plain text, **bold**, *italic*, __underlined__, ~~struck through~~, inline code, default highlight, and[ an external link](https://example.com).
+Plain text, **bold**, *italic*, __underlined__, ~~struck through~~, inline code, default ==highlight==, and [an external link](https://example.com).
 
 ### **Heading level three**
 
@@ -108,13 +108,7 @@ sort: updated desc
 ## **Divider**
 
 
-
-
-
 ---
-
-
-
 
 
 Content after the divider verifies that normal editing continues after an atomic block.
@@ -240,13 +234,7 @@ sort: updated desc
 ## **Divider**
 
 
-
-
-
 ---
-
-
-
 
 
 Content after the divider verifies that normal editing continues after an atomic block.

@@ -99,6 +99,10 @@ describe("WorkspaceRuntime", () => {
     expect(asset.data).toEqual(bytes);
     expect(events.map((entry) => entry.event.name)).toEqual(["asset.changed", "asset.changed"]);
     await expect(runtime.readAsset("Idea.md")).rejects.toThrow(/not a readable workspace asset/);
+    await fs.writeFile(path.join(root, "outside.png"), bytes);
+    await fs.symlink(path.join(root, "outside.png"), path.join(root, ".assets", "linked.png"));
+    await expect(runtime.readAsset("outside.png")).rejects.toThrow(/not a readable workspace asset/);
+    await expect(runtime.readAsset(".assets/linked.png")).rejects.toThrow(/symlink/);
 
     const svg = Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'
@@ -113,6 +117,117 @@ describe("WorkspaceRuntime", () => {
       "script.svg",
       Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
     )).rejects.toThrow(/complete static SVG/u);
+  });
+
+  it("lists supported external assets with safe deterministic metadata", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await expect(runtime.listAssets()).resolves.toEqual({ items: [] });
+
+    await fs.mkdir(path.join(root, ".assets", "nested"), { recursive: true });
+    await fs.mkdir(path.join(root, ".assets", ".private"), { recursive: true });
+    await fs.writeFile(path.join(root, ".assets", "alpha.png"), Buffer.alloc(8));
+    await fs.writeFile(path.join(root, ".assets", "nested", "manual.pdf"), "%PDF-1.7", "utf8");
+    await fs.writeFile(path.join(root, ".assets", "newest.webp"), Buffer.alloc(5));
+    await fs.writeFile(path.join(root, ".assets", "notes.txt"), "unsupported", "utf8");
+    await fs.writeFile(path.join(root, ".assets", ".hidden.png"), Buffer.alloc(2));
+    await fs.writeFile(path.join(root, ".assets", ".private", "secret.png"), Buffer.alloc(3));
+    await fs.writeFile(path.join(root, "outside.png"), Buffer.alloc(4));
+    await fs.symlink(path.join(root, "outside.png"), path.join(root, ".assets", "linked.png"));
+
+    const sharedModifiedAt = new Date("2026-08-21T12:00:00.000Z");
+    const newestModifiedAt = new Date("2026-08-22T12:00:00.000Z");
+    await fs.utimes(path.join(root, ".assets", "alpha.png"), sharedModifiedAt, sharedModifiedAt);
+    await fs.utimes(
+      path.join(root, ".assets", "nested", "manual.pdf"),
+      sharedModifiedAt,
+      sharedModifiedAt
+    );
+    await fs.utimes(path.join(root, ".assets", "newest.webp"), newestModifiedAt, newestModifiedAt);
+
+    const listed = await runtime.listAssets();
+    expect(listed.items).toEqual([
+      {
+        path: ".assets/newest.webp",
+        fileName: "newest.webp",
+        contentType: "image/webp",
+        size: 5,
+        modifiedAt: newestModifiedAt.toISOString()
+      },
+      {
+        path: ".assets/alpha.png",
+        fileName: "alpha.png",
+        contentType: "image/png",
+        size: 8,
+        modifiedAt: sharedModifiedAt.toISOString()
+      },
+      {
+        path: ".assets/nested/manual.pdf",
+        fileName: "manual.pdf",
+        contentType: "application/pdf",
+        size: 8,
+        modifiedAt: sharedModifiedAt.toISOString()
+      }
+    ]);
+    expect(JSON.stringify(listed)).not.toContain(root);
+
+    await fs.rm(path.join(root, ".assets", "alpha.png"));
+    await fs.rm(path.join(root, ".assets", "newest.webp"));
+    await fs.rm(path.join(root, ".assets", "nested", "manual.pdf"));
+    await expect(runtime.listAssets()).resolves.toEqual({ items: [] });
+  });
+
+  it("does not traverse a symlink used in place of the canonical assets directory", async () => {
+    const root = await tempWorkspace();
+    const externalDirectory = await createTempWorkspace("rumi-external-assets-");
+    cleanupPaths.push(externalDirectory);
+    await fs.writeFile(path.join(externalDirectory, "outside.png"), Buffer.alloc(4));
+    await fs.symlink(externalDirectory, path.join(root, ".assets"));
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+
+    await expect(runtime.listAssets()).resolves.toEqual({ items: [] });
+  });
+
+  it("surfaces unreadable asset directories instead of returning a partial inventory", async () => {
+    const root = await tempWorkspace();
+    await fs.mkdir(path.join(root, ".assets"));
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    await fs.chmod(path.join(root, ".assets"), 0o000);
+
+    try {
+      await expect(runtime.listAssets()).rejects.toMatchObject({ code: "EACCES" });
+    } finally {
+      await fs.chmod(path.join(root, ".assets"), 0o700);
+    }
+  });
+
+  it("renames assets collision-safely and moves deletion payloads to Trash", async () => {
+    const root = await tempWorkspace();
+    const runtime = await WorkspaceRuntime.open({ rootPath: root });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await runtime.saveAsset("before.png", png);
+    await runtime.saveAsset("after.png", png);
+    await fs.writeFile(path.join(root, "Reference.md"), "![](.assets/before.png)", "utf8");
+
+    const renamed = await runtime.renameNode({
+      path: ".assets/before.png",
+      newName: "after.png"
+    });
+    expect(renamed.path).toBe(".assets/after (1).png");
+    await runtime.flushBackgroundTasks();
+    await expect(fs.readFile(path.join(root, "Reference.md"), "utf8"))
+      .resolves.toBe("![](.assets/after%20(1).png)");
+
+    const deleted = await runtime.deleteNode({ path: renamed.path });
+    expect(deleted.trashItem).toMatchObject({
+      kind: "asset",
+      originalPath: ".assets/after (1).png"
+    });
+    await expect(fs.stat(path.join(root, renamed.path))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(runtime.listTrash()).resolves.toMatchObject({
+      items: [{ kind: "asset", originalPath: ".assets/after (1).png" }]
+    });
   });
 
   it("validates the complete streamed SVG before publishing it", async () => {

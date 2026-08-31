@@ -1,10 +1,11 @@
 import type { WorkspaceNode } from "@rumi/contracts";
 
-export type WorkspaceSystemView = "settings" | "trash";
+export type WorkspaceSystemView = "settings" | "uploads" | "trash";
 
 export type WorkspaceRoute =
   | { view: "home" }
   | { view: "settings" }
+  | { view: "uploads" }
   | { view: "trash" }
   | { view: "trash-item"; id: string }
   | { view: "node"; slugPath: string };
@@ -22,6 +23,7 @@ export interface ReservedSystemRoute {
 
 const RESERVED_SYSTEM_ROUTES: Readonly<Record<WorkspaceSystemView, ReservedSystemRoute>> = {
   settings: { view: "settings", label: "Settings", url: "/settings" },
+  uploads: { view: "uploads", label: "Uploads", url: "/uploads" },
   trash: { view: "trash", label: "Trash", url: "/trash" }
 };
 
@@ -49,6 +51,7 @@ export function parseWorkspaceRoute(pathname: string): WorkspaceRoute | null {
   const normalizedPathname = pathname !== "/" ? pathname.replace(/\/+$/u, "") : pathname;
   if (normalizedPathname === "/") return { view: "home" };
   if (normalizedPathname.toLowerCase() === "/settings") return { view: "settings" };
+  if (normalizedPathname.toLowerCase() === "/uploads") return { view: "uploads" };
   if (normalizedPathname.toLowerCase() === "/trash") return { view: "trash" };
   const trashItemMatch = /^\/trash\/([A-Za-z0-9-]+)$/u.exec(normalizedPathname);
   if (trashItemMatch) return { view: "trash-item", id: trashItemMatch[1]! };
@@ -208,7 +211,9 @@ function compareText(left: string, right: string): number {
 }
 
 function reservedSystemRouteForSlug(slug: string): ReservedSystemRoute | null {
-  if (slug === "settings" || slug === "trash") return RESERVED_SYSTEM_ROUTES[slug];
+  if (slug === "settings" || slug === "uploads" || slug === "trash") {
+    return RESERVED_SYSTEM_ROUTES[slug];
+  }
   return null;
 }
 

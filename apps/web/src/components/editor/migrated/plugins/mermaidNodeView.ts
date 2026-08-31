@@ -2,23 +2,25 @@ import { Node as PmNode } from "prosemirror-model"
 import { NodeSelection, Selection } from "prosemirror-state"
 import { EditorView, NodeView } from "prosemirror-view"
 import { setMermaidEditSelection } from "../structuralCaretSelection"
+import { THEME_CHANGE_EVENT } from "../../../../lib/themePreferences"
 
 type MermaidApi = typeof import("mermaid")["default"]
 
 let mermaidPromise: Promise<MermaidApi> | null = null
 
 function loadMermaid(): Promise<MermaidApi> {
-  mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-      securityLevel: "strict",
-      suppressErrorRendering: true,
-      fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
-    })
-    return mermaid
-  })
+  mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => mermaid)
   return mermaidPromise
+}
+
+function initializeMermaid(mermaid: MermaidApi): void {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
+    securityLevel: "strict",
+    suppressErrorRendering: true,
+    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
+  })
 }
 
 const VIEW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"></path></svg>`
@@ -46,6 +48,9 @@ class MermaidNodeView implements NodeView {
   private mermaidId: string
   private renderRevision = 0
   private viewHeight: number | null = null
+  private readonly handleThemeChange = () => {
+    void this.renderDiagram()
+  }
 
   constructor(node: PmNode, view: EditorView, getPos: () => number | undefined) {
     this.node = node
@@ -91,6 +96,7 @@ class MermaidNodeView implements NodeView {
     content.appendChild(this.editorContainer)
     content.appendChild(this.previewContainer)
 
+    window.addEventListener(THEME_CHANGE_EVENT, this.handleThemeChange)
     this.updateMode()
     this.renderDiagram()
   }
@@ -230,6 +236,7 @@ class MermaidNodeView implements NodeView {
       // rendering. A newer update may supersede this one while it loads.
       const mermaid = await loadMermaid()
       if (renderRevision !== this.renderRevision) return
+      initializeMermaid(mermaid)
       const { svg } = await mermaid.render(
         `${this.mermaidId}-${renderRevision}`,
         code
@@ -285,6 +292,7 @@ class MermaidNodeView implements NodeView {
   destroy() {
     // Ignore any Mermaid render that settles after this view is gone.
     this.renderRevision += 1
+    window.removeEventListener(THEME_CHANGE_EVENT, this.handleThemeChange)
   }
 }
 

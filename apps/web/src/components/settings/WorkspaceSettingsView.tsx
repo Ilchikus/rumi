@@ -18,6 +18,7 @@ import {
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import type { StartupPageMode } from "../../lib/workspaceStartup";
+import type { ThemePreference } from "../../lib/themePreferences";
 
 type SettingsLoadState = "idle" | "loading" | "error";
 
@@ -39,20 +40,33 @@ const STARTUP_PAGE_OPTIONS: ReadonlyArray<{
   { value: "home", label: "Home" }
 ];
 
+const THEME_OPTIONS: ReadonlyArray<{
+  value: ThemePreference;
+  label: string;
+}> = [
+  { value: "auto", label: "Auto" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" }
+];
+
 export interface WorkspaceSettingsViewProps {
   result: WorkspaceSettingsResult | null;
   startupPageMode: StartupPageMode;
+  themePreference: ThemePreference;
   loadState: SettingsLoadState;
   onReload: () => void;
   onSave: (settings: WorkspaceSettings, startupPageMode: StartupPageMode) => Promise<boolean>;
+  onThemePreferenceChange: (preference: ThemePreference) => void;
 }
 
 export function WorkspaceSettingsView({
   result,
   startupPageMode: savedStartupPageMode,
+  themePreference,
   loadState,
   onReload,
-  onSave
+  onSave,
+  onThemePreferenceChange
 }: WorkspaceSettingsViewProps): ReactElement {
   const [maxFileSizeInput, setMaxFileSizeInput] = useState("");
   const [allowedFileTypes, setAllowedFileTypes] = useState<string[]>([]);
@@ -168,6 +182,41 @@ export function WorkspaceSettingsView({
         </div>
       ) : (
         <div className="space-y-10">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <label htmlFor="theme-preference" className="text-sm font-medium">
+                Theme
+              </label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    id="theme-preference"
+                    type="button"
+                    variant="outline"
+                    className="w-32 justify-between font-normal"
+                  >
+                    {THEME_OPTIONS.find(({ value }) => value === themePreference)?.label}
+                    <CaretDown size={14} className="text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-32">
+                  {THEME_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onSelect={() => onThemePreferenceChange(option.value)}
+                    >
+                      <span className="flex-1">{option.label}</span>
+                      {option.value === themePreference ? <Check size={14} /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Use the system appearance automatically, or keep Rumi light or dark.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
               <label htmlFor="highlight-misspellings" className="text-sm font-medium">
@@ -349,7 +398,7 @@ export function WorkspaceSettingsView({
                   <input
                     type="checkbox"
                     checked={allowedFileTypes.includes(extension)}
-                    className="h-4 w-4 shrink-0 accent-sky-600"
+                    className="rumi-checkbox h-4 w-4 shrink-0"
                     onChange={() => toggleFileType(extension)}
                   />
                   <span>{extension}</span>

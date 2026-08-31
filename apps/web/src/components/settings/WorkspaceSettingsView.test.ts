@@ -6,6 +6,11 @@ const viewSource = readFileSync(
   "utf8"
 );
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
+const indexSource = readFileSync(new URL("../../../index.html", import.meta.url), "utf8");
+const themeBootstrapSource = readFileSync(
+  new URL("../../../public/theme-bootstrap.js", import.meta.url),
+  "utf8"
+);
 
 describe("workspace settings page", () => {
   it("uses the editor page layout and setting rows instead of a dialog or sections", () => {
@@ -18,6 +23,10 @@ describe("workspace settings page", () => {
     expect(viewSource).toContain("Editor toolbar");
     expect(viewSource).not.toContain("Inline toolbar");
     expect(viewSource).toContain("Open on start");
+    expect(viewSource).toContain("Theme");
+    expect(viewSource).toContain('{ value: "auto", label: "Auto" }');
+    expect(viewSource).toContain('{ value: "light", label: "Light" }');
+    expect(viewSource).toContain('{ value: "dark", label: "Dark" }');
     expect(viewSource).toContain('{ value: "last-visited", label: "Last visited" }');
     expect(viewSource).toContain('{ value: "home", label: "Home" }');
     expect(viewSource).toContain('{ value: "floating", label: "Floating" }');
@@ -42,7 +51,7 @@ describe("workspace settings page", () => {
 
   it("uses a switch for misspellings, Blue checkboxes for formats, and auto-saves blank as unlimited", () => {
     expect(viewSource).toContain('type="checkbox"');
-    expect(viewSource).toContain("accent-sky-600");
+    expect(viewSource).toContain("rumi-checkbox");
     expect(viewSource).toContain('trimmedSize === "" ? null');
     expect(viewSource).toContain("Zero disables uploads");
     expect(viewSource).toContain("{extension}");
@@ -103,5 +112,18 @@ describe("workspace settings page", () => {
     expect(appSource).toContain('href={route.url}');
     expect(appSource).toContain('route?.view === "settings"');
     expect(appSource).toContain('? "/settings"');
+  });
+
+  it("keeps theme choice browser-local, system-aware, and applied before React", () => {
+    expect(viewSource).toContain("onThemePreferenceChange(option.value)");
+    expect(appSource).toContain("readThemePreference(window.localStorage, workspaceRootPath)");
+    expect(appSource).toContain("writeThemePreference(window.localStorage, workspaceRootPath, preference)");
+    expect(appSource).toContain('query.addEventListener("change", updateSystemTheme)');
+    expect(appSource).toContain("applyTheme(");
+    expect(themeBootstrapSource).toContain("prefers-color-scheme: dark");
+    expect(themeBootstrapSource).toContain("document.documentElement.classList.toggle");
+    expect(indexSource.indexOf('<script src="/theme-bootstrap.js?v=20260831-1"></script>')).toBeLessThan(
+      indexSource.indexOf('<script type="module" src="/src/main.tsx"></script>')
+    );
   });
 });

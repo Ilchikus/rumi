@@ -108,7 +108,7 @@ export function TrashView({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   disabled={restoringId !== null || deletingId !== null}
                   onClick={() => onDeleteForever(item)}
                 >

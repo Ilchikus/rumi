@@ -24,6 +24,8 @@ interface PendingRender {
 
 describe("Mermaid node view", () => {
   beforeEach(() => {
+    document.documentElement.classList.remove("dark")
+    mermaidMocks.initialize.mockReset()
     mermaidMocks.render.mockReset()
     mermaidMocks.render.mockResolvedValue({ svg: "<svg></svg>" })
   })
@@ -42,6 +44,33 @@ describe("Mermaid node view", () => {
     await vi.waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ suppressErrorRendering: true })
     ))
+
+    nodeView.destroy?.()
+  })
+
+  it("re-renders open diagrams with Mermaid's matching application theme", async () => {
+    const node = schema.nodes.mermaid!.create(
+      { mode: "view" },
+      schema.text("graph TD; A-->B")
+    )
+    const state = EditorState.create({
+      doc: schema.nodes.doc!.create(null, node)
+    })
+    const view = { state, dispatch: vi.fn() } as unknown as EditorView
+    const nodeView = mermaidNodeView(node, view, () => 0)
+
+    await vi.waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(1))
+    expect(mermaidMocks.initialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "default" })
+    )
+
+    document.documentElement.classList.add("dark")
+    window.dispatchEvent(new Event("rumi-theme-change"))
+
+    await vi.waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(2))
+    expect(mermaidMocks.initialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "dark" })
+    )
 
     nodeView.destroy?.()
   })

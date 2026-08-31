@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type {
+  AssetListItem,
+  AssetListResult,
   CheckpointRequest,
   ChangeDatabasePropertyTypeRequest,
   ConvertContainerRequest,
@@ -244,14 +246,24 @@ export class WorkspaceRuntime {
 
     if (
       !SUPPORTED_ASSET_CONTENT_TYPES[extension] ||
+      segments[0] !== ".assets" ||
       segments.some((segment) => segment.startsWith(".") && segment !== ".assets")
     ) {
       throw new Error(`Path is not a readable workspace asset: ${inputPath}`);
     }
 
     const absolutePath = this.resolveAbsolutePath(relPath);
-    const stat = await fs.stat(absolutePath);
-    if (!stat.isFile()) throw new Error(`Workspace asset is not a file: ${inputPath}`);
+    for (let index = 0; index < segments.length; index += 1) {
+      const segmentPath = segments.slice(0, index + 1).join("/");
+      const segmentStat = await fs.lstat(this.resolveAbsolutePath(segmentPath));
+      if (segmentStat.isSymbolicLink()) {
+        throw new Error(`Workspace asset path contains a symlink: ${inputPath}`);
+      }
+      const isFinalSegment = index === segments.length - 1;
+      if (isFinalSegment ? !segmentStat.isFile() : !segmentStat.isDirectory()) {
+        throw new Error(`Workspace asset is not a file: ${inputPath}`);
+      }
+    }
 
     return {
       path: relPath,
@@ -259,6 +271,66 @@ export class WorkspaceRuntime {
       contentType: SUPPORTED_ASSET_CONTENT_TYPES[extension]!,
       data: await fs.readFile(absolutePath)
     };
+  }
+
+  async listAssets(): Promise<AssetListResult> {
+    const items: AssetListItem[] = [];
+    const assetsRoot = this.resolveAbsolutePath(".assets");
+    const rootStat = await fs.lstat(assetsRoot).catch((error: unknown) => {
+      if (isNodeError(error) && error.code === "ENOENT") return null;
+      throw error;
+    });
+
+    if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) {
+      return { items };
+    }
+
+    const visit = async (relDirectoryPath: string): Promise<void> => {
+      const entries = await fs.readdir(this.resolveAbsolutePath(relDirectoryPath), {
+        withFileTypes: true
+      }).catch((error: unknown) => {
+        if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+          return [] as import("node:fs").Dirent[];
+        }
+        throw error;
+      });
+
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue;
+        const relPath = normalizeWorkspacePath(path.posix.join(relDirectoryPath, entry.name));
+        const entryStat = await fs.lstat(this.resolveAbsolutePath(relPath)).catch((error: unknown) => {
+          if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+            return null;
+          }
+          throw error;
+        });
+        if (!entryStat || entryStat.isSymbolicLink()) continue;
+
+        if (entryStat.isDirectory()) {
+          await visit(relPath);
+          continue;
+        }
+
+        const extension = path.posix.extname(relPath).toLocaleLowerCase();
+        const contentType = SUPPORTED_ASSET_CONTENT_TYPES[extension];
+        if (!entryStat.isFile() || !contentType) continue;
+
+        items.push({
+          path: relPath,
+          fileName: path.posix.basename(relPath),
+          contentType,
+          size: entryStat.size,
+          modifiedAt: entryStat.mtime.toISOString()
+        });
+      }
+    };
+
+    await visit(".assets");
+    items.sort((left, right) => {
+      const modifiedComparison = right.modifiedAt.localeCompare(left.modifiedAt);
+      return modifiedComparison || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+    });
+    return { items };
   }
 
   async saveAsset(fileName: string, data: Uint8Array): Promise<SaveAssetResult> {

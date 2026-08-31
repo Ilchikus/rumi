@@ -335,6 +335,18 @@ export interface SaveAssetResult {
   events: RumiEvent[];
 }
 
+export interface AssetListItem {
+  path: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface AssetListResult {
+  items: AssetListItem[];
+}
+
 export interface OpenWorkspaceResult {
   rootPath: string;
   name: string;

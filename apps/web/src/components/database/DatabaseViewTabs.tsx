@@ -70,8 +70,8 @@ export function DatabaseViewTabs({
               className={cn(
                 "group/view-tab relative flex h-10 shrink-0 items-center rounded-full border",
                 active
-                  ? "border-transparent bg-neutral-100"
-                  : "border-border bg-white hover:bg-neutral-50"
+                  ? "border-transparent bg-surface-subtle"
+                  : "border-border bg-background hover:bg-accent"
               )}
               data-database-view-tab-active={active ? "true" : undefined}
               data-database-view-tab-index={index}
@@ -87,8 +87,8 @@ export function DatabaseViewTabs({
                 className={cn(
                   "flex h-full min-w-24 max-w-52 items-center gap-1.5 rounded-full px-3 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   active
-                    ? "font-semibold text-neutral-900"
-                    : "font-medium text-neutral-500 hover:text-neutral-800"
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => onSelect(view.id)}
                 onKeyDown={(event) => moveFocus(event, index)}
@@ -110,7 +110,7 @@ export function DatabaseViewTabs({
       </div>
       <button
         type="button"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-transparent text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-800 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-transparent text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         aria-label="Add database view"
         title="Add table view"
         disabled={busy}

@@ -47,13 +47,16 @@ properties:
   updated:
     type: date
 views:
-  - name: All
+  - id: all
+    name: All
     type: table
     columns:
       - status
       - area
       - owner
       - updated
+recordPage:
+  hiddenProperties: []
 ---
 # Contracts
 

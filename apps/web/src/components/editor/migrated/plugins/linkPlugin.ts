@@ -239,10 +239,7 @@ export function linkPlugin(schema: Schema) {
             const markerSelected =
               selection.from <= position &&
               selection.to >= position + node.nodeSize
-            const completeAnchorSelected =
-              selection.from <= range.from &&
-              selection.to >= range.to
-            if (!markerSelected && !completeAnchorSelected) return
+            if (!markerSelected) return
             decorations.push(
               Decoration.node(position, position + node.nodeSize, {
                 class: "rumi-link-icon-selected"

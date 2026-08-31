@@ -26,9 +26,9 @@ describe("database view tabs", () => {
     expect(markup).toContain("h-10");
     expect(markup).toContain("h-8");
     expect(markup).not.toContain("overflow-y-hidden pb-2");
-    expect(markup).toContain("border-transparent bg-neutral-100");
-    expect(markup).toContain("border-border bg-white");
-    expect(markup).toContain("font-semibold text-neutral-900");
+    expect(markup).toContain("border-transparent bg-surface-subtle");
+    expect(markup).toContain("border-border bg-background");
+    expect(markup).toContain("font-semibold text-foreground");
     expect(markup).not.toContain("rounded-t-lg");
     expect(markup).not.toContain("translate-x");
     expect(markup).not.toContain("data-database-tab-outward-corner");
@@ -36,20 +36,20 @@ describe("database view tabs", () => {
       /<div[^>]*data-database-view-tab-index="0"[^>]*>/u
     )?.[0] ?? "";
     expect(firstTab).toContain("h-10");
-    expect(firstTab).toContain("border-transparent bg-neutral-100");
+    expect(firstTab).toContain("border-transparent bg-surface-subtle");
     expect(markup).not.toContain("-ml-2");
     expect(markup).not.toContain("pl-2");
     const secondTab = markup.match(
       /<div[^>]*data-database-view-tab-index="1"[^>]*>/u
     )?.[0] ?? "";
     expect(secondTab).toContain("h-10");
-    expect(secondTab).toContain("border-border bg-white");
+    expect(secondTab).toContain("border-border bg-background");
     const addView = markup.match(
       /<button[^>]*aria-label="Add database view"[^>]*>/u
     )?.[0] ?? "";
     expect(addView).toContain("bg-transparent");
     expect(addView).toContain("h-8 w-8");
-    expect(addView).toContain("hover:bg-neutral-100");
+    expect(addView).toContain("hover:bg-accent");
     expect(addView).not.toContain("border");
   });
 });

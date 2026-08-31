@@ -259,7 +259,7 @@ export function PageProperties({
   };
 
   return (
-    <section className="group/properties relative mt-8" aria-label="Page properties">
+    <section className="group/properties relative mt-4" aria-label="Page properties">
       {(properties.length > 0 || database) && (
         <div className="mb-1 flex min-h-7 items-center gap-1">
           {properties.length > 0 && (
@@ -861,7 +861,7 @@ function PropertyValueEditor({
         >
           <Icon
             size={16}
-            className={checked ? "text-sky-600" : "text-neutral-400"}
+            className={checked ? "text-primary" : "text-neutral-400"}
             aria-hidden="true"
           />
           <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
@@ -1219,7 +1219,7 @@ function CheckboxValue({ checked }: { checked: boolean }): ReactElement {
     <span className="inline-flex items-center" title={checked ? "Checked" : "Unchecked"}>
       <Icon
         size={16}
-        className={checked ? "text-sky-600" : "text-neutral-400"}
+        className={checked ? "text-primary" : "text-neutral-400"}
         aria-hidden="true"
       />
       <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>

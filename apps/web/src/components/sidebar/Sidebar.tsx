@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretRight } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { DotsThree } from "@phosphor-icons/react/dist/csr/DotsThree";
@@ -9,10 +8,10 @@ import { Folder } from "@phosphor-icons/react/dist/csr/Folder";
 import { FolderOpen } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { FolderPlus } from "@phosphor-icons/react/dist/csr/FolderPlus";
 import { Gear } from "@phosphor-icons/react/dist/csr/Gear";
+import { Image } from "@phosphor-icons/react/dist/csr/Image";
 import { NotePencil } from "@phosphor-icons/react/dist/csr/NotePencil";
-import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
-import { SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
+import { PushPin } from "@phosphor-icons/react/dist/csr/PushPin";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
@@ -41,10 +40,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
+import { EditorHeaderIconButton } from "../layout/EditorHeaderIconButton";
 import {
   readSidebarExpandedPaths,
   shouldRevealSelectionAncestors,
@@ -56,6 +55,25 @@ import {
   hasPrimaryModifier,
   shortcutLabels
 } from "../../lib/appShortcuts";
+import type { PageCopyAction } from "../../lib/pageCopyActions";
+import {
+  isPinnableWorkspaceNode,
+  projectPinnedWorkspaceNodes
+} from "../../lib/pinnedItems";
+import {
+  FloatingWorkspaceItemMenu,
+  WorkspaceItemMenuItems,
+  focusFirstWorkspaceItemMenuAction,
+  moveWorkspaceItemMenuFocus,
+  restoreWorkspaceItemMenuFocus,
+  shouldCreatePageImmediately,
+  workspaceItemActionModel,
+  workspaceItemCreateKinds
+} from "../workspace/WorkspaceItemMenu";
+import type {
+  FloatingWorkspaceItemMenuState,
+  WorkspaceItemCreateKind
+} from "../workspace/WorkspaceItemMenu";
 
 export interface SidebarSelection {
   nodePath: string;
@@ -70,27 +88,33 @@ interface SidebarProps {
   selection: SidebarSelection | null;
   trashCount: number;
   trashOpen: boolean;
+  mediaOpen: boolean;
   settingsOpen: boolean;
-  collapsed: boolean;
-  rootCreateMenuOpen: boolean;
-  onToggleCollapsed: () => void;
-  onRootCreateMenuOpenChange: (open: boolean) => void;
+  createTarget: SidebarCreateTarget | null;
+  onCreateTargetChange: (target: SidebarCreateTarget | null) => void;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onCreatePage: (parentPath: string, name: string) => Promise<void>;
   onCreateFolder: (parentPath: string, name: string) => Promise<void>;
   onCreateDatabase: (parentPath: string, name: string) => Promise<void>;
   onCreateDefault: (parentPath: string, kind: SidebarCreateKind) => Promise<void>;
-  creationParentPath: string;
+  onCopyNode: (node: WorkspaceNode, action: PageCopyAction) => void;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
-  onMoveNode: (node: WorkspaceNode, newParentPath: string) => Promise<boolean>;
-  onConvertNode: (node: WorkspaceNode) => Promise<boolean>;
+  onRequestRenameNode: (node: WorkspaceNode) => void;
+  onMoveNode: (node: WorkspaceNode) => void;
+  onConvertNode: (node: WorkspaceNode) => void;
+  pinnedPaths: readonly string[];
+  onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
+  onSeeRevisions: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
   onOpenSettings: () => void;
+  onOpenMedia: () => void;
   onOpenTrash: () => void;
+  settingsShortcut: string;
+  trashShortcut: string;
 }
 
-export type SidebarCreateKind = "page" | "folder" | "database";
+export type SidebarCreateKind = WorkspaceItemCreateKind;
 type CreateKind = SidebarCreateKind;
 
 export function sidebarCreationParentPath(
@@ -125,60 +149,22 @@ export function sidebarCreationParentPath(
 export function sidebarNodeCreateKinds(
   kind: WorkspaceNode["kind"]
 ): SidebarCreateKind[] {
-  if (kind === "folder") return ["page", "folder", "database"];
-  if (kind === "database") return ["page"];
-  return [];
+  return kind === "workspace" ? [] : workspaceItemCreateKinds(kind);
 }
 
-export function shouldCreatePageImmediately(
-  kind: SidebarCreateKind,
-  event: Parameters<typeof hasPrimaryModifier>[0],
-  platform: Parameters<typeof hasPrimaryModifier>[1]
-): boolean {
-  return kind === "page" && hasPrimaryModifier(event, platform);
-}
-
-function enabledSidebarMenuItems(menu: HTMLElement): HTMLElement[] {
-  return Array.from(menu.querySelectorAll<HTMLElement>(
-    '[role="menuitem"]:not([data-disabled])'
-  ));
-}
-
-export function focusFirstSidebarMenuItem(menu: HTMLElement): HTMLElement | null {
-  const firstItem = enabledSidebarMenuItems(menu)[0] ?? null;
-  firstItem?.focus({ preventScroll: true });
-  return firstItem;
-}
-
-export function moveSidebarMenuFocus(
-  menu: HTMLElement,
-  direction: "next" | "previous"
-): HTMLElement | null {
-  const items = enabledSidebarMenuItems(menu);
-  if (items.length === 0) return null;
-  const activeIndex = items.indexOf(document.activeElement as HTMLElement);
-  const offset = direction === "next" ? 1 : -1;
-  const nextIndex = activeIndex < 0
-    ? direction === "next" ? 0 : items.length - 1
-    : (activeIndex + offset + items.length) % items.length;
-  const item = items[nextIndex] ?? null;
-  item?.focus({ preventScroll: true });
-  return item;
-}
-
-export function restoreSidebarContextFocus(element: HTMLElement | null): boolean {
-  if (!element?.isConnected) return false;
-  element.focus({ preventScroll: true });
-  return true;
-}
+export { shouldCreatePageImmediately };
+export const focusFirstSidebarMenuItem = focusFirstWorkspaceItemMenuAction;
+export const moveSidebarMenuFocus = moveWorkspaceItemMenuFocus;
+export const restoreSidebarContextFocus = restoreWorkspaceItemMenuFocus;
 
 const TREE_INDENT_PX = 20;
 const TREE_ROW_HEIGHT_PX = 32;
 const TREE_ROW_PADDING_PX = 14;
 const CREATE_ROW_PADDING_PX = 39;
 const ENTITY_ICON_CLASS = "text-neutral-400";
+const EMPTY_STICKY_ANCESTOR_INDEXES = new Map<string, number>();
 
-interface CreateTarget {
+export interface SidebarCreateTarget {
   parentPath: string;
   kind: CreateKind;
 }
@@ -200,11 +186,7 @@ interface VisibleTreeCreateRow {
 
 type VisibleTreeRow = VisibleTreeNodeRow | VisibleTreeCreateRow;
 
-interface FloatingMenu {
-  node: WorkspaceNode | null;
-  point: { x: number; y: number };
-  returnFocus: HTMLElement | null;
-}
+type FloatingMenu = FloatingWorkspaceItemMenuState;
 
 interface MoveDestination {
   path: string;
@@ -228,27 +210,31 @@ export function Sidebar({
   selection,
   trashCount,
   trashOpen,
+  mediaOpen,
   settingsOpen,
-  collapsed,
-  rootCreateMenuOpen,
-  onToggleCollapsed,
-  onRootCreateMenuOpenChange,
+  createTarget,
+  onCreateTargetChange,
   onPrefetchNode,
   onOpenNode,
   onCreatePage,
   onCreateFolder,
   onCreateDatabase,
   onCreateDefault,
-  creationParentPath,
+  onCopyNode,
   onRenameNode,
+  onRequestRenameNode,
   onMoveNode,
   onConvertNode,
+  pinnedPaths,
+  onPinnedChange,
+  onSeeRevisions,
   onDeleteNode,
   onOpenSettings,
-  onOpenTrash
+  onOpenMedia,
+  onOpenTrash,
+  settingsShortcut,
+  trashShortcut
 }: SidebarProps): ReactElement {
-  const shortcutPlatform = appShortcutPlatform();
-  const labels = shortcutLabels(shortcutPlatform);
   const initialExpansionRef = useRef<InitialSidebarExpansion | null>(null);
   if (!initialExpansionRef.current) {
     initialExpansionRef.current = initialSidebarExpansion(tree, workspaceKey);
@@ -262,13 +248,22 @@ export function Sidebar({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
     () => initialExpansion.paths
   );
-  const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingRowKey, setRenamingRowKey] = useState<string | null>(null);
   const [floatingMenu, setFloatingMenu] = useState<FloatingMenu | null>(null);
-  const [moveTarget, setMoveTarget] = useState<WorkspaceNode | null>(null);
-  const [moveBusy, setMoveBusy] = useState(false);
-  const [convertTarget, setConvertTarget] = useState<WorkspaceNode | null>(null);
-  const [convertBusy, setConvertBusy] = useState(false);
+  const pinnedPathSet = useMemo(() => new Set(pinnedPaths), [pinnedPaths]);
+  const pinnedTreeNodes = useMemo(
+    () => projectPinnedWorkspaceNodes(tree, pinnedPaths),
+    [pinnedPaths, tree]
+  );
+  const initialPinnedContainersRef = useRef(pinnedContainerPaths(pinnedTreeNodes));
+  const knownPinnedContainersRef = useRef(initialPinnedContainersRef.current);
+  const [pinnedExpandedPaths, setPinnedExpandedPaths] = useState<Set<string>>(
+    () => new Set(initialPinnedContainersRef.current)
+  );
+  const visiblePinnedRows = useMemo(
+    () => flattenVisiblePinnedRows(pinnedTreeNodes, pinnedExpandedPaths),
+    [pinnedExpandedPaths, pinnedTreeNodes]
+  );
   const stickyAncestorIndexes = useMemo(() => {
     const paths = selection ? ancestorPaths(selection.nodePath) : [];
     if (paths.some((path) => !expandedPaths.has(path))) {
@@ -313,6 +308,28 @@ export function Sidebar({
       return next;
     });
   }, [workspaceKey]);
+
+  useEffect(() => {
+    const availablePaths = pinnedContainerPaths(pinnedTreeNodes);
+    const knownPaths = knownPinnedContainersRef.current;
+    knownPinnedContainersRef.current = availablePaths;
+    setPinnedExpandedPaths((current) => {
+      const next = new Set([...current].filter((path) => availablePaths.has(path)));
+      for (const path of availablePaths) {
+        if (!knownPaths.has(path)) next.add(path);
+      }
+      return samePathSet(current, next) ? current : next;
+    });
+  }, [pinnedTreeNodes]);
+
+  useEffect(() => {
+    if (!createTarget) return;
+    setFloatingMenu(null);
+    setRenamingRowKey(null);
+    if (createTarget.parentPath) {
+      updateExpandedPaths((current) => new Set(current).add(createTarget.parentPath));
+    }
+  }, [createTarget, updateExpandedPaths]);
 
   useEffect(() => {
     if (!tree || initializedExpansionScope.current === workspaceKey) {
@@ -360,79 +377,59 @@ export function Sidebar({
 
   const startCreate = useCallback((parentPath: string, kind: CreateKind) => {
     setFloatingMenu(null);
-    setRenamingPath(null);
-    setCreateTarget({ parentPath, kind });
+    setRenamingRowKey(null);
+    onCreateTargetChange({ parentPath, kind });
 
     if (parentPath) {
       updateExpandedPaths((current) => new Set(current).add(parentPath));
     }
-  }, [updateExpandedPaths]);
+  }, [onCreateTargetChange, updateExpandedPaths]);
 
   const createDefault = useCallback((parentPath: string, kind: CreateKind) => {
     setFloatingMenu(null);
-    setRenamingPath(null);
-    setCreateTarget(null);
+    setRenamingRowKey(null);
+    onCreateTargetChange(null);
 
     if (parentPath) {
       updateExpandedPaths((current) => new Set(current).add(parentPath));
     }
 
     return onCreateDefault(parentPath, kind);
-  }, [onCreateDefault, updateExpandedPaths]);
+  }, [onCreateDefault, onCreateTargetChange, updateExpandedPaths]);
 
-  const startRename = useCallback((node: WorkspaceNode) => {
+  const startRename = useCallback((rowKey: string) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
-    setRenamingPath(node.path);
-  }, []);
+    onCreateTargetChange(null);
+    setRenamingRowKey(rowKey);
+  }, [onCreateTargetChange]);
+
+  const requestRename = useCallback((node: WorkspaceNode) => {
+    setFloatingMenu(null);
+    onCreateTargetChange(null);
+    setRenamingRowKey(null);
+    onRequestRenameNode(node);
+  }, [onCreateTargetChange, onRequestRenameNode]);
 
   const requestDelete = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
-    setRenamingPath(null);
+    onCreateTargetChange(null);
+    setRenamingRowKey(null);
     void onDeleteNode(node);
-  }, [onDeleteNode]);
+  }, [onCreateTargetChange, onDeleteNode]);
 
   const requestMove = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
-    setRenamingPath(null);
-    setMoveTarget(node);
-  }, []);
+    onCreateTargetChange(null);
+    setRenamingRowKey(null);
+    onMoveNode(node);
+  }, [onCreateTargetChange, onMoveNode]);
 
   const requestConvert = useCallback((node: WorkspaceNode) => {
     setFloatingMenu(null);
-    setCreateTarget(null);
-    setRenamingPath(null);
-    setConvertTarget(node);
-  }, []);
-
-  const confirmMove = useCallback(async (newParentPath: string) => {
-    if (!moveTarget || moveBusy) {
-      return;
-    }
-
-    setMoveBusy(true);
-
-    try {
-      await onMoveNode(moveTarget, newParentPath);
-      setMoveTarget(null);
-    } finally {
-      setMoveBusy(false);
-    }
-  }, [moveBusy, moveTarget, onMoveNode]);
-
-  const confirmConvert = useCallback(async () => {
-    if (!convertTarget || convertBusy) return;
-
-    setConvertBusy(true);
-    try {
-      const converted = await onConvertNode(convertTarget);
-      if (converted) setConvertTarget(null);
-    } finally {
-      setConvertBusy(false);
-    }
-  }, [convertBusy, convertTarget, onConvertNode]);
+    onCreateTargetChange(null);
+    setRenamingRowKey(null);
+    onConvertNode(node);
+  }, [onConvertNode, onCreateTargetChange]);
 
   const toggleExpanded = useCallback((path: string) => {
     updateExpandedPaths((current) => {
@@ -448,6 +445,15 @@ export function Sidebar({
     });
   }, [updateExpandedPaths]);
 
+  const togglePinnedExpanded = useCallback((path: string) => {
+    setPinnedExpandedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
   const openRootMenu = useCallback((event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
 
@@ -455,13 +461,14 @@ export function Sidebar({
       return;
     }
 
+    if (!tree) return;
     event.preventDefault();
     setFloatingMenu({
-      node: null,
+      node: tree,
       point: { x: event.clientX, y: event.clientY },
       returnFocus: null
     });
-  }, []);
+  }, [tree]);
 
   const openNodeMenu = useCallback((node: WorkspaceNode, event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -493,7 +500,7 @@ export function Sidebar({
             depth={row.depth}
             kind={row.kind}
             parentPath={row.parentPath}
-            onCancel={() => setCreateTarget(null)}
+            onCancel={() => onCreateTargetChange(null)}
             onCreatePage={onCreatePage}
             onCreateFolder={onCreateFolder}
             onCreateDatabase={onCreateDatabase}
@@ -502,6 +509,7 @@ export function Sidebar({
       );
     }
 
+    const pinnedRow = row.key.startsWith("pinned-node:");
     return (
       <TreeNode
         key={row.key}
@@ -509,29 +517,35 @@ export function Sidebar({
         depth={row.depth}
         {...(gridRow === undefined ? {} : { gridRow })}
         selection={selection}
-        stickyAncestorIndexes={stickyAncestorIndexes}
-        expandedPaths={expandedPaths}
-        renamingPath={renamingPath}
+        stickyAncestorIndexes={pinnedRow ? EMPTY_STICKY_ANCESTOR_INDEXES : stickyAncestorIndexes}
+        expandedPaths={pinnedRow ? pinnedExpandedPaths : expandedPaths}
+        projected={pinnedRow}
+        renaming={renamingRowKey === row.key}
+        pinned={pinnedPathSet.has(row.node.path)}
         onPrefetchNode={onPrefetchNode}
         onOpenNode={onOpenNode}
-        onToggleExpanded={toggleExpanded}
+        onToggleExpanded={pinnedRow ? togglePinnedExpanded : toggleExpanded}
         onStartCreate={startCreate}
         onCreateDefault={createDefault}
-        onStartRename={startRename}
+        onCopyNode={onCopyNode}
+        onStartRename={() => startRename(row.key)}
+        onRequestRename={requestRename}
         onRenameNode={onRenameNode}
         onMoveNode={requestMove}
         onConvertNode={requestConvert}
+        onPinnedChange={onPinnedChange}
+        onSeeRevisions={onSeeRevisions}
         onDeleteNode={requestDelete}
-        onCancelRename={() => setRenamingPath(null)}
+        onCancelRename={() => setRenamingRowKey(null)}
         onOpenContextMenu={openNodeMenu}
       />
     );
   };
 
   return (
-    <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-neutral-50 text-foreground">
-      <header className="relative z-30 bg-neutral-50 px-3 pb-5 pt-3">
-        <div className="flex items-center justify-between gap-2">
+    <aside className="grid h-full min-h-0 min-w-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-border bg-sidebar text-foreground">
+      <header className="relative z-30 bg-sidebar px-3 pb-5 pt-3">
+        <div className="flex items-center gap-2">
           <h1 className="min-w-0">
             <button
               type="button"
@@ -552,24 +566,6 @@ export function Sidebar({
               <span className="truncate text-lg font-semibold">{workspaceName}</span>
             </button>
           </h1>
-          <div className="flex shrink-0 gap-1">
-            <RootCreateMenu
-              open={rootCreateMenuOpen}
-              parentPath={creationParentPath}
-              onOpenChange={onRootCreateMenuOpenChange}
-              onCreate={startCreate}
-              onCreateDefault={createDefault}
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={onToggleCollapsed}
-              title={`${collapsed ? "Open sidebar" : "Close sidebar"} (${labels.sidebar})`}
-            >
-              <SidebarSimple size={17} />
-            </Button>
-          </div>
         </div>
       </header>
 
@@ -579,11 +575,20 @@ export function Sidebar({
       >
         {tree ? (
           <div className="pb-8">
+            {visiblePinnedRows.length > 0 && (
+              <section
+                aria-label="Pinned items"
+                data-sidebar-pinned-items=""
+                className="mb-2 border-b border-border pb-2"
+              >
+                {visiblePinnedRows.map((row) => renderVisibleTreeRow(row))}
+              </section>
+            )}
             <CreateSlot
               target={createTarget}
               parentPath=""
               depth={0}
-              onCancel={() => setCreateTarget(null)}
+              onCancel={() => onCreateTargetChange(null)}
               onCreatePage={onCreatePage}
               onCreateFolder={onCreateFolder}
               onCreateDatabase={onCreateDatabase}
@@ -614,10 +619,11 @@ export function Sidebar({
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
             settingsOpen
-              ? "bg-neutral-100 text-accent-foreground"
+              ? "bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           onClick={onOpenSettings}
+          title={`Settings (${settingsShortcut})`}
         >
           <span className="grid h-5 w-5 shrink-0 place-items-center"><Gear size={17} /></span>
           <span className="min-w-0 flex-1 truncate">Settings</span>
@@ -626,10 +632,26 @@ export function Sidebar({
           type="button"
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
-            trashOpen ? "bg-neutral-100 text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            mediaOpen
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          )}
+          aria-current={mediaOpen ? "page" : undefined}
+          onClick={onOpenMedia}
+          title="Uploads"
+        >
+          <span className="grid h-5 w-5 shrink-0 place-items-center"><Image size={17} /></span>
+          <span className="min-w-0 flex-1 truncate">Uploads</span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
+            trashOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
           aria-current={trashOpen ? "page" : undefined}
           onClick={onOpenTrash}
+          title={`Trash (${trashShortcut})`}
         >
           <span className="grid h-5 w-5 shrink-0 place-items-center"><Trash size={17} /></span>
           <span className="min-w-0 flex-1 truncate">Trash</span>
@@ -642,7 +664,7 @@ export function Sidebar({
       </footer>
 
       {floatingMenu && (
-        <FloatingSidebarMenu
+        <FloatingWorkspaceItemMenu
           menu={floatingMenu}
           onOpenChange={(open) => {
             if (!open) {
@@ -651,33 +673,16 @@ export function Sidebar({
           }}
           onCreate={startCreate}
           onCreateDefault={createDefault}
-          onRename={startRename}
+          onCopy={onCopyNode}
+          pinned={pinnedPathSet.has(floatingMenu.node.path)}
+          onRename={requestRename}
           onMove={requestMove}
           onConvert={requestConvert}
+          onPinnedChange={onPinnedChange}
+          onSeeRevisions={onSeeRevisions}
           onDelete={requestDelete}
         />
       )}
-
-      <MoveNodeDialog
-        tree={tree}
-        node={moveTarget}
-        busy={moveBusy}
-        onOpenChange={(open) => {
-          if (!open && !moveBusy) {
-            setMoveTarget(null);
-          }
-        }}
-        onConfirm={confirmMove}
-      />
-
-      <ConvertNodeDialog
-        node={convertTarget}
-        busy={convertBusy}
-        onOpenChange={(open) => {
-          if (!open && !convertBusy) setConvertTarget(null);
-        }}
-        onConfirm={confirmConvert}
-      />
     </aside>
   );
 }
@@ -689,16 +694,22 @@ interface TreeNodeProps {
   selection: SidebarSelection | null;
   stickyAncestorIndexes: ReadonlyMap<string, number>;
   expandedPaths: Set<string>;
-  renamingPath: string | null;
+  projected: boolean;
+  renaming: boolean;
+  pinned: boolean;
   onPrefetchNode: (node: WorkspaceNode) => void;
   onOpenNode: (node: WorkspaceNode) => void;
   onToggleExpanded: (path: string) => void;
   onStartCreate: (parentPath: string, kind: CreateKind) => void;
   onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
-  onStartRename: (node: WorkspaceNode) => void;
+  onCopyNode: (node: WorkspaceNode, action: PageCopyAction) => void;
+  onStartRename: () => void;
+  onRequestRename: (node: WorkspaceNode) => void;
   onRenameNode: (node: WorkspaceNode, nextName: string) => Promise<boolean>;
   onMoveNode: (node: WorkspaceNode) => void;
   onConvertNode: (node: WorkspaceNode) => void;
+  onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
+  onSeeRevisions: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => void;
   onCancelRename: () => void;
   onOpenContextMenu: (node: WorkspaceNode, event: MouseEvent<HTMLElement>) => void;
@@ -711,21 +722,29 @@ function TreeNode({
   selection,
   stickyAncestorIndexes,
   expandedPaths,
-  renamingPath,
+  projected,
+  renaming,
+  pinned,
   onPrefetchNode,
   onOpenNode,
   onToggleExpanded,
   onStartCreate,
   onCreateDefault,
+  onCopyNode,
   onStartRename,
+  onRequestRename,
   onRenameNode,
   onMoveNode,
   onConvertNode,
+  onPinnedChange,
+  onSeeRevisions,
   onDeleteNode,
   onCancelRename,
   onOpenContextMenu
 }: TreeNodeProps): ReactElement {
-  const isContainer = isContainerNode(node);
+  const isContainer = isContainerNode(node) && (
+    !projected || (node.children?.length ?? 0) > 0
+  );
   const isExpanded = expandedPaths.has(node.path);
   const isSelected = selection?.nodePath === node.path || selection?.openPath === node.path;
   const stickyAncestorIndex = isContainer
@@ -737,15 +756,15 @@ function TreeNode({
   const stickyFootprintRows = isActiveAncestor
     ? stickyAncestorIndexes.size - stickyAncestorIndex
     : 0;
-  const isRenaming = renamingPath === node.path;
+  const hasItemActions = workspaceItemActionModel(node, { pinned }).length > 0;
 
   const treeRow = (
     <div
       className={cn(
         "rumi-sidebar-node group relative flex h-8 items-center gap-1 rounded-md pr-3 text-sm",
-        isActiveAncestor && "pointer-events-auto bg-neutral-50 hover:bg-accent",
+        isActiveAncestor && "pointer-events-auto bg-sidebar hover:bg-accent",
         !isActiveAncestor && !isSelected && "hover:bg-accent",
-        isSelected && "bg-neutral-100 text-accent-foreground"
+        isSelected && "bg-accent text-accent-foreground"
       )}
       style={{
         paddingLeft: TREE_ROW_PADDING_PX + depth * TREE_INDENT_PX,
@@ -761,7 +780,9 @@ function TreeNode({
       data-sidebar-active-item={
         selection?.nodePath === node.path ? "true" : undefined
       }
-      onContextMenu={(event) => onOpenContextMenu(node, event)}
+      onContextMenu={hasItemActions
+        ? (event) => onOpenContextMenu(node, event)
+        : undefined}
       aria-level={depth + 1}
     >
       <TreeDepthGuides
@@ -800,14 +821,14 @@ function TreeNode({
         onClick={() => onOpenNode(node)}
         onDoubleClick={(event) => {
           event.preventDefault();
-          onStartRename(node);
+          onStartRename();
         }}
         aria-label={`Open ${displayName(node.name)}`}
       >
         <NodeIcon kind={node.kind} expanded={isExpanded} />
       </button>
 
-      {isRenaming ? (
+      {renaming ? (
         <RenameInput
           node={node}
           onCancel={onCancelRename}
@@ -823,22 +844,51 @@ function TreeNode({
           onClick={() => onOpenNode(node)}
           onDoubleClick={(event) => {
             event.preventDefault();
-            onStartRename(node);
+            onStartRename();
           }}
         >
           <span className={cn("truncate", isSelected && "font-semibold")}>{displayName(node.name)}</span>
         </button>
       )}
 
-      <NodeMenu
-        node={node}
-        onCreate={onStartCreate}
-        onCreateDefault={onCreateDefault}
-        onRename={onStartRename}
-        onMove={onMoveNode}
-        onConvert={onConvertNode}
-        onDelete={onDeleteNode}
-      />
+      {hasItemActions && (
+        <NodeMenu
+          node={node}
+          onCreate={onStartCreate}
+          onCreateDefault={onCreateDefault}
+          onCopy={onCopyNode}
+          pinned={pinned}
+          onRename={onRequestRename}
+          onMove={onMoveNode}
+          onConvert={onConvertNode}
+          onPinnedChange={onPinnedChange}
+          onSeeRevisions={onSeeRevisions}
+          onDelete={onDeleteNode}
+        />
+      )}
+
+      {isPinnableWorkspaceNode(node) && (
+        <button
+          type="button"
+          className={cn(
+            "grid h-7 w-7 shrink-0 place-items-center rounded-md text-neutral-300 hover:bg-background/70 hover:text-muted-foreground focus-visible:opacity-100",
+            pinned && !projected
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+          )}
+          aria-label={`${pinned ? "Unpin" : "Pin"} ${displayName(node.name)}`}
+          aria-pressed={pinned}
+          data-sidebar-pin-button="true"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPinnedChange(node, !pinned);
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <PushPin size={16} weight={pinned ? "fill" : "regular"} />
+        </button>
+      )}
     </div>
   );
 
@@ -864,19 +914,27 @@ function TreeNode({
 
 function NodeMenu({
   node,
+  pinned,
   onCreate,
   onCreateDefault,
+  onCopy,
   onRename,
   onMove,
   onConvert,
+  onPinnedChange,
+  onSeeRevisions,
   onDelete
 }: {
   node: WorkspaceNode;
+  pinned: boolean;
   onCreate: (parentPath: string, kind: CreateKind) => void;
   onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
+  onCopy: (node: WorkspaceNode, action: PageCopyAction) => void;
   onRename: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
   onConvert: (node: WorkspaceNode) => void;
+  onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
+  onSeeRevisions: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   return (
@@ -894,13 +952,17 @@ function NodeMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <NodeMenuItems
+        <WorkspaceItemMenuItems
           node={node}
+          pinned={pinned}
           onCreate={onCreate}
           onCreateDefault={onCreateDefault}
+          onCopy={onCopy}
           onRename={onRename}
           onMove={onMove}
           onConvert={onConvert}
+          onPinnedChange={onPinnedChange}
+          onSeeRevisions={onSeeRevisions}
           onDelete={onDelete}
         />
       </DropdownMenuContent>
@@ -928,7 +990,7 @@ function TreeDepthGuides({
           className={cn(
             "pointer-events-none absolute inset-y-0 w-px",
             stickyAncestorIndexes.has(rowAncestorPaths[index] ?? "")
-              ? "bg-primary/70"
+              ? "bg-foreground/70"
               : "bg-border"
           )}
           style={{ left: (index + 1) * TREE_INDENT_PX }}
@@ -938,7 +1000,7 @@ function TreeDepthGuides({
   );
 }
 
-function RootCreateMenu({
+export function RootCreateMenu({
   open,
   parentPath,
   onOpenChange,
@@ -985,12 +1047,12 @@ function RootCreateMenu({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" size="icon" variant="ghost" title={`Create (${labels.create})`}>
+        <EditorHeaderIconButton aria-label="Create new" title={`Create (${labels.create})`}>
           <Plus size={17} />
-        </Button>
+        </EditorHeaderIconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
+        align="start"
         className="min-w-48"
         onKeyDown={(event) => {
           const numberAction = createMenuNumberAction(
@@ -1053,188 +1115,80 @@ function RootCreateMenu({
   );
 }
 
-function FloatingSidebarMenu({
-  menu,
+export function RenameNodeDialog({
+  node,
   onOpenChange,
-  onCreate,
-  onCreateDefault,
-  onRename,
-  onMove,
-  onConvert,
-  onDelete
+  onConfirm
 }: {
-  menu: FloatingMenu;
+  node: WorkspaceNode | null;
   onOpenChange: (open: boolean) => void;
-  onCreate: (parentPath: string, kind: CreateKind) => void;
-  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
-  onRename: (node: WorkspaceNode) => void;
-  onMove: (node: WorkspaceNode) => void;
-  onConvert: (node: WorkspaceNode) => void;
-  onDelete: (node: WorkspaceNode) => void;
+  onConfirm: (nextName: string) => Promise<boolean>;
 }): ReactElement {
-  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const animationFrame = window.requestAnimationFrame(() => {
-      if (contentRef.current) focusFirstSidebarMenuItem(contentRef.current);
-    });
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [menu]);
+    setName(node ? displayName(node.name) : "");
+    setBusy(false);
+  }, [node]);
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      const returnFocus = menu.returnFocus;
-      window.setTimeout(() => restoreSidebarContextFocus(returnFocus), 0);
+  const submit = async () => {
+    if (!node || busy) return;
+    const finalName = sanitizeWorkspaceName(name).sanitized.trim();
+    if (!finalName) return;
+    if (finalName === displayName(node.name)) {
+      onOpenChange(false);
+      return;
     }
-    onOpenChange(open);
+
+    setBusy(true);
+    if (await onConfirm(finalName)) {
+      onOpenChange(false);
+      return;
+    }
+    setBusy(false);
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+      inputRef.current?.select();
+    });
   };
 
   return (
-    <DropdownMenu open onOpenChange={handleOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-hidden
-          tabIndex={-1}
-          className="fixed h-px w-px opacity-0"
-          style={{ left: menu.point.x, top: menu.point.y }}
+    <Dialog open={Boolean(node)} onOpenChange={(open) => {
+      if (!busy) onOpenChange(open);
+    }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename item</DialogTitle>
+          <DialogDescription>
+            Rename <span className="font-medium text-foreground">{node?.path}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <Input
+          ref={inputRef}
+          value={name}
+          disabled={busy}
+          autoFocus
+          aria-label="Item name"
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void submit();
+          }}
+          onChange={(event) => setName(sanitizeWorkspaceName(event.target.value).sanitized)}
         />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        ref={contentRef}
-        align="start"
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-          event.preventDefault();
-          moveSidebarMenuFocus(
-            event.currentTarget,
-            event.key === "ArrowDown" ? "next" : "previous"
-          );
-        }}
-        onCloseAutoFocus={(event) => {
-          if (!restoreSidebarContextFocus(menu.returnFocus)) return;
-          event.preventDefault();
-        }}
-      >
-        {menu.node ? (
-          <NodeMenuItems
-            node={menu.node}
-            onCreate={onCreate}
-            onCreateDefault={onCreateDefault}
-            onRename={onRename}
-            onMove={onMove}
-            onConvert={onConvert}
-            onDelete={onDelete}
-          />
-        ) : (
-          <>
-            <DropdownMenuItem onSelect={() => onCreate("", "page")}>
-              <NotePencil size={16} />
-              New Page
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onCreate("", "folder")}>
-              <FolderPlus size={16} />
-              New Folder
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onCreate("", "database")}>
-              <Table size={16} />
-              New Database
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function NodeMenuItems({
-  node,
-  onCreate,
-  onCreateDefault,
-  onRename,
-  onMove,
-  onConvert,
-  onDelete
-}: {
-  node: WorkspaceNode;
-  onCreate: (parentPath: string, kind: CreateKind) => void;
-  onCreateDefault: (parentPath: string, kind: CreateKind) => Promise<void>;
-  onRename: (node: WorkspaceNode) => void;
-  onMove: (node: WorkspaceNode) => void;
-  onConvert: (node: WorkspaceNode) => void;
-  onDelete: (node: WorkspaceNode) => void;
-}): ReactElement {
-  const createKinds = sidebarNodeCreateKinds(node.kind);
-  const platform = appShortcutPlatform();
-  const immediateCreationRef = useRef<CreateKind | null>(null);
-
-  return (
-    <>
-      {createKinds.length > 0 && (
-        <>
-          {createKinds.map((kind) => (
-            <DropdownMenuItem
-              key={kind}
-              onPointerDown={(event) => {
-                immediateCreationRef.current = shouldCreatePageImmediately(
-                  kind,
-                  event,
-                  platform
-                ) ? kind : null;
-              }}
-              onKeyDown={(event) => {
-                immediateCreationRef.current = event.key === "Enter" &&
-                  shouldCreatePageImmediately(kind, event, platform)
-                  ? kind
-                  : null;
-              }}
-              onSelect={() => {
-                if (immediateCreationRef.current === kind) {
-                  immediateCreationRef.current = null;
-                  void onCreateDefault(node.path, kind).catch(() => undefined);
-                  return;
-                }
-
-                immediateCreationRef.current = null;
-                onCreate(node.path, kind);
-              }}
-            >
-              {kind === "page"
-                ? <NotePencil size={16} />
-                : kind === "folder"
-                  ? <FolderPlus size={16} />
-                  : <Table size={16} />}
-              {kind === "page"
-                ? "New Page"
-                : kind === "folder"
-                  ? "New Folder"
-                  : "New Database"}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-        </>
-      )}
-      <DropdownMenuItem onSelect={() => onRename(node)}>
-        <PencilSimple size={16} />
-        Rename
-      </DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => onMove(node)}>
-        <ArrowRight size={16} />
-        Move
-      </DropdownMenuItem>
-      {(node.kind === "folder" || node.kind === "database") && (
-        <DropdownMenuItem onSelect={() => onConvert(node)}>
-          {node.kind === "folder" ? <Table size={16} /> : <Folder size={16} />}
-          {node.kind === "folder" ? "Convert to database" : "Convert to folder"}
-        </DropdownMenuItem>
-      )}
-      <DropdownMenuSeparator />
-      <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(node)}>
-        <Trash size={16} />
-        Move to Trash
-      </DropdownMenuItem>
-    </>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" disabled={busy || !name.trim()} onClick={() => void submit()}>
+            {busy ? "Renaming" : "Rename"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1404,7 +1358,7 @@ function CreateSlot({
   onCreateFolder,
   onCreateDatabase
 }: {
-  target: CreateTarget | null;
+  target: SidebarCreateTarget | null;
   parentPath: string;
   depth: number;
   onCancel: () => void;
@@ -1700,7 +1654,7 @@ function EntityIcon({
 function flattenVisibleTreeRows(
   nodes: WorkspaceNode[],
   expandedPaths: ReadonlySet<string>,
-  createTarget: CreateTarget | null,
+  createTarget: SidebarCreateTarget | null,
   depth = 0,
   rows: VisibleTreeRow[] = []
 ): VisibleTreeRow[] {
@@ -1736,6 +1690,41 @@ function flattenVisibleTreeRows(
   }
 
   return rows;
+}
+
+function flattenVisiblePinnedRows(
+  nodes: WorkspaceNode[],
+  expandedPaths: ReadonlySet<string>,
+  depth = 0,
+  rows: VisibleTreeNodeRow[] = []
+): VisibleTreeNodeRow[] {
+  for (const node of nodes) {
+    rows.push({
+      type: "node",
+      key: `pinned-node:${node.path}`,
+      node,
+      depth
+    });
+
+    if (!isContainerNode(node) || !expandedPaths.has(node.path)) continue;
+    flattenVisiblePinnedRows(node.children ?? [], expandedPaths, depth + 1, rows);
+  }
+
+  return rows;
+}
+
+function pinnedContainerPaths(nodes: readonly WorkspaceNode[]): Set<string> {
+  const paths = new Set<string>();
+  const visit = (node: WorkspaceNode) => {
+    if (isContainerNode(node) && (node.children?.length ?? 0) > 0) paths.add(node.path);
+    node.children?.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return paths;
+}
+
+function samePathSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((path) => right.has(path));
 }
 
 function isContainerNode(node: WorkspaceNode): boolean {

@@ -234,7 +234,7 @@ export function DatabaseFilterMenu({
           )}
           <button
             type="button"
-            className="h-8 rounded-md bg-primary px-4 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-default disabled:opacity-50"
+            className="h-8 rounded-md bg-action px-4 text-xs font-medium text-action-foreground hover:bg-action-hover disabled:cursor-default disabled:opacity-50"
             disabled={
               disabled
               || saving

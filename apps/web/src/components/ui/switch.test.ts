@@ -14,7 +14,8 @@ describe("Switch", () => {
     );
 
     expect(markup).toContain('aria-checked="true"');
-    expect(markup).toContain("bg-sky-600");
+    expect(markup).toContain("bg-primary");
+    expect(markup).toContain("hover:bg-primary-hover");
     expect(markup).toContain("translate-x-[18px]");
     expect(markup).not.toContain("transition-colors");
     expect(markup).not.toContain("transition-transform");

@@ -1239,7 +1239,7 @@ export function DatabaseView({
           <div className="relative ml-auto h-10 shrink-0">
             <DatabaseToolbarFade />
             <div
-              className="relative z-10 flex h-10 items-center gap-1 bg-white"
+              className="relative z-10 flex h-10 items-center gap-1 bg-background"
               data-database-selection-surface="true"
             >
               <button
@@ -1252,7 +1252,7 @@ export function DatabaseView({
                 <span className="col-start-1 row-start-1 group-hover/clear-selection:opacity-0 group-focus-visible/clear-selection:opacity-0">
                   {selectedRecords.length} selected
                 </span>
-                <span className="col-start-1 row-start-1 text-sky-600 underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
+                <span className="col-start-1 row-start-1 text-primary underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
                   Clear all
                 </span>
               </button>
@@ -1309,18 +1309,18 @@ export function DatabaseView({
                 <div className="absolute bottom-0 right-0 z-50 h-10 w-56">
                   <DatabaseToolbarFade />
                   <div
-                    className="relative z-10 flex h-10 w-full items-center border-b border-border bg-white"
+                    className="relative z-10 flex h-10 w-full items-center border-b border-border bg-background"
                     data-database-search-surface="true"
                   >
                     <MagnifyingGlass
                       size={15}
-                      className="ml-2 shrink-0 text-neutral-500"
+                      className="ml-2 shrink-0 text-muted-foreground"
                       aria-hidden="true"
                     />
                     <input
                       ref={searchInputRef}
                       value={search}
-                      className="h-full min-w-0 flex-1 bg-white px-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                      className="h-full min-w-0 flex-1 bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
                       placeholder="Search records"
                       aria-label="Search records"
                       onChange={(event) => {
@@ -1336,7 +1336,7 @@ export function DatabaseView({
                     />
                     <button
                       type="button"
-                      className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                      className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                       aria-label="Close search"
                       onClick={() => {
                         setSearch("");
@@ -1394,7 +1394,7 @@ export function DatabaseView({
           data-database-table-scroll="true"
         >
           <table className="w-max min-w-[max(100%,620px)] border-separate border-spacing-0 text-sm">
-            <thead className="group/table-header sticky top-0 z-10 bg-white text-left text-xs font-medium text-neutral-600">
+            <thead className="group/table-header sticky top-0 z-10 bg-background text-left text-xs font-medium text-muted-foreground">
               <tr
                 ref={tableHeaderRowRef}
                 className="h-10"
@@ -1431,7 +1431,7 @@ export function DatabaseView({
                     onDelete={() => deleteProperty(column)}
                   />
                 ))}
-                <th className="w-12 min-w-12 max-w-12 border-y border-border bg-white px-2 py-1.5">
+                <th className="w-12 min-w-12 max-w-12 border-y border-border bg-background px-2 py-1.5">
                   <PropertyCreateMenu
                     types={DATABASE_PROPERTY_TYPES}
                     existingNames={[
@@ -1634,7 +1634,7 @@ export function DatabaseView({
 function DatabaseToolbarFade(): ReactElement {
   return (
     <div
-      className="pointer-events-none absolute -left-[44px] top-0 h-10 w-[44px] bg-gradient-to-r from-white/0 via-white/50 via-[30%] to-white"
+      className="pointer-events-none absolute -left-[44px] top-0 h-10 w-[44px] bg-gradient-to-r from-background/0 via-background/50 via-[30%] to-background"
       aria-hidden="true"
       data-database-toolbar-fade="true"
     />
@@ -1689,7 +1689,7 @@ function SelectionCheckbox({
     <input
       ref={inputRef}
       type="checkbox"
-      className="h-3.5 w-3.5 cursor-pointer accent-sky-600 disabled:cursor-default"
+      className="rumi-checkbox h-3.5 w-3.5 cursor-pointer disabled:cursor-default"
       aria-label={ariaLabel}
       aria-checked={mixed ? "mixed" : checked}
       checked={checked}
@@ -2031,8 +2031,8 @@ function SortableHeader({
         aria-label={`Resize ${label} column`}
         data-database-column-resizer={property}
         className={cn(
-          "absolute -right-1 top-0 z-20 h-full w-2 touch-none cursor-col-resize select-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 group-hover/header:after:bg-border hover:after:bg-sky-600 focus-visible:after:bg-sky-600",
-          resizing && "after:bg-sky-600"
+          "absolute -right-1 top-0 z-20 h-full w-2 touch-none cursor-col-resize select-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 group-hover/header:after:bg-border hover:after:bg-primary focus-visible:after:bg-primary",
+          resizing && "after:bg-primary"
         )}
         onPointerDown={(event) => onResizeStart(property, event)}
         onClick={(event) => {
@@ -2154,7 +2154,7 @@ function PropertyCell({
         <input
           type="checkbox"
           checked={value === true}
-          className="h-4 w-4 accent-sky-600"
+          className="rumi-checkbox h-4 w-4"
           onChange={(event) => onChange(event.target.checked)}
         />
       </label>

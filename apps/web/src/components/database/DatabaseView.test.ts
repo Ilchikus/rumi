@@ -63,7 +63,7 @@ describe("database table presentation", () => {
       'className="relative ml-auto h-10 shrink-0"'
     );
     expect(databaseViewSource).toContain(
-      'className="relative z-10 flex h-10 items-center gap-1 bg-white"'
+      'className="relative z-10 flex h-10 items-center gap-1 bg-background"'
     );
     expect(databaseViewSource).toContain(
       "group/clear-selection mr-2 grid h-8 grid-cols-1 items-center"
@@ -85,7 +85,7 @@ describe("database table presentation", () => {
     expect(table).toContain("border-separate border-spacing-0");
     expect(table).not.toContain("border-collapse");
     expect(tableHeader).toContain("sticky top-0 z-10");
-    expect(tableHeader).toContain("bg-white");
+    expect(databaseViewSource).toContain("sticky top-0 z-10 bg-background");
     expect(tableHeader).not.toContain("bg-neutral-100");
     expect(markup).not.toContain('data-database-header-outline="true"');
     expect(selectionOverlay).toContain(
@@ -98,7 +98,7 @@ describe("database table presentation", () => {
     expect(markup).toContain('data-database-selection-control="all"');
     expect(databaseViewSource).toContain('data-database-selection-control="record"');
     expect(markup).toContain('aria-label="Select all records"');
-    expect(markup).toContain("accent-sky-600");
+    expect(markup).toContain("rumi-checkbox");
     expect(markup).toContain("h-3.5 w-3.5");
     expect(databaseViewSource).toContain("grid h-full w-5");
     expect(databaseViewSource).toContain(
@@ -116,6 +116,8 @@ describe("database table presentation", () => {
     expect(markup.indexOf('data-database-source="true"')).toBeLessThan(
       markup.indexOf(">New</button>")
     );
+    expect(markup).toContain("bg-action text-action-foreground hover:bg-action-hover");
+    expect(databaseViewSource).not.toContain("bg-foreground text-background");
     expect(databaseColumnWidthClass("title")).toBe("w-60 min-w-60");
     expect(databaseColumnWidthClass("status")).toBe("w-44 min-w-44");
     expect(databaseColumnStyle({}, "title")).toEqual({
@@ -138,11 +140,11 @@ describe("database table presentation", () => {
     expect(databaseViewSource).toContain("|| selectedRecordPaths.has(record.path)");
     expect(databaseViewSource).not.toContain("DatabaseViewPropertyVisibilityMenu");
     expect(databaseViewSource).toContain("Show property");
-    expect(databaseViewSource).toContain("border-b border-border bg-white");
+    expect(databaseViewSource).toContain("border-b border-border bg-background");
     expect(databaseViewSource).toContain('searchOpen ? "w-56" : "w-8"');
     expect(databaseViewSource).toContain("absolute bottom-0 right-0 z-50 h-10 w-56");
     expect(databaseViewSource).toContain(
-      "bg-gradient-to-r from-white/0 via-white/50 via-[30%] to-white"
+      "bg-gradient-to-r from-background/0 via-background/50 via-[30%] to-background"
     );
     expect(databaseViewSource).toContain('data-database-toolbar-fade="true"');
     expect(databaseViewSource).toContain('data-database-search-surface="true"');

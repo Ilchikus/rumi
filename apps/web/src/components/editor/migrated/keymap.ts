@@ -1,8 +1,8 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { keymap } from "prosemirror-keymap"
 import { undoInputRule } from "prosemirror-inputrules"
-import { Schema } from "prosemirror-model"
-import { Command, NodeSelection, TextSelection } from "prosemirror-state"
+import { Schema, type Node as ProseMirrorNode } from "prosemirror-model"
+import { Command, EditorState, NodeSelection, TextSelection } from "prosemirror-state"
 import {
   setBlockType,
   chainCommands,
@@ -171,6 +171,149 @@ function getFlatListItemTypes(schema: Schema) {
     schema.nodes.numbered_item,
     schema.nodes.task_item
   ].filter(Boolean)
+}
+
+const MAX_FLAT_LIST_INDENT = 4
+
+interface FlatListIndentTarget {
+  node: ProseMirrorNode
+  pos: number
+}
+
+function selectedFlatListIndentTargets(
+  state: EditorState,
+  schema: Schema
+): {
+  explicitSelection: ReturnType<typeof multiBlockSelectionKey.getState> | null
+  isMultiBlockSelection: boolean
+  targets: FlatListIndentTarget[]
+} {
+  const itemTypes = new Set(getFlatListItemTypes(schema))
+  const explicitSelection = multiBlockSelectionKey.getState(state)
+
+  if (explicitSelection?.selectedBlocks.length) {
+    const targets = [...new Set(explicitSelection.selectedBlocks)]
+      .sort((left, right) => left - right)
+      .map((pos) => ({ node: state.doc.nodeAt(pos), pos }))
+      .filter((target): target is FlatListIndentTarget =>
+        Boolean(target.node && itemTypes.has(target.node.type))
+      )
+    return {
+      explicitSelection,
+      isMultiBlockSelection: explicitSelection.selectedBlocks.length > 1,
+      targets
+    }
+  }
+
+  if (state.selection instanceof TextSelection && !state.selection.empty) {
+    const targets: FlatListIndentTarget[] = []
+    let selectedBlockCount = 0
+    state.doc.forEach((node, pos) => {
+      if (
+        pos >= state.selection.to ||
+        pos + node.nodeSize <= state.selection.from
+      ) return
+
+      selectedBlockCount += 1
+      if (itemTypes.has(node.type)) {
+        targets.push({ node, pos })
+      }
+    })
+    return {
+      explicitSelection: null,
+      isMultiBlockSelection: selectedBlockCount > 1,
+      targets
+    }
+  }
+
+  const { $from } = state.selection
+  const pos = $from.depth > 0 ? $from.before(1) : state.selection.from
+  const node = state.doc.nodeAt(pos)
+  return {
+    explicitSelection: null,
+    isMultiBlockSelection: false,
+    targets: node && itemTypes.has(node.type) ? [{ node, pos }] : []
+  }
+}
+
+function preferMultiBlockListIndent(
+  schema: Schema,
+  command: Command
+): Command {
+  return (state, dispatch) => {
+    const selection = selectedFlatListIndentTargets(state, schema)
+    if (!selection.isMultiBlockSelection || selection.targets.length === 0) {
+      return false
+    }
+    return command(state, dispatch)
+  }
+}
+
+function nextFlatListIndent(currentIndent: number, direction: 1 | -1): number {
+  if (direction > 0) {
+    return currentIndent >= MAX_FLAT_LIST_INDENT
+      ? currentIndent
+      : currentIndent + 1
+  }
+  return currentIndent <= 0 ? currentIndent : currentIndent - 1
+}
+
+function adjustFlatListItemIndent(
+  schema: Schema,
+  direction: 1 | -1
+): Command {
+  return (state, dispatch) => {
+    const { explicitSelection, targets } = selectedFlatListIndentTargets(state, schema)
+    const changes = targets
+      .map((target) => {
+        const currentIndent = Number(target.node.attrs.indent) || 0
+        const indent = nextFlatListIndent(currentIndent, direction)
+        return { ...target, indent }
+      })
+      .filter((target) => target.indent !== (Number(target.node.attrs.indent) || 0))
+
+    if (changes.length === 0) return false
+
+    if (dispatch) {
+      const transaction = state.tr
+      for (const { node, pos, indent } of changes) {
+        transaction.setNodeMarkup(transaction.mapping.map(pos), undefined, {
+          ...node.attrs,
+          indent
+        })
+      }
+
+      if (explicitSelection) {
+        const selectedBlocks = explicitSelection.selectedBlocks.map((pos) =>
+          transaction.mapping.map(pos)
+        )
+        const anchorBlock = explicitSelection.anchorBlock === null
+          ? null
+          : transaction.mapping.map(explicitSelection.anchorBlock)
+        transaction
+          .setMeta(multiBlockSelectionKey, {
+            selectedBlocks,
+            anchorBlock
+          })
+          .setMeta("multiBlockKeep", true)
+
+        const activeBlock = state.selection instanceof NodeSelection &&
+          explicitSelection.selectedBlocks.includes(state.selection.from)
+          ? transaction.mapping.map(state.selection.from)
+          : anchorBlock ?? selectedBlocks[0]
+        if (activeBlock !== undefined && transaction.doc.nodeAt(activeBlock)) {
+          transaction.setSelection(NodeSelection.create(transaction.doc, activeBlock))
+        }
+      }
+
+      dispatch(
+        explicitSelection
+          ? transaction
+          : transaction.scrollIntoView()
+      )
+    }
+    return true
+  }
 }
 
 export function splitFlatListItem(schema: Schema): Command {
@@ -396,54 +539,11 @@ function buildKeymap(schema: Schema) {
   keys["Mod-ArrowUp"] = moveToCodeBoundary("start")
   keys["Mod-ArrowDown"] = moveToCodeBoundary("end")
 
-  // Flat list item types
-  const flatListItemTypes = getFlatListItemTypes(schema)
-
   // Indent flat list item (Tab)
-  const indentFlatListItem: Command = (state, dispatch) => {
-    const { $from } = state.selection
-    const parent = $from.parent
-
-    // Check if we're in a flat list item
-    const itemType = flatListItemTypes.find(type => parent.type === type)
-    if (!itemType) return false
-
-    const currentIndent = parent.attrs.indent || 0
-    if (currentIndent >= 4) return false // Max indent level
-
-    if (dispatch) {
-      const blockStart = $from.before()
-      const tr = state.tr.setNodeMarkup(blockStart, undefined, {
-        ...parent.attrs,
-        indent: currentIndent + 1
-      })
-      dispatch(tr.scrollIntoView())
-    }
-    return true
-  }
+  const indentFlatListItem = adjustFlatListItemIndent(schema, 1)
 
   // Outdent flat list item (Shift-Tab)
-  const outdentFlatListItem: Command = (state, dispatch) => {
-    const { $from } = state.selection
-    const parent = $from.parent
-
-    // Check if we're in a flat list item
-    const itemType = flatListItemTypes.find(type => parent.type === type)
-    if (!itemType) return false
-
-    const currentIndent = parent.attrs.indent || 0
-    if (currentIndent <= 0) return false // Can't outdent further
-
-    if (dispatch) {
-      const blockStart = $from.before()
-      const tr = state.tr.setNodeMarkup(blockStart, undefined, {
-        ...parent.attrs,
-        indent: currentIndent - 1
-      })
-      dispatch(tr.scrollIntoView())
-    }
-    return true
-  }
+  const outdentFlatListItem = adjustFlatListItemIndent(schema, -1)
 
   // Enter key: ordered by priority
   keys["Enter"] = chainCommands(
@@ -463,8 +563,8 @@ function buildKeymap(schema: Schema) {
 
   // Insert tab in code block
   const insertTabInCode: Command = (state, dispatch) => {
-    const { $from } = state.selection
-    if (!$from.parent.type.spec.code) return false
+    const { $from, $to } = state.selection
+    if (!$from.parent.type.spec.code || $from.parent !== $to.parent) return false
 
     if (dispatch) {
       dispatch(state.tr.insertText("\t").scrollIntoView())
@@ -472,9 +572,20 @@ function buildKeymap(schema: Schema) {
     return true
   }
 
-  // Tab/Shift-Tab for code blocks, flat list items, and table navigation
-  keys["Tab"] = chainCommands(insertTabInCode, goToNextCell(1), indentFlatListItem)
-  keys["Shift-Tab"] = chainCommands(goToNextCell(-1), outdentFlatListItem)
+  // Multi-block list ranges must be resolved before the native selection's
+  // head can make a mixed range look like a single code block or table cell.
+  // Single-block code, table, and list behavior keeps its established order.
+  keys["Tab"] = chainCommands(
+    preferMultiBlockListIndent(schema, indentFlatListItem),
+    insertTabInCode,
+    goToNextCell(1),
+    indentFlatListItem
+  )
+  keys["Shift-Tab"] = chainCommands(
+    preferMultiBlockListIndent(schema, outdentFlatListItem),
+    goToNextCell(-1),
+    outdentFlatListItem
+  )
 
   // Blockquote
   if (schema.nodes.blockquote) {

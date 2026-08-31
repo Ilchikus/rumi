@@ -1,19 +1,37 @@
 ## Planned
 
-- [ ] context actions on items from breadcrumbs (rmb)
+- ~~route not found on initial open~~
+- Slash command on mobile
+- Mobile editor header
+- Mobile zoom-in on focus (editor, login)
+- Block dnd and context actions on mobile
+- [ ] Support links to page headings via `#heading` anchors
+- [ ] [context actions on items from breadcrumbs (rmb)](Tasks/M07-036-shared-breadcrumb-context-actions.md)
     - [ ] include copy path and copy url to context actions. these context actions should be synced with sidebar and breadcrumbs - basically the same component and actions
-- [ ] add favorite pages/folders/dbs
-- [ ] dark theme
+- [ ] [add pinned pages/folders/dbs](Tasks/M07-038-pinned-workspace-items.md)
 - [ ] drag-n-drop block into db:
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
 - [ ] [Inline-code caret boundary](Tasks/xxx-inline-code-caret-boundary.md)
-- [ ] media library - similarly to trash and settings add a page, where users can browse, delete, copy etc. uploaded files
+- [ ] [uploads library](Tasks/M07-034-media-library.md) - similarly to trash and settings add a page, where users can browse, delete, copy etc. uploaded files
+- [ ] [tab on search (cmd+k) cycles between tabs](Tasks/M07-032-search-tabs-and-recents.md)
+    - [ ] add "recent" tab that contains recently visited pages
+- [ ] [placing ](Tasks/M07-033-task-marker-content-preservation.md)[`-[]`](Tasks/M07-033-task-marker-content-preservation.md)[ in the start of a line before extisting content removes the content when appying the formatting - content should preserve](Tasks/M07-033-task-marker-content-preservation.md)
+- [ ] [when selecting multiple lines with text highlight or block selector, pressing tab/shift+tab should be applied to all lines in an active selection](Tasks/M07-035-multi-selection-tab-indentation.md)
+- [ ] paste in any form (mouse/shortcut) should not break the sequence for \`\` inline code formatting
+- [ ] text with both \`\` and link formatting applied should use inline code color, not link
+- [ ] offset checkbox icon for list item lower 4px
+- [ ] sidebar database props visibility, sort, filter:
+    - [ ] selector for property (-ies?) to display as labels next to text
+    - [ ] sort/filter items in sidebar by prop
+    - [ ] limit items loading
+    - [ ] current item in sidebar when touching parent make them static; instead i want the child item become sticky with parent so it's always visible if off-viewport
 
 ## To think
 
 - Global tags
+- Workspace groups: combine nested Rumi workspaces through their parent while keeping each independently served
 - Blocks identations and grouping:
     - paragraph, quote, code, heading etc - group under parent block
         - probably just lines starting with `<tab>` in source file are treated as child blocks
@@ -58,3 +76,4 @@
 - [x] cold visit inner url should always open this url regardless of what should be opened on start
 - [x] improve link behaviour
     - [x] highlight → remove link makes viewport jump down, it should remain
+- [x] dark theme

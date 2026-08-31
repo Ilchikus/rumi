@@ -52,6 +52,7 @@ describe("Rumi instance authentication", () => {
     const anonymousSession = await server.inject({ method: "GET", url: "/api/auth/session" });
     expect(anonymousSession.json()).toEqual({ mode: "password", authenticated: false });
     expect((await server.inject({ method: "GET", url: "/api/tree" })).statusCode).toBe(401);
+    expect((await server.inject({ method: "GET", url: "/api/assets" })).statusCode).toBe(401);
     expect((await server.inject({ method: "GET", url: "/api/events" })).statusCode).toBe(401);
 
     const invalidLogin = await server.inject({
@@ -102,6 +103,9 @@ describe("Rumi instance authentication", () => {
     });
     expect(
       (await server.inject({ method: "GET", url: "/api/tree", headers: { cookie } })).statusCode
+    ).toBe(200);
+    expect(
+      (await server.inject({ method: "GET", url: "/api/assets", headers: { cookie } })).statusCode
     ).toBe(200);
 
     const storedState = await fs.readFile(statePath, "utf8");

@@ -3,7 +3,7 @@ status: draft
 area: runtime
 owner: runtime
 created: 2026-06-22
-updated: 2026-08-19
+updated: 2026-08-22
 ---
 # Runtime Commands
 
@@ -19,6 +19,7 @@ getTree
 readAsset
 saveAsset
 saveAssetStream
+listAssets
 openPage
 savePage
 updateImagePresentation
@@ -82,6 +83,14 @@ Commands own side effects:
   never overwritten.
 - Portable safe deletion under `.rumi/trash/`, original-path metadata, collision-safe restore, and
   revision-object continuity.
+
+`listAssets` inventories supported regular files recursively beneath the canonical `.assets/`
+directory without reading their contents. It returns only workspace-relative path, file name,
+content type, byte size, and modified time, ordered by modified time descending and then path
+ascending. Missing `.assets/` directories produce an empty inventory. Hidden entries, unsupported
+extensions, symlinks at any path segment, and non-files are excluded; unexpected permission and I/O
+errors are reported instead of returning a silently partial inventory. Files added or removed by
+external tools are reflected by the next command call.
 
 `deleteNode` never permanently removes user content. Folder and database deletion still requires
 the explicit recursive command flag, then the complete payload is moved atomically into Trash. `listTrash`

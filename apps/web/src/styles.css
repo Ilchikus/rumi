@@ -7,20 +7,65 @@
     --background: 0 0% 100%;
     --foreground: 0 0% 9%;
     --surface-subtle: 0 0% 96.1%;
+    --sidebar: var(--surface-subtle);
     --muted: var(--surface-subtle);
     --muted-foreground: 0 0% 45%;
     --accent: var(--surface-subtle);
-    --accent-foreground: 0 0% 9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 100%;
+    --accent-foreground: var(--foreground);
+    --primary: 199 89% 48%;
+    --primary-hover: 200 98% 39%;
+    --primary-foreground: var(--foreground);
+    --action: 200 98% 39%;
+    --action-hover: 201 96% 32%;
+    --action-foreground: 0 0% 98%;
     --secondary: var(--surface-subtle);
-    --secondary-foreground: 0 0% 9%;
-    --destructive: 0 0% 9%;
-    --destructive-foreground: 0 0% 100%;
+    --secondary-foreground: var(--foreground);
+    --destructive: 347 77% 50%;
+    --destructive-foreground: var(--foreground);
     --border: 0 0% 90%;
     --input: 0 0% 83%;
-    --ring: 0 0% 64%;
+    --ring: var(--primary);
+    --popover-foreground: var(--foreground);
+    --highlight-background: hsl(48 96% 53% / 0.3);
+    --selection-background: hsl(199 89% 48% / 0.14);
+    --selection-strong: hsl(199 89% 48% / 0.42);
+    --inline-code: 347 77% 40%;
+    --syntax-keyword: 271 43% 50%;
+    --syntax-string: 81 100% 27%;
+    --syntax-number: 28 91% 54%;
+    --syntax-comment: 0 0% 55%;
+    --syntax-title: 214 45% 47%;
+    --syntax-attribute: 0 66% 47%;
     --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 15%;
+    --foreground: 0 0% 96.1%;
+    --surface-subtle: 0 0% 25.1%;
+    --sidebar: var(--surface-subtle);
+    --muted: var(--surface-subtle);
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 32.2%;
+    --primary: 199 89% 48%;
+    --primary-hover: 198 93% 60%;
+    --action: 199 89% 48%;
+    --action-hover: 198 93% 60%;
+    --secondary: var(--surface-subtle);
+    --destructive: 350 89% 60%;
+    --border: 0 0% 32.2%;
+    --input: 0 0% 45.1%;
+    --ring: var(--primary);
+    --highlight-background: hsl(48 96% 53% / 0.2);
+    --selection-background: hsl(199 89% 48% / 0.22);
+    --selection-strong: hsl(198 93% 60% / 0.58);
+    --inline-code: 343 88% 71%;
+    --syntax-keyword: 258 90% 76%;
+    --syntax-string: 82 85% 67%;
+    --syntax-number: 31 97% 72%;
+    --syntax-comment: 0 0% 63.9%;
+    --syntax-title: 199 95% 74%;
+    --syntax-attribute: 351 94% 81%;
   }
 
   * {
@@ -37,6 +82,10 @@
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+  }
+
   button,
   textarea,
   input {
@@ -45,6 +94,40 @@
 }
 
 @layer components {
+  .rumi-checkbox {
+    appearance: none;
+    border: 1px solid hsl(var(--input));
+    border-radius: 0.2rem;
+    background-color: hsl(var(--background));
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .rumi-checkbox:checked,
+  .rumi-checkbox:indeterminate {
+    border-color: hsl(var(--primary));
+    background-color: hsl(var(--primary));
+  }
+
+  .rumi-checkbox:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size: 14px 14px;
+  }
+
+  .rumi-checkbox:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8H12.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-size: 14px 14px;
+  }
+
+  .rumi-checkbox:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .rumi-checkbox:disabled {
+    opacity: 0.5;
+  }
+
   .rumi-database-view-tabs {
     scrollbar-width: none;
   }
@@ -374,7 +457,7 @@
   .rumi-prosemirror .rumi-inline-code-pending {
     border-radius: 0.25rem;
     background: hsl(var(--surface-subtle));
-    color: #be123c;
+    color: hsl(var(--inline-code));
     padding: 0.08rem 0.25rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 0.9em;
@@ -382,8 +465,13 @@
 
   .rumi-prosemirror a {
     color: hsl(var(--foreground));
-    text-decoration: underline;
+    font-weight: 400;
+    text-decoration: none;
     text-underline-offset: 0.18em;
+  }
+
+  .rumi-prosemirror a:hover {
+    text-decoration: underline;
   }
 
   .rumi-prosemirror hr {
@@ -394,7 +482,8 @@
 
   .rumi-prosemirror mark {
     border-radius: 0.15rem;
-    background: hsl(var(--muted));
+    background: var(--highlight-background);
+    color: hsl(var(--foreground));
     padding: 0 0.08rem;
   }
 
@@ -535,6 +624,6 @@
     position: absolute;
     inset: 0;
     content: "";
-    background: hsl(213, 94%, 95%);
+    background: var(--selection-background);
   }
 }

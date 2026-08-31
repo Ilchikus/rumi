@@ -1,4 +1,5 @@
 import type {
+  AssetListResult,
   AuthLoginRequest,
   AuthSessionResult,
   CheckpointRequest,
@@ -148,6 +149,10 @@ export class RumiApiClient {
       headers: { "content-type": "application/octet-stream" },
       body: data
     });
+  }
+
+  async listAssets(): Promise<AssetListResult> {
+    return this.request<AssetListResult>("/api/assets");
   }
 
   async listRevisions(path: string): Promise<RevisionEntry[]> {

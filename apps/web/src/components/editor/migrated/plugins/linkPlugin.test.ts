@@ -50,7 +50,10 @@ describe("link context menu interaction", () => {
     expect(contextHandled).toBe(true)
     expect(preventDefault).toHaveBeenCalledOnce()
     const popup = document.body.querySelector<HTMLElement>(".link-input-popup")!
+    const toolbar = popup.closest<HTMLElement>(".selection-toolbar")!
     expect(popup.style.display).toBe("block")
+    expect(toolbar.classList.contains("link-editor-only")).toBe(true)
+    expect(view.state.selection.empty).toBe(true)
     expect(popup.querySelector<HTMLInputElement>(".link-url-input")?.value).toBe("Notes.md")
 
     view.destroy()
@@ -425,6 +428,10 @@ describe("link context menu interaction", () => {
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, 9))
     )
+    expect(icon.classList.contains("rumi-link-icon-selected")).toBe(false)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 9))
+    )
     expect(icon.classList.contains("rumi-link-icon-selected")).toBe(true)
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 1))
@@ -466,6 +473,34 @@ describe("link context menu interaction", () => {
       .toBeUndefined()
     expect(view.dom.querySelector('.rumi-link-icon[data-link-type="external"]')).toBeNull()
 
+    view.destroy()
+    host.remove()
+  })
+
+  it("removes the marker when all linked text is deleted without selecting the marker", () => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const linkMark = schema.marks.link!.create({ href: "https://example.com" })
+    const marker = schema.nodes.link_marker!.create({
+      href: "https://example.com",
+      linkType: "external"
+    })
+    const doc = schema.nodes.doc!.create(
+      null,
+      schema.nodes.paragraph!.create(null, [marker, schema.text("Example", [linkMark])])
+    )
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 2, 9),
+        plugins: [linkPlugin(schema)]
+      })
+    })
+
+    view.dispatch(view.state.tr.deleteSelection())
+
+    expect(view.state.doc.textContent).toBe("")
+    expect(view.dom.querySelector(".rumi-link-icon")).toBeNull()
     view.destroy()
     host.remove()
   })

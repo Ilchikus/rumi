@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-08-19"
+updated: "2026-08-22"
 ---
 # File Format
 
@@ -72,6 +72,13 @@ upload allowlist. Other top-level configuration domains can coexist in the same 
 settings inside `uploads` are rejected to catch mistakes. Restart the workspace server after
 changing this configuration by hand. The runtime settings command atomically preserves other
 top-level domains and applies upload-policy changes immediately.
+
+`.assets/` is the canonical asset library whether a supported file was uploaded through Rumi or
+placed there by an external tool. Its supported regular files may be nested and are inventoried
+without reading file bytes; hidden entries, unsupported extensions, non-files, and symlinked files
+or directories are not library items. Asset inventory exposes workspace-relative metadata only.
+Rename and Move to Trash continue through the normal collision-safe node commands so Markdown
+references and recoverable deletion semantics remain consistent.
 
 `editor.highlightMisspellings` controls the browser's native spellcheck underlines in the official
 editor. It defaults to `false`; setting it to `true` enables the browser's spelling suggestions for

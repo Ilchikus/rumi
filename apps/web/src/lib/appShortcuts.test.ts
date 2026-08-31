@@ -79,6 +79,37 @@ describe("application shortcuts", () => {
     }, "linux")).toBe("copy-page-url");
   });
 
+  it("opens Settings and Trash with their platform primary shortcuts", () => {
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "<",
+      code: "Comma",
+      metaKey: true,
+      shiftKey: true
+    }, "mac")).toBe("open-settings");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "|",
+      code: "Backslash",
+      metaKey: true,
+      shiftKey: true
+    }, "mac")).toBe("open-trash");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "<",
+      code: "Comma",
+      ctrlKey: true,
+      shiftKey: true
+    }, "linux")).toBe("open-settings");
+    expect(appShortcutAction({
+      ...baseEvent,
+      key: "|",
+      code: "Backslash",
+      ctrlKey: true,
+      shiftKey: true
+    }, "linux")).toBe("open-trash");
+  });
+
   it("copies the open page path with Shift-Command-P and ignores unsafe variants", () => {
     expect(appShortcutAction({
       ...baseEvent,
@@ -168,6 +199,8 @@ describe("application shortcuts", () => {
       create: "⌃N",
       sidebar: "⌘S",
       immediate: "⌘↵",
+      settings: "⇧⌘,",
+      trash: "⇧⌘\\",
       copyUrl: "⇧⌘C",
       copyRelativePath: "⇧⌘P"
     });
@@ -175,6 +208,8 @@ describe("application shortcuts", () => {
       create: "Alt+N",
       sidebar: "Ctrl+S",
       immediate: "Ctrl+Enter",
+      settings: "Ctrl+Shift+,",
+      trash: "Ctrl+Shift+\\",
       copyUrl: "Ctrl+Shift+C",
       copyRelativePath: "Ctrl+Shift+P"
     });

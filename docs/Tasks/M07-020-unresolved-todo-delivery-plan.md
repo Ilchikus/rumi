@@ -6,7 +6,7 @@ owner_layer: docs
 coverage:
   - docs
 created: "2026-08-17"
-updated: "2026-08-18"
+updated: "2026-08-29"
 ---
 # M07-020 Unresolved Todo Delivery Plan
 
@@ -33,7 +33,7 @@ asset improvements below:
 7. Inline workspace-path suggestions in the link editor.
 8. The supplied logo refresh using the uploaded source SVG.
 
-Favorites, dark theme, current-page find/replace, and block-to-database drag are independently
+Pinned items, dark theme, current-page find/replace, and block-to-database drag are independently
 valuable but large enough to obscure the release gate. Plan them immediately after `0.1.16` unless
 the release is intentionally expanded.
 
@@ -169,16 +169,18 @@ Create `M07-030` owned by `web`.
 These tracks can be designed in parallel at the product level but should ship as separate tasks and
 pull requests.
 
-### B1. Favorites
+### B1. Pinned Items
 
 Create `M07-026` owned by `web` after the persistence decision below.
 
-- Favorite and unfavorite pages, folders, and databases from the sidebar context menu.
-- Show one **Favorites** section above the workspace tree, using the same open, prefetch, rename,
-  move, and context-menu behavior as the canonical tree rows.
+- Pin and unpin pages, folders, and databases from the shared sidebar, breadcrumb, and editor-header
+  context menu.
+- Show pinned rows above the workspace tree without a visible section label, using the same open,
+  prefetch, rename, move, and context-menu behavior as the canonical tree rows.
 - Store canonical workspace paths, deduplicate them, preserve explicit user order, and remove or
   repair entries after delete, rename, move, restore, and external reconciliation.
-- Never create a second content tree or treat a stale favorite as content identity.
+- Nest pinned descendants beneath their nearest pinned ancestor; otherwise show them as flat rows.
+- Never create a second content tree or treat a stale pin as content identity.
 - Cover workspace isolation, missing targets, database records if later included, and keyboard
   accessibility.
 
@@ -279,8 +281,8 @@ and whether 2D tables are a new database kind or only a view.
 Approved on 2026-08-17:
 
 1. **Release boundary:** ship Track A in `0.1.16`; schedule Tracks B-D afterward.
-2. **Favorites:** browser-local and workspace-scoped, with manual ordering; favorite folders,
-   databases, and ordinary pages, but not individual database records initially.
+2. **Pinned items:** browser-local and workspace-scoped, with stable insertion ordering and manual
+   reordering deferred; pin folder, database, and page nodes, including pages inside databases.
 3. **Theme:** Light / Dark / System selector, System by default, stored browser-locally per workspace.
 4. **Link activation:** plain click continues to place the caret; explicit Open/edge/modifier actions
    open external links in a new tab and internal links in the same tab.

@@ -405,6 +405,417 @@ describe("live editor staged Select All", () => {
   })
 })
 
+describe("live editor multi-item indentation", () => {
+  function keyboardEvent(
+    key: "Tab" | "z",
+    modifiers: Partial<KeyboardEvent> = {}
+  ): KeyboardEvent {
+    return {
+      key,
+      keyCode: key === "Tab" ? 9 : 0,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault() {},
+      stopPropagation() {},
+      ...modifiers
+    } as KeyboardEvent
+  }
+
+  function applyKey(
+    keymapPlugin: ReturnType<typeof buildKeymap>,
+    view: EditorView,
+    event: KeyboardEvent
+  ): boolean {
+    return keymapPlugin.props.handleKeyDown?.call(
+      keymapPlugin,
+      view,
+      event
+    ) ?? false
+  }
+
+  function listItem(
+    typeName: "bullet_item" | "numbered_item" | "task_item",
+    text: string,
+    indent: number,
+    checked = false
+  ) {
+    return schema.nodes[typeName]!.create(
+      typeName === "task_item" ? { indent, checked } : { indent },
+      schema.text(text)
+    )
+  }
+
+  function viewFor(
+    doc: EditorState["doc"],
+    selection: TextSelection | NodeSelection,
+    includeHistory = false
+  ) {
+    const keymapPlugin = buildKeymap(schema)
+    let state = EditorState.create({
+      doc,
+      selection,
+      plugins: [
+        ...(includeHistory ? [history()] : []),
+        multiBlockSelectionPlugin(schema),
+        keymapPlugin
+      ]
+    })
+    const view = {
+      get state() {
+        return state
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction)
+      }
+    } as unknown as EditorView
+    return { keymapPlugin, view, state: () => state }
+  }
+
+  function indents(state: EditorState): Array<number | null> {
+    const listTypes = new Set(["bullet_item", "numbered_item", "task_item"])
+    return Array.from({ length: state.doc.childCount }, (_, index) => {
+      const node = state.doc.child(index)
+      return listTypes.has(node.type.name) ? node.attrs.indent : null
+    })
+  }
+
+  it("indents every list item touched by a forward text range and preserves its selection", () => {
+    const root = listItem("bullet_item", "Root", 0)
+    const bullet = listItem("bullet_item", "Bullet", 0)
+    const numbered = listItem("numbered_item", "Numbered", 1)
+    const task = listItem("task_item", "Task", 2, true)
+    const doc = schema.nodes.doc!.create(null, [root, bullet, numbered, task])
+    const positions = blockPositions(EditorState.create({ doc }))
+    const anchor = positions[1]! + 2
+    const head = positions[3]! + 3
+    const { keymapPlugin, view, state } = viewFor(
+      doc,
+      TextSelection.create(doc, anchor, head)
+    )
+
+    expect(applyKey(keymapPlugin, view, keyboardEvent("Tab"))).toBe(true)
+    expect(indents(state())).toEqual([0, 1, 2, 3])
+    expect(state().doc.child(3).attrs.checked).toBe(true)
+    expect(state().selection).toBeInstanceOf(TextSelection)
+    expect(state().selection.anchor).toBe(anchor)
+    expect(state().selection.head).toBe(head)
+  })
+
+  it("outdents every list item touched by a reverse text range and preserves its direction", () => {
+    const bullet = listItem("bullet_item", "Bullet", 1)
+    const numbered = listItem("numbered_item", "Numbered", 2)
+    const task = listItem("task_item", "Task", 3, true)
+    const doc = schema.nodes.doc!.create(null, [bullet, numbered, task])
+    const positions = blockPositions(EditorState.create({ doc }))
+    const anchor = positions[2]! + 3
+    const head = positions[0]! + 2
+    const { keymapPlugin, view, state } = viewFor(
+      doc,
+      TextSelection.create(doc, anchor, head)
+    )
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(true)
+    expect(indents(state())).toEqual([0, 1, 2])
+    expect(state().selection.anchor).toBe(anchor)
+    expect(state().selection.head).toBe(head)
+  })
+
+  it("indents non-contiguous explicit selections and preserves their block highlights and Markdown", () => {
+    const bold = schema.marks.bold!.create()
+    const nodes = [
+      listItem("bullet_item", "Root", 0),
+      schema.nodes.bullet_item!.create(
+        { indent: 0 },
+        schema.text("Bullet", [bold])
+      ),
+      listItem("bullet_item", "Bullet peer", 1),
+      listItem("numbered_item", "Numbered", 1),
+      listItem("numbered_item", "Numbered peer", 2),
+      listItem("task_item", "Task", 2, true)
+    ]
+    const doc = schema.nodes.doc!.create(null, nodes)
+    const positions = blockPositions(EditorState.create({ doc }))
+    const selectedBlocks = [positions[1]!, positions[3]!, positions[5]!]
+    const setup = viewFor(doc, NodeSelection.create(doc, positions[1]!), true)
+    setup.view.dispatch(
+      setup.state().tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks,
+          anchorBlock: selectedBlocks[0]
+        })
+        .setMeta("multiBlockKeep", true)
+    )
+
+    expect(applyKey(setup.keymapPlugin, setup.view, keyboardEvent("Tab"))).toBe(true)
+    expect(indents(setup.state())).toEqual([0, 1, 1, 2, 2, 3])
+    expect(setup.state().doc.child(1).firstChild?.marks.some(
+      (mark) => mark.type === schema.marks.bold
+    )).toBe(true)
+    expect(setup.state().doc.child(5).attrs.checked).toBe(true)
+    expect(multiBlockSelectionKey.getState(setup.state())?.selectedBlocks).toEqual(
+      selectedBlocks
+    )
+    expect(multiBlockSelectionKey.getState(setup.state())?.selectedBlocks.map(
+      (pos) => setup.state().doc.nodeAt(pos)?.textContent
+    )).toEqual(["Bullet", "Numbered", "Task"])
+
+    const markdown = serializeMarkdown(setup.state().doc)
+    const roundtrip = parseMarkdown(markdown, schema)
+    expect(indents(EditorState.create({ doc: roundtrip }))).toEqual([0, 1, 1, 2, 2, 3])
+    expect(roundtrip.child(1).firstChild?.marks.some(
+      (mark) => mark.type === schema.marks.bold
+    )).toBe(true)
+    expect(roundtrip.child(5).attrs.checked).toBe(true)
+
+    expect(applyKey(
+      setup.keymapPlugin,
+      setup.view,
+      keyboardEvent("z", { ctrlKey: true })
+    )).toBe(true)
+    expect(indents(setup.state())).toEqual([0, 0, 1, 1, 2, 2])
+
+    expect(applyKey(
+      setup.keymapPlugin,
+      setup.view,
+      keyboardEvent("z", { ctrlKey: true, shiftKey: true })
+    )).toBe(true)
+    expect(indents(setup.state())).toEqual([0, 1, 1, 2, 2, 3])
+  })
+
+  it("outdents a contiguous explicit selection without clearing it", () => {
+    const nodes = [
+      listItem("bullet_item", "Bullet", 1),
+      listItem("numbered_item", "Numbered", 2),
+      listItem("task_item", "Task", 3, true)
+    ]
+    const doc = schema.nodes.doc!.create(null, nodes)
+    const positions = blockPositions(EditorState.create({ doc }))
+    const setup = viewFor(doc, NodeSelection.create(doc, positions[0]!))
+    setup.view.dispatch(
+      setup.state().tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks: positions,
+          anchorBlock: positions[0]
+        })
+        .setMeta("multiBlockKeep", true)
+    )
+
+    expect(applyKey(
+      setup.keymapPlugin,
+      setup.view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(true)
+    expect(indents(setup.state())).toEqual([0, 1, 2])
+    expect(setup.state().selection).toBeInstanceOf(NodeSelection)
+    expect(multiBlockSelectionKey.getState(setup.state())?.selectedBlocks).toEqual(
+      positions
+    )
+  })
+
+  it("changes only eligible items in a mixed text selection", () => {
+    const bullet = listItem("bullet_item", "Bullet", 0)
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("Paragraph"))
+    const task = listItem("task_item", "Task", 1, true)
+    const doc = schema.nodes.doc!.create(null, [bullet, paragraph, task])
+    const positions = blockPositions(EditorState.create({ doc }))
+    const { keymapPlugin, view, state } = viewFor(
+      doc,
+      TextSelection.create(doc, positions[0]! + 1, positions[2]! + 2)
+    )
+
+    expect(applyKey(keymapPlugin, view, keyboardEvent("Tab"))).toBe(true)
+    expect(indents(state())).toEqual([1, null, 2])
+    expect(state().doc.child(1)).toBe(paragraph)
+  })
+
+  it("leaves code and tables untouched when a mixed range also contains list items", () => {
+    const code = schema.nodes.code_block!.create(
+      { language: "text" },
+      schema.text("Code")
+    )
+    const codeList = listItem("bullet_item", "List after code", 0)
+    const codeDoc = schema.nodes.doc!.create(null, [code, codeList])
+    const codePositions = blockPositions(EditorState.create({ doc: codeDoc }))
+    const codeSetup = viewFor(
+      codeDoc,
+      TextSelection.create(codeDoc, 2, codePositions[1]! + 2)
+    )
+
+    expect(applyKey(
+      codeSetup.keymapPlugin,
+      codeSetup.view,
+      keyboardEvent("Tab")
+    )).toBe(true)
+    expect(codeSetup.state().doc.child(0).textContent).toBe("Code")
+    expect(indents(codeSetup.state())).toEqual([null, 1])
+
+    const firstCell = schema.nodes.table_cell!.create(null, schema.text("First"))
+    const secondCell = schema.nodes.table_cell!.create(null, schema.text("Second"))
+    const row = schema.nodes.table_row!.create(null, [firstCell, secondCell])
+    const table = schema.nodes.table!.create(null, row)
+    const tableList = listItem("task_item", "List after table", 1, true)
+    const tableDoc = schema.nodes.doc!.create(null, [table, tableList])
+    const tablePositions = blockPositions(EditorState.create({ doc: tableDoc }))
+    const tableSetup = viewFor(
+      tableDoc,
+      TextSelection.create(tableDoc, tablePositions[1]! + 2, 3)
+    )
+
+    expect(applyKey(
+      tableSetup.keymapPlugin,
+      tableSetup.view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(true)
+    expect(tableSetup.state().doc.child(0)).toBe(table)
+    expect(indents(tableSetup.state())).toEqual([null, 0])
+  })
+
+  it("caps and floors each selected item independently", () => {
+    const indentDoc = schema.nodes.doc!.create(null, [
+      listItem("bullet_item", "At max", 4),
+      listItem("numbered_item", "Can move", 3)
+    ])
+    const indentSetup = viewFor(
+      indentDoc,
+      TextSelection.create(indentDoc, 1, indentDoc.content.size - 1)
+    )
+
+    expect(applyKey(
+      indentSetup.keymapPlugin,
+      indentSetup.view,
+      keyboardEvent("Tab")
+    )).toBe(true)
+    expect(indents(indentSetup.state())).toEqual([4, 4])
+    expect(applyKey(
+      indentSetup.keymapPlugin,
+      indentSetup.view,
+      keyboardEvent("Tab")
+    )).toBe(false)
+
+    const outdentDoc = schema.nodes.doc!.create(null, [
+      listItem("bullet_item", "At floor", 0),
+      listItem("task_item", "Can move", 1, true)
+    ])
+    const outdentSetup = viewFor(
+      outdentDoc,
+      TextSelection.create(outdentDoc, 1, outdentDoc.content.size - 1)
+    )
+
+    expect(applyKey(
+      outdentSetup.keymapPlugin,
+      outdentSetup.view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(true)
+    expect(indents(outdentSetup.state())).toEqual([0, 0])
+    expect(applyKey(
+      outdentSetup.keymapPlugin,
+      outdentSetup.view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(false)
+  })
+
+  it("records the complete multi-item change as one undo and redo event", () => {
+    const nodes = [
+      listItem("bullet_item", "Bullet", 0),
+      listItem("numbered_item", "Numbered", 1),
+      listItem("task_item", "Task", 2, true)
+    ]
+    const doc = schema.nodes.doc!.create(null, nodes)
+    const { keymapPlugin, view, state } = viewFor(
+      doc,
+      TextSelection.create(doc, 1, doc.content.size - 1),
+      true
+    )
+
+    expect(applyKey(keymapPlugin, view, keyboardEvent("Tab"))).toBe(true)
+    expect(indents(state())).toEqual([1, 2, 3])
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("z", { ctrlKey: true })
+    )).toBe(true)
+    expect(indents(state())).toEqual([0, 1, 2])
+
+    expect(applyKey(
+      keymapPlugin,
+      view,
+      keyboardEvent("z", { ctrlKey: true, shiftKey: true })
+    )).toBe(true)
+    expect(indents(state())).toEqual([1, 2, 3])
+  })
+
+  it("retains single-list, code, and table Tab priorities", () => {
+    const singleDoc = schema.nodes.doc!.create(
+      null,
+      listItem("bullet_item", "Single", 0)
+    )
+    const single = viewFor(singleDoc, TextSelection.create(singleDoc, 2))
+    expect(applyKey(single.keymapPlugin, single.view, keyboardEvent("Tab"))).toBe(true)
+    expect(indents(single.state())).toEqual([1])
+
+    const code = schema.nodes.code_block!.create(
+      { language: "text" },
+      schema.text("Code")
+    )
+    const codeDoc = schema.nodes.doc!.create(null, code)
+    const codeSetup = viewFor(codeDoc, TextSelection.create(codeDoc, 3))
+    expect(applyKey(codeSetup.keymapPlugin, codeSetup.view, keyboardEvent("Tab"))).toBe(true)
+    expect(codeSetup.state().doc.textContent).toBe("Co\tde")
+
+    const firstCell = schema.nodes.table_cell!.create(null, schema.text("First"))
+    const secondCell = schema.nodes.table_cell!.create(null, schema.text("Second"))
+    const row = schema.nodes.table_row!.create(null, [firstCell, secondCell])
+    const table = schema.nodes.table!.create(null, row)
+    const tableDoc = schema.nodes.doc!.create(null, table)
+    const tableSetup = viewFor(tableDoc, TextSelection.create(tableDoc, 3))
+    expect(applyKey(tableSetup.keymapPlugin, tableSetup.view, keyboardEvent("Tab"))).toBe(true)
+    expect(tableSetup.state().selection.$from.parent.textContent).toBe("Second")
+    expect(applyKey(
+      tableSetup.keymapPlugin,
+      tableSetup.view,
+      keyboardEvent("Tab", { shiftKey: true })
+    )).toBe(true)
+    expect(tableSetup.state().selection.$from.parent.textContent).toBe("First")
+  })
+
+  it("returns native Tab fallback when an explicit selection has no eligible change", () => {
+    const paragraph = schema.nodes.paragraph!.create(null, schema.text("Paragraph"))
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    const setup = viewFor(doc, NodeSelection.create(doc, 0))
+    setup.view.dispatch(
+      setup.state().tr
+        .setMeta(multiBlockSelectionKey, {
+          selectedBlocks: [0],
+          anchorBlock: 0
+        })
+        .setMeta("multiBlockKeep", true)
+    )
+    let dispatched = false
+    const fallbackView = {
+      get state() {
+        return setup.state()
+      },
+      dispatch() {
+        dispatched = true
+      }
+    } as unknown as EditorView
+
+    expect(applyKey(
+      setup.keymapPlugin,
+      fallbackView,
+      keyboardEvent("Tab")
+    )).toBe(false)
+    expect(dispatched).toBe(false)
+  })
+})
+
 describe("live editor shared history and structural insertion shortcuts", () => {
   function keyboardEvent(
     key: string,

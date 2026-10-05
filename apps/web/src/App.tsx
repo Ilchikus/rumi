@@ -717,6 +717,13 @@ export function App(): ReactElement {
     setMessage("");
   }, []);
 
+  // Leaving the open page cancels its autosave timer and can unmount the
+  // editor, so start the pending save now while the latest Markdown is still
+  // readable from the editor.
+  const saveOpenPageBeforeLeaving = useCallback(() => {
+    if (saveStateRef.current === "dirty") void savePageRef.current?.();
+  }, []);
+
   const updatePageFrontmatter = useCallback(
     (frontmatter: PageDocument["frontmatter"]) => {
       const currentPage = pageRef.current;
@@ -1451,6 +1458,7 @@ export function App(): ReactElement {
       historyAction: "push" | "replace" = "push",
       historyEntryScrollTop?: number
     ) => {
+      saveOpenPageBeforeLeaving();
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
       if (historyAction === "push") {
@@ -1518,7 +1526,7 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [isNarrow, loadPage, rememberRecentOpen]
+    [isNarrow, loadPage, rememberRecentOpen, saveOpenPageBeforeLeaving]
   );
 
   const redirectAfterDeletedNode = useCallback(async (deletedPath: string): Promise<void> => {
@@ -1591,6 +1599,7 @@ export function App(): ReactElement {
     historyAction: "push" | "replace" = "push",
     originalPagePath?: string
   ): Promise<void> => {
+    saveOpenPageBeforeLeaving();
     const id = typeof itemOrId === "string" ? itemOrId : itemOrId.id;
     pendingHistoryActionRef.current = historyAction;
     setLoadState("loading");
@@ -1611,7 +1620,7 @@ export function App(): ReactElement {
       setLoadState("error");
       setMessage(errorMessage(error));
     }
-  }, [api, isNarrow, setMessage]);
+  }, [api, isNarrow, saveOpenPageBeforeLeaving, setMessage]);
 
   useEffect(() => {
     if (!tree || !workspaceRootPath || restoredWorkspaceRef.current === workspaceRootPath) {
@@ -1725,6 +1734,7 @@ export function App(): ReactElement {
     if (!routeSyncReady || !tree) return;
 
     const handlePopState = (event: PopStateEvent) => {
+      saveOpenPageBeforeLeaving();
       historyEntryRevisionRef.current += 1;
       setScrollRestoreRevision((revision) => revision + 1);
       const route = parseWorkspaceRoute(window.location.pathname);
@@ -1802,6 +1812,7 @@ export function App(): ReactElement {
     openNode,
     openTrashPage,
     routeSyncReady,
+    saveOpenPageBeforeLeaving,
     tree
   ]);
 
@@ -2283,6 +2294,7 @@ export function App(): ReactElement {
   );
 
   const openTrash = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(false);
     setMediaOpen(false);
@@ -2291,9 +2303,10 @@ export function App(): ReactElement {
     setMessage("");
     void loadTrash();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadTrash]);
+  }, [isNarrow, loadTrash, saveOpenPageBeforeLeaving]);
 
   const openSettings = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(true);
     setMediaOpen(false);
@@ -2302,9 +2315,10 @@ export function App(): ReactElement {
     setMessage("");
     void loadWorkspaceSettings();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadWorkspaceSettings]);
+  }, [isNarrow, loadWorkspaceSettings, saveOpenPageBeforeLeaving]);
 
   const openMedia = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(false);
     setMediaOpen(true);
@@ -2313,7 +2327,7 @@ export function App(): ReactElement {
     setMessage("");
     void loadAssets();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadAssets]);
+  }, [isNarrow, loadAssets, saveOpenPageBeforeLeaving]);
 
   const previewMediaAsset = useCallback((asset: AssetListItem) => {
     const opened = window.open(
@@ -2643,7 +2657,12 @@ export function App(): ReactElement {
           }
         }
 
-        if (pageRef.current?.path !== savingPage.path) return false;
+        if (pageRef.current?.path !== savingPage.path) {
+          // The user left while this save ran. Drop the cached copy so
+          // returning loads what was written instead of the pre-save version.
+          if (result?.status === "saved") forgetCachedPage(savingPage.path);
+          return result?.status === "saved";
+        }
 
         if (!result || result.status !== "saved") {
           throw new Error("Rumi could not save this page after refreshing its latest version.");

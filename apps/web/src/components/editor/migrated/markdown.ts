@@ -40,18 +40,7 @@ export function parseMarkdown(markdown: string, schema: Schema): ProseMirrorNode
   demoteImplicitSourceLinks(tree, preprocessed)
   normalizeTaskListItems(tree)
 
-  const blocks: ProseMirrorNode[] = []
-
-  for (const node of tree.children) {
-    const block = convertBlock(node, schema)
-    if (block) {
-      if (Array.isArray(block)) {
-        blocks.push(...block)
-      } else {
-        blocks.push(block)
-      }
-    }
-  }
+  const blocks = convertBlockSequence(tree.children, schema, preprocessed.split("\n"), false)
 
   // Ensure at least one paragraph
   if (blocks.length === 0) {
@@ -230,16 +219,89 @@ function splitLinkDestinationAndTitle(value: string): { destination: string; tit
     : { destination: trimmed, title: "" }
 }
 
-function convertBlock(node: RootContent, schema: Schema): ProseMirrorNode | ProseMirrorNode[] | null {
+interface PositionedBlock {
+  node: ProseMirrorNode
+  startLine?: number
+  endLine?: number
+}
+
+// Blocks are normally separated by one blank line, or none between list
+// items. Each additional blank line is an empty paragraph, which is how the
+// serializer stores them. Only blank lines directly before a block count, so
+// source the flat model skips (extra list-item paragraphs, comments) never
+// turns into empty paragraphs.
+function convertBlockSequence(
+  children: RootContent[],
+  schema: Schema,
+  sourceLines: string[],
+  quoted: boolean
+): ProseMirrorNode[] {
+  const positioned: PositionedBlock[] = []
+
+  for (const child of children) {
+    if (child.type === "list") {
+      positioned.push(...convertListPositioned(child, schema, 0))
+      continue
+    }
+
+    const block = convertBlock(child, schema, sourceLines)
+    if (!block) continue
+    const nodes = Array.isArray(block) ? block : [block]
+    nodes.forEach((node, index) => positioned.push({
+      node,
+      startLine: index === 0 ? child.position?.start.line : undefined,
+      endLine: index === nodes.length - 1 ? child.position?.end.line : undefined
+    }))
+  }
+
+  const blocks: ProseMirrorNode[] = []
+  let previous: PositionedBlock | null = null
+
+  for (const block of positioned) {
+    if (previous?.endLine && block.startLine) {
+      const blankLines = countBlankLinesBefore(sourceLines, block.startLine, previous.endLine, quoted)
+      for (let extra = 1; extra < blankLines; extra++) {
+        blocks.push(schema.nodes.paragraph.create())
+      }
+    }
+    blocks.push(block.node)
+    previous = block
+  }
+
+  return blocks
+}
+
+function countBlankLinesBefore(
+  sourceLines: string[],
+  startLine: number,
+  afterLine: number,
+  quoted: boolean
+): number {
+  const blank = quoted ? /^[\s>]*$/u : /^\s*$/u
+  let count = 0
+
+  for (let line = startLine - 1; line > afterLine; line--) {
+    if (!blank.test(sourceLines[line - 1] ?? "")) break
+    count++
+  }
+
+  return count
+}
+
+function convertBlock(
+  node: RootContent,
+  schema: Schema,
+  sourceLines: string[] = []
+): ProseMirrorNode | ProseMirrorNode[] | null {
   switch (node.type) {
     case "paragraph":
       return convertParagraph(node, schema)
     case "heading":
       return convertHeading(node, schema)
     case "list":
-      return convertList(node, schema)
+      return convertListPositioned(node, schema, 0).map((block) => block.node)
     case "blockquote":
-      return convertBlockquote(node, schema)
+      return convertBlockquote(node, schema, sourceLines)
     case "code":
       return convertCodeBlock(node, schema)
     case "table":
@@ -300,9 +362,9 @@ function convertHeading(node: Heading, schema: Schema): ProseMirrorNode {
 }
 
 // Convert list to flat blocks (bullet_item, numbered_item, or task_item)
-function convertList(node: List, schema: Schema, indent: number = 0): ProseMirrorNode[] {
+function convertListPositioned(node: List, schema: Schema, indent: number): PositionedBlock[] {
   const isTaskList = node.children.some(item => typeof item.checked === "boolean")
-  const blocks: ProseMirrorNode[] = []
+  const blocks: PositionedBlock[] = []
 
   for (const item of node.children) {
     const itemBlocks = convertListItemFlat(item, schema, node.ordered, isTaskList, indent)
@@ -319,8 +381,9 @@ function convertListItemFlat(
   isOrdered: boolean,
   isTask: boolean,
   indent: number
-): ProseMirrorNode[] {
-  const blocks: ProseMirrorNode[] = []
+): PositionedBlock[] {
+  const blocks: PositionedBlock[] = []
+  const startLine = node.position?.start.line
 
   // Determine the node type
   let nodeType: typeof schema.nodes[string] | undefined
@@ -345,11 +408,15 @@ function convertListItemFlat(
     if (child.type === "paragraph" && !firstParagraphProcessed) {
       // Convert paragraph content to inline content for the list item
       const inline = convertInlineContent((child as Paragraph).children, schema)
-      blocks.push(nodeType.create(attrs, inline))
+      blocks.push({
+        node: nodeType.create(attrs, inline),
+        startLine,
+        endLine: child.position?.end.line
+      })
       firstParagraphProcessed = true
     } else if (child.type === "list") {
       // Nested list - recurse with increased indent
-      const nestedBlocks = convertList(child as List, schema, indent + 1)
+      const nestedBlocks = convertListPositioned(child as List, schema, indent + 1)
       blocks.push(...nestedBlocks)
     }
     // Other block types after the first paragraph are skipped in flat model
@@ -357,27 +424,20 @@ function convertListItemFlat(
 
   // If no paragraph was found, create an empty item
   if (!firstParagraphProcessed) {
-    blocks.push(nodeType.create(attrs))
+    blocks.push({ node: nodeType.create(attrs), startLine, endLine: startLine })
   }
 
   return blocks
 }
 
-function convertBlockquote(node: Blockquote, schema: Schema): ProseMirrorNode | null {
+function convertBlockquote(
+  node: Blockquote,
+  schema: Schema,
+  sourceLines: string[]
+): ProseMirrorNode | null {
   if (!schema.nodes.blockquote) return null
 
-  const content: ProseMirrorNode[] = []
-  for (const child of node.children) {
-    const block = convertBlock(child as RootContent, schema)
-    if (block) {
-      if (Array.isArray(block)) {
-        content.push(...block)
-      } else {
-        content.push(block)
-      }
-    }
-  }
-
+  const content = convertBlockSequence(node.children as RootContent[], schema, sourceLines, true)
   return schema.nodes.blockquote.create(null, content)
 }
 
@@ -667,12 +727,30 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
 
   const listItemTypes = ["bullet_item", "numbered_item", "task_item"]
   let lastIndex = -1
-  parent.forEach(() => lastIndex++)
+  let firstContentIndex = -1
+  let lastContentIndex = -1
+  parent.forEach((node, _, index) => {
+    lastIndex = index
+    if (isEmptyParagraph(node)) return
+    if (firstContentIndex < 0) firstContentIndex = index
+    lastContentIndex = index
+  })
 
   parent.forEach((node, _, index) => {
     const typeName = node.type.name
     const isListItem = listItemTypes.includes(typeName)
     const wasListItem = state.prevNodeType && listItemTypes.includes(state.prevNodeType)
+
+    // An empty paragraph between blocks is one blank line beyond the normal
+    // separator. Leading and trailing empty paragraphs are not stored.
+    if (isEmptyParagraph(node)) {
+      if (index > firstContentIndex && index < lastContentIndex) {
+        if (wasListItem) lines.push("")
+        lines.push("")
+        state.prevNodeType = typeName
+      }
+      return
+    }
 
     // Add empty line when transitioning from list items to non-list or at end of doc
     if (wasListItem && !isListItem) {
@@ -680,12 +758,17 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
     }
 
     serializeBlock(node, lines, indent, index, state)
+    state.prevNodeType = typeName
 
     // Add empty line after last list item at end of document
     if (isListItem && index === lastIndex) {
       lines.push("")
     }
   })
+}
+
+function isEmptyParagraph(node: ProseMirrorNode): boolean {
+  return node.type.name === "paragraph" && node.content.size === 0
 }
 
 function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, index: number, state?: SerializeState): void {

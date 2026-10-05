@@ -460,3 +460,85 @@ describe("live editor Markdown round trips", () => {
     expect(reparsed.toJSON()).toEqual(parsed.toJSON())
   })
 })
+
+describe("blank lines between blocks", () => {
+  const types = (markdown: string) => {
+    const doc = parseMarkdown(markdown, schema)
+    return Array.from({ length: doc.childCount }, (_, index) => {
+      const node = doc.child(index)
+      return node.type.name === "paragraph" && node.content.size === 0 ? "empty" : node.type.name
+    })
+  }
+
+  const paragraph = (text?: string) =>
+    schema.nodes.paragraph!.create(null, text ? schema.text(text) : null)
+  const bullet = (text: string, indent = 0) =>
+    schema.nodes.bullet_item!.create({ indent }, schema.text(text))
+
+  it.each([
+    ["one empty paragraph", "A\n\n\nB\n", ["paragraph", "empty", "paragraph"]],
+    ["several empty paragraphs", "A\n\n\n\n\nB\n", ["paragraph", "empty", "empty", "empty", "paragraph"]],
+    ["after a heading", "# Title\n\n\nBody\n", ["heading", "empty", "paragraph"]],
+    ["between list items", "- a\n\n\n- b\n", ["bullet_item", "empty", "bullet_item"]],
+    ["from a list to a paragraph", "- a\n\n\nB\n", ["bullet_item", "empty", "paragraph"]],
+    ["from a paragraph to a list", "A\n\n\n- b\n", ["paragraph", "empty", "bullet_item"]],
+    ["before a nested item", "- a\n\n\n    - b\n", ["bullet_item", "empty", "bullet_item"]],
+    ["around a code block", "A\n\n\n```\ncode\n```\n\n\nB\n", ["paragraph", "empty", "code_block", "empty", "paragraph"]]
+  ])("round-trips %s", (_name, markdown, expected) => {
+    expect(types(markdown)).toEqual(expected)
+    expect(serializeMarkdown(parseMarkdown(markdown, schema))).toBe(markdown)
+  })
+
+  it("keeps normal separators and loose lists free of empty paragraphs", () => {
+    expect(types("A\n\nB\n")).toEqual(["paragraph", "paragraph"])
+    expect(types("- a\n\n- b\n\n- c\n")).toEqual(["bullet_item", "bullet_item", "bullet_item"])
+    expect(types("- a\n\n  continued\n\n- b\n")).toEqual(["bullet_item", "bullet_item"])
+  })
+
+  it("does not store leading or trailing empty paragraphs", () => {
+    const doc = schema.nodes.doc!.create(null, [
+      paragraph(),
+      paragraph("Body"),
+      paragraph(),
+      paragraph()
+    ])
+
+    expect(serializeMarkdown(doc)).toBe("Body\n")
+    expect(types("\n\nBody\n\n\n")).toEqual(["paragraph"])
+  })
+
+  it("writes one extra blank line per empty paragraph typed in the editor", () => {
+    const doc = schema.nodes.doc!.create(null, [
+      bullet("a"),
+      paragraph(),
+      paragraph(),
+      bullet("b"),
+      paragraph("After")
+    ])
+    const markdown = serializeMarkdown(doc)
+
+    expect(markdown).toBe("- a\n\n\n\n- b\n\nAfter\n")
+    expect(parseMarkdown(markdown, schema).toJSON()).toEqual(doc.toJSON())
+  })
+
+  it("keeps empty paragraphs inside a blockquote", () => {
+    const quote = schema.nodes.blockquote!.create(null, [
+      paragraph("first"),
+      paragraph(),
+      paragraph("second")
+    ])
+    const doc = schema.nodes.doc!.create(null, [quote])
+
+    expect(parseMarkdown(serializeMarkdown(doc), schema).toJSON()).toEqual(doc.toJSON())
+  })
+
+  it("does not add empty paragraphs after paragraphs that follow a list", () => {
+    const doc = schema.nodes.doc!.create(null, [
+      bullet("a"),
+      paragraph("one"),
+      paragraph("two")
+    ])
+
+    expect(serializeMarkdown(doc)).toBe("- a\n\none\n\ntwo\n")
+  })
+})

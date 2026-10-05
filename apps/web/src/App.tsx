@@ -11,7 +11,6 @@ import {
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
-import { RumiApiClient } from "@rumi/api-client";
 import { toast } from "sonner";
 import {
   parseMarkdownFile,
@@ -112,6 +111,7 @@ import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
+import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from "./lib/authSession";
 import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
   mergeEditorScrollState,
@@ -244,7 +244,8 @@ function waitForEditorFrame(): Promise<void> {
 }
 
 export function App(): ReactElement {
-  const api = useMemo(() => new RumiApiClient(), []);
+  const api = useMemo(() => createWorkspaceApiClient(), []);
+  const { restoredCount: authSessionRestoredCount } = useAuthSession();
   const startupSnapshot = useMemo(
     () => readWorkspaceStartupSnapshot(window.localStorage),
     []
@@ -264,7 +265,9 @@ export function App(): ReactElement {
     )
   );
   const setMessage = useCallback((message: string) => {
-    if (message) toast.error(message);
+    // Requests failing under an expired session are explained by the sign-in
+    // screen, not by one toast per failed request.
+    if (message && !authSessionSnapshot().expired) toast.error(message);
   }, []);
   const [workspaceName, setWorkspaceName] = useState(startupSnapshot?.workspace.name ?? "Rumi");
   const [workspaceRootPath, setWorkspaceRootPath] = useState(startupSnapshot?.workspace.rootPath ?? "");
@@ -3297,6 +3300,33 @@ export function App(): ReactElement {
     [clearPageLoadCache, loadAssets, loadTrash, loadTree, redirectAfterDeletedNode]
   );
 
+  const loadStateRef = useRef(loadState);
+  loadStateRef.current = loadState;
+  const handledAuthRestoreRef = useRef(authSessionRestoredCount);
+
+  // After signing in again, finish what the expired session blocked. Save the
+  // draft first so reopening the route can never discard it, then reopen a
+  // route that failed to load or catch up on the tree. The event stream is
+  // resubscribed by the effect below because a 401 closes EventSource for good.
+  useEffect(() => {
+    if (handledAuthRestoreRef.current === authSessionRestoredCount) return;
+    handledAuthRestoreRef.current = authSessionRestoredCount;
+    const pageFailedToLoad = loadStateRef.current === "error";
+
+    void (async () => {
+      if (saveStateRef.current === "error" || hasUnsavedPageChanges(saveStateRef.current)) {
+        const saved = await savePageRef.current?.();
+        if (!saved) return;
+      }
+
+      if (pageFailedToLoad) {
+        window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      } else {
+        await loadTree();
+      }
+    })();
+  }, [authSessionRestoredCount, loadTree]);
+
   useEffect(() => {
     return api.subscribeEvents((event) => {
       if (event.name === "page.changed") {
@@ -3349,7 +3379,7 @@ export function App(): ReactElement {
         void refreshOpenPageDatabaseContext();
       }
     });
-  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadAssets, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
+  }, [api, authSessionRestoredCount, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadAssets, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
 
   return (
     <main className="relative flex h-screen max-h-screen min-h-0 overflow-hidden bg-background text-foreground">

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { RumiApiClient } from "./index";
+import { describe, expect, it, vi } from "vitest";
+import { isAuthenticationRequiredError, RumiApiClient, RumiApiError } from "./index";
 
 describe("RumiApiClient image presentation", () => {
   it("sends one typed image-presentation update with the client identity", async () => {
@@ -72,5 +72,48 @@ describe("RumiApiClient media inventory", () => {
     expect(requestedUrl).toBe("/api/assets");
     expect(requestedInit?.method).toBeUndefined();
     expect(new Headers(requestedInit?.headers).get("x-rumi-client-id")).toBe("media-client");
+  });
+});
+
+describe("RumiApiClient authentication errors", () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" }
+    });
+  }
+
+  it("reports an expired session before rejecting with a typed error", async () => {
+    const onAuthenticationRequired = vi.fn();
+    const client = new RumiApiClient({
+      fetchImpl: vi.fn(async () => jsonResponse(401, {
+        error: { code: "authentication_required", message: "Authentication required" }
+      })),
+      onAuthenticationRequired
+    });
+
+    const error = await client.getTree().catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(RumiApiError);
+    expect(error).toMatchObject({ status: 401, code: "authentication_required" });
+    expect(isAuthenticationRequiredError(error)).toBe(true);
+    expect(onAuthenticationRequired).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat rejected credentials or other failures as an expired session", async () => {
+    const onAuthenticationRequired = vi.fn();
+    const responses = [
+      jsonResponse(401, { error: { code: "invalid_credentials", message: "Invalid username or password" } }),
+      jsonResponse(500, { error: { code: "internal", message: "Boom" } })
+    ];
+    const client = new RumiApiClient({
+      fetchImpl: vi.fn(async () => responses.shift()!),
+      onAuthenticationRequired
+    });
+
+    await expect(client.login({ username: "owner", password: "wrong" }))
+      .rejects.toMatchObject({ status: 401, code: "invalid_credentials", message: "Invalid username or password" });
+    await expect(client.getTree()).rejects.toMatchObject({ status: 500, message: "Boom" });
+    expect(onAuthenticationRequired).not.toHaveBeenCalled();
   });
 });

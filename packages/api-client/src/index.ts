@@ -56,6 +56,24 @@ export interface RumiApiClientOptions {
   fetchImpl?: typeof fetch;
   eventSourceImpl?: typeof EventSource;
   clientId?: string;
+  /** Called before the request rejects when the server reports a missing or expired session. */
+  onAuthenticationRequired?: () => void;
+}
+
+export class RumiApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "RumiApiError";
+    this.status = status;
+    if (code) this.code = code;
+  }
+}
+
+export function isAuthenticationRequiredError(error: unknown): boolean {
+  return error instanceof RumiApiError && error.code === "authentication_required";
 }
 
 export class RumiApiClient {
@@ -63,12 +81,16 @@ export class RumiApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly eventSourceImpl?: typeof EventSource;
+  private readonly onAuthenticationRequired?: () => void;
 
   constructor(options: RumiApiClientOptions = {}) {
     this.clientId = options.clientId ?? createClientId();
     this.baseUrl = options.baseUrl ?? "";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.eventSourceImpl = options.eventSourceImpl ?? globalThis.EventSource;
+    if (options.onAuthenticationRequired) {
+      this.onAuthenticationRequired = options.onAuthenticationRequired;
+    }
   }
 
   async getAuthSession(): Promise<AuthSessionResult> {
@@ -443,11 +465,19 @@ export class RumiApiClient {
         return data as T;
       }
 
+      const errorBody = isObject(data) && isObject(data.error) ? data.error : null;
       const message =
-        isObject(data) && isObject(data.error) && typeof data.error.message === "string"
-          ? data.error.message
+        typeof errorBody?.message === "string"
+          ? errorBody.message
           : `Request failed with status ${response.status}`;
-      throw new Error(message);
+      const code = typeof errorBody?.code === "string" ? errorBody.code : undefined;
+      const error = new RumiApiError(message, response.status, code);
+
+      if (response.status === 401 && isAuthenticationRequiredError(error)) {
+        this.onAuthenticationRequired?.();
+      }
+
+      throw error;
     }
 
     return data as T;

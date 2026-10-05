@@ -153,7 +153,11 @@ describe("editor layout contracts", () => {
     expect(bulletDecorationRule).toContain("line-height: 0.8;");
     expect(numberedDecorationRule).toContain("font-variant-numeric: tabular-nums;");
     expect(numberedDecorationRule).toContain("text-align: left;");
-    expect(checkboxRule).toContain("margin-top: 2px;");
+    expect(checkboxRule).toContain("margin-top: 6px;");
+    expect(cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item .bullet-decoration"
+    )).toContain("top: -4px;");
     expect(checkboxInputRule).toContain("appearance: none;");
     expect(checkboxInputRule).toContain("border: 1px solid hsl(var(--input));");
     expect(indentGuideRule).toContain("width: var(--rumi-list-indent-offset);");

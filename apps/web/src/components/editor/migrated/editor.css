@@ -736,6 +736,12 @@
 }
 
 /* Bullet item markers */
+/* Raise bullet markers onto the first text line without changing row height. */
+.prosemirror-editor .ProseMirror .bullet-item .bullet-decoration {
+  position: relative;
+  top: -4px;
+}
+
 .prosemirror-editor .ProseMirror .bullet-item .bullet-decoration::before {
   content: "•";
   color: inherit;
@@ -820,7 +826,7 @@
 }
 
 .prosemirror-editor .ProseMirror .task-item .task-checkbox {
-  margin-top: 2px;
+  margin-top: 6px;
 }
 
 .prosemirror-editor .ProseMirror .task-item input[type="checkbox"] {

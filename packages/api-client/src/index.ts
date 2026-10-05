@@ -1,4 +1,6 @@
 import type {
+  AppInfoResult,
+  AppUpdateResult,
   AssetListResult,
   AuthLoginRequest,
   AuthSessionResult,
@@ -111,6 +113,15 @@ export class RumiApiClient {
     return this.request<AuthSessionResult>("/api/auth/logout", {
       method: "POST"
     });
+  }
+
+  async getAppInfo(): Promise<AppInfoResult> {
+    return this.request<AppInfoResult>("/api/app");
+  }
+
+  /** Installs the latest release; the server restarts after replying. */
+  async updateApp(): Promise<AppUpdateResult> {
+    return this.request<AppUpdateResult>("/api/app/update", { method: "POST" });
   }
 
   async getWorkspace(): Promise<OpenWorkspaceResult> {

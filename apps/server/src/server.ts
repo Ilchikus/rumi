@@ -9,6 +9,8 @@ import { isIP } from "node:net";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import type {
+  AppInfoResult,
+  AppUpdateResult,
   AssetListResult,
   AuthLoginRequest,
   AuthSessionResult,
@@ -49,6 +51,7 @@ import {
   WorkspaceRuntime
 } from "@rumi/runtime";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
+import { AppUpdateError, AppUpdater, type RumiAppOptions } from "./appUpdate";
 
 const SESSION_COOKIE_NAME = "rumi_session";
 const PUBLIC_AUTH_PATHS = new Set([
@@ -86,6 +89,8 @@ export interface CreateRumiServerOptions {
   prettyLogs?: boolean;
   auth?: RumiAuthOptions;
   webRoot?: string | false;
+  /** Packaged app identity and update behavior. Absent for development servers. */
+  app?: RumiAppOptions;
 }
 
 export interface StartRumiServerOptions extends CreateRumiServerOptions {
@@ -112,6 +117,13 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
         })
       : null;
   const loginThrottle = new LoginThrottle();
+  const appUpdater = new AppUpdater(options.app);
+  appUpdater.prefetch();
+  // Installing and restarting needs a signed-in owner, or someone at this
+  // machine. A loopback listener alone is not enough: reverse proxies and
+  // tunnels also connect from loopback.
+  const selfUpdateAllowed = (request: FastifyRequest) =>
+    authOptions.mode === "password" || isDirectLocalRequest(request);
   const runtime = await WorkspaceRuntime.open({ rootPath: options.workspacePath });
   await runtime.startWatchingWorkspace();
   const closeEventStreams = new Set<() => void>();
@@ -235,6 +247,27 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
 
     reply.header("cache-control", "no-cache");
     return reply.sendFile("index.html", { cacheControl: false });
+  });
+
+  server.get("/api/app", async (request): Promise<AppInfoResult> =>
+    appUpdater.info(selfUpdateAllowed(request))
+  );
+
+  server.post("/api/app/update", async (request, reply) => {
+    try {
+      const version = await appUpdater.update(selfUpdateAllowed(request));
+      request.log.info({ version }, "app.update.installed");
+      // Restart only after the client has the reply, so it knows to wait.
+      reply.raw.once("finish", () => appUpdater.restart());
+      const result: AppUpdateResult = { status: "restarting", version };
+      return reply.send(result);
+    } catch (error) {
+      if (!(error instanceof AppUpdateError)) throw error;
+      request.log.warn({ code: error.code, message: error.message }, "app.update.failed");
+      return reply.status(error.code === "update_unavailable" ? 409 : 500).send({
+        error: { code: error.code, message: error.message, command: error.command }
+      });
+    }
   });
 
   server.get("/api/auth/session", async (request, reply): Promise<AuthSessionResult> => {
@@ -946,6 +979,23 @@ function isLoopbackProxyRequest(request: FastifyRequest): boolean {
   );
 }
 
+const PROXY_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "x-rumi-client-address"
+] as const;
+
+function isDirectLocalRequest(request: FastifyRequest): boolean {
+  return (
+    isLoopbackAddress(request.ip) &&
+    PROXY_HEADERS.every((header) => request.headers[header] === undefined)
+  );
+}
+
 function loginThrottleKey(request: FastifyRequest): string {
   const proxyAddress = firstHeaderValue(request.headers["x-rumi-client-address"]);
   const trustedProxyAddress = proxyAddress ?? request.ip;
@@ -1007,4 +1057,5 @@ function errorStatusCode(error: Error): number {
 }
 
 export { resolveAuthStatePath, setLocalPassword } from "./auth";
+export type { RumiAppOptions } from "./appUpdate";
 export type { RumiAuthOptions, SetLocalPasswordOptions } from "./auth";

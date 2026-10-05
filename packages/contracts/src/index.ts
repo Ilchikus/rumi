@@ -604,3 +604,25 @@ export interface AuthLoginRequest {
   username: string;
   password: string;
 }
+
+/**
+ * `self`: this server can install the latest npm release and restart itself.
+ * `manual`: the operator updates with `command`. `disabled`: no update checks.
+ */
+export type AppUpdateMode = "self" | "manual" | "disabled";
+
+export interface AppInfoResult {
+  /** Installed `@rumi-md/server` version, or null for a development server. */
+  version: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  update: {
+    mode: AppUpdateMode;
+    command?: string;
+  };
+}
+
+export interface AppUpdateResult {
+  status: "restarting";
+  version: string;
+}

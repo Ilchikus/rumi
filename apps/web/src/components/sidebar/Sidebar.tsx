@@ -90,6 +90,8 @@ interface SidebarProps {
   trashOpen: boolean;
   mediaOpen: boolean;
   settingsOpen: boolean;
+  /** A newer Rumi release is available. */
+  updateAvailable?: boolean;
   createTarget: SidebarCreateTarget | null;
   onCreateTargetChange: (target: SidebarCreateTarget | null) => void;
   onPrefetchNode: (node: WorkspaceNode) => void;
@@ -212,6 +214,7 @@ export function Sidebar({
   trashOpen,
   mediaOpen,
   settingsOpen,
+  updateAvailable = false,
   createTarget,
   onCreateTargetChange,
   onPrefetchNode,
@@ -627,6 +630,14 @@ export function Sidebar({
         >
           <span className="grid h-5 w-5 shrink-0 place-items-center"><Gear size={17} /></span>
           <span className="min-w-0 flex-1 truncate">Settings</span>
+          {updateAvailable && (
+            <span
+              className="mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+              role="status"
+              aria-label="Update available"
+              data-sidebar-update-indicator=""
+            />
+          )}
         </button>
         <button
           type="button"

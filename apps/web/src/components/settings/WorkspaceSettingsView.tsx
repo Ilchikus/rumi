@@ -19,6 +19,8 @@ import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import type { StartupPageMode } from "../../lib/workspaceStartup";
 import type { ThemePreference } from "../../lib/themePreferences";
+import type { AppUpdateController } from "../../lib/appUpdate";
+import { AppVersionSetting } from "./AppVersionSetting";
 
 type SettingsLoadState = "idle" | "loading" | "error";
 
@@ -57,6 +59,7 @@ export interface WorkspaceSettingsViewProps {
   onReload: () => void;
   onSave: (settings: WorkspaceSettings, startupPageMode: StartupPageMode) => Promise<boolean>;
   onThemePreferenceChange: (preference: ThemePreference) => void;
+  appUpdate?: AppUpdateController;
 }
 
 export function WorkspaceSettingsView({
@@ -66,7 +69,8 @@ export function WorkspaceSettingsView({
   loadState,
   onReload,
   onSave,
-  onThemePreferenceChange
+  onThemePreferenceChange,
+  appUpdate
 }: WorkspaceSettingsViewProps): ReactElement {
   const [maxFileSizeInput, setMaxFileSizeInput] = useState("");
   const [allowedFileTypes, setAllowedFileTypes] = useState<string[]>([]);
@@ -182,6 +186,8 @@ export function WorkspaceSettingsView({
         </div>
       ) : (
         <div className="space-y-10">
+          {appUpdate ? <AppVersionSetting {...appUpdate} /> : null}
+
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-6">
               <label htmlFor="theme-preference" className="text-sm font-medium">

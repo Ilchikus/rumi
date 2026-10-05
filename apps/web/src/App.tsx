@@ -112,6 +112,7 @@ import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from "./lib/authSession";
+import { useAppUpdate } from "./lib/appUpdate";
 import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
   mergeEditorScrollState,
@@ -371,6 +372,12 @@ export function App(): ReactElement {
   const saveReasonRef = useRef<SavePageReason>("editor-autosave");
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const savePageRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveBeforeAppUpdate = useCallback(async () => {
+    const currentSaveState = saveStateRef.current;
+    if (currentSaveState !== "error" && !hasUnsavedPageChanges(currentSaveState)) return true;
+    return (await savePageRef.current?.()) ?? true;
+  }, []);
+  const appUpdate = useAppUpdate(api, saveBeforeAppUpdate);
   const pageRenameIntentRef = useRef<PageRenameIntent | null>(null);
   const pageTitleUndoRef = useRef<PageTitleUndoAction | null>(null);
   const pageTitleUndoInFlightRef = useRef(false);
@@ -3417,6 +3424,7 @@ export function App(): ReactElement {
             trashOpen={trashOpen}
             mediaOpen={mediaOpen}
             settingsOpen={settingsOpen}
+            updateAvailable={Boolean(appUpdate.info?.updateAvailable)}
             createTarget={sidebarCreateTarget}
             onCreateTargetChange={setSidebarCreateTarget}
             onPrefetchNode={prefetchNode}
@@ -3530,6 +3538,7 @@ export function App(): ReactElement {
               onReload={() => void loadWorkspaceSettings()}
               onSave={saveWorkspaceSettings}
               onThemePreferenceChange={changeThemePreference}
+              appUpdate={appUpdate}
             />
           </Suspense>
         ) : mediaOpen ? (

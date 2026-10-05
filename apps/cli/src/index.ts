@@ -6,6 +6,7 @@ import type { WorkspaceNode } from "@rumi/contracts";
 import { setLocalPassword, startRumiServer } from "@rumi/server";
 import { WorkspaceRuntime } from "@rumi/runtime";
 import cliPackage from "../package.json" with { type: "json" };
+import { isSupervisedWorker, RESTART_EXIT_CODE, superviseWorkers } from "./supervisor";
 
 const program = new Command();
 
@@ -237,6 +238,7 @@ program
   .option("--secure-cookies", "Always mark the session cookie Secure")
   .option("--web-root <path>", "Serve a built Rumi web client from this directory")
   .option("--api-only", "Run without serving the official web client")
+  .option("--no-update-check", "Do not check npm for new Rumi versions or offer in-app updates")
   .action(async (workspace: string, options: {
     host: string;
     port: string;
@@ -248,10 +250,19 @@ program
     secureCookies?: boolean;
     webRoot?: string;
     apiOnly?: boolean;
+    updateCheck: boolean;
   }) => {
     const authMode = resolveAuthMode(options.auth);
     const packagedWebRoot =
       !options.apiOnly && !options.webRoot ? await resolvePackagedWebRoot() : undefined;
+    let uninstallShutdownHandlers = () => {};
+    const restartIntoUpdatedServer = async () => {
+      console.log("Rumi was updated; restarting.");
+      uninstallShutdownHandlers();
+      await started.server.close();
+      if (isSupervisedWorker()) process.exit(RESTART_EXIT_CODE);
+      superviseWorkers();
+    };
     const started = await startRumiServer({
       workspacePath: workspace,
       host: options.host,
@@ -272,11 +283,21 @@ program
               ...(options.authState ? { statePath: options.authState } : {}),
               ...(options.secureCookies ? { secureCookies: true } : {})
             }
-          : { mode: "none" }
+          : { mode: "none" },
+      app: {
+        version: cliPackage.version,
+        updateCheck: options.updateCheck,
+        restart: () => {
+          void restartIntoUpdatedServer().catch((error: unknown) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });
+        }
+      }
     });
 
     console.log(`Rumi server listening at ${started.url}`);
-    installShutdownHandlers(started.server);
+    uninstallShutdownHandlers = installShutdownHandlers(started.server);
   });
 
 program.parseAsync().catch((error: unknown) => {
@@ -394,7 +415,7 @@ function readHiddenLine(label: string): Promise<string> {
   });
 }
 
-function installShutdownHandlers(server: { close: () => Promise<void> }): void {
+function installShutdownHandlers(server: { close: () => Promise<void> }): () => void {
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
     if (shuttingDown) {
@@ -409,6 +430,14 @@ function installShutdownHandlers(server: { close: () => Promise<void> }): void {
     });
   };
 
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  // A supervised worker can receive one signal from the terminal and the same
+  // signal forwarded by its supervisor; repeats are ignored because the
+  // supervisor force-stops on a second signal of its own.
+  const listen = isSupervisedWorker() ? "on" : "once";
+  process[listen]("SIGINT", shutdown);
+  process[listen]("SIGTERM", shutdown);
+  return () => {
+    process.off("SIGINT", shutdown);
+    process.off("SIGTERM", shutdown);
+  };
 }

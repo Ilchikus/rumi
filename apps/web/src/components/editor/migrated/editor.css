@@ -572,6 +572,25 @@
   --rumi-link-icon: var(--mention-icon);
 }
 
+/* A target's custom icon replaces the kind glyph: Phosphor icons keep the
+   link-colored mask through --rumi-link-icon; emoji and uploads draw as-is. */
+.prosemirror-editor .ProseMirror .rumi-link-icon[data-custom-icon="emoji"]::before {
+  content: attr(data-icon-emoji);
+  background: none;
+  -webkit-mask: none;
+  mask: none;
+  font-size: 1em;
+  line-height: 1.2em;
+  text-align: center;
+}
+
+.prosemirror-editor .ProseMirror .rumi-link-icon[data-custom-icon="asset"]::before {
+  background: var(--rumi-link-icon-image) center / contain no-repeat;
+  -webkit-mask: none;
+  mask: none;
+  border-radius: 2px;
+}
+
 .prosemirror-editor .ProseMirror .rumi-link-icon-selected::after {
   content: "";
   position: absolute;
@@ -1200,6 +1219,18 @@
   align-items: center;
   justify-content: center;
   color: hsl(var(--muted-foreground));
+}
+
+.at-mention-emoji {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.at-mention-image {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  object-fit: contain;
 }
 
 .at-mention-search-icon svg,

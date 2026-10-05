@@ -4,6 +4,8 @@ import { FileText } from "@phosphor-icons/react/dist/csr/FileText";
 import { Folder } from "@phosphor-icons/react/dist/csr/Folder";
 import { MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
+import { WorkspaceIcon } from "../icons/WorkspaceIcon";
+import { useWorkspaceIcon } from "../../lib/workspaceIcons";
 import type { RumiApiClient } from "@rumi/api-client";
 import type {
   PageDocumentKind,
@@ -242,7 +244,7 @@ export function SearchDialog({
                   onClick={() => openSelected(item)}
                 >
                   <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center text-neutral-400">
-                    <SearchResultIcon kind={item.kind} />
+                    <SearchResultIcon kind={item.kind} path={item.path} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{item.title}</span>
@@ -271,8 +273,12 @@ export function SearchDialog({
   );
 }
 
-function SearchResultIcon({ kind }: { kind: PageDocumentKind }): ReactElement {
-  return kind === "database" ? <Table size={17} /> : kind === "folder" ? <Folder size={17} /> : <FileText size={17} />;
+function SearchResultIcon({ kind, path }: { kind: PageDocumentKind; path: string }): ReactElement {
+  const icon = useWorkspaceIcon(path);
+  const kindIcon = kind === "database"
+    ? <Table size={17} />
+    : kind === "folder" ? <Folder size={17} /> : <FileText size={17} />;
+  return <WorkspaceIcon icon={icon} size={17} fallback={kindIcon} />;
 }
 
 function nodeKindForPageKind(kind: PageDocumentKind): WorkspaceNodeKind {

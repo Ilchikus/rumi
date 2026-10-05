@@ -9,6 +9,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import type {
+  SetWorkspaceItemIconRequest,
   AppInfoResult,
   AppUpdateResult,
   AssetListResult,
@@ -765,6 +766,17 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
     const result = await runtime.renameNode(request.body);
     request.log.info({ previousPath: result.previousPath, path: result.path }, "node.rename.ok");
     return result;
+  });
+
+  server.post<{ Body: SetWorkspaceItemIconRequest }>("/api/nodes/icon", async (request, reply) => {
+    const body = request.body as Partial<SetWorkspaceItemIconRequest> | undefined;
+    if (typeof body?.path !== "string" || (body.icon !== null && typeof body.icon !== "string")) {
+      return reply.status(400).send({
+        error: { code: "invalid_request", message: "Icon requests need a path and an icon or null" }
+      });
+    }
+    request.log.info({ path: body.path, icon: body.icon }, "node.icon");
+    return runtime.setWorkspaceItemIcon({ path: body.path, icon: body.icon });
   });
 
   server.post<{ Body: MoveNodeRequest }>("/api/nodes/move", async (request) => {

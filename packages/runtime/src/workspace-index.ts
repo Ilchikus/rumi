@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  DatabaseRecord,
-  FrontmatterRecord,
-  PageDocumentKind,
-  SearchWorkspaceRequest,
-  SearchWorkspaceResult,
-  SearchWorkspaceResultItem
+import {
+  MAX_WORKSPACE_ICON_LENGTH,
+  WORKSPACE_ICON_KEY,
+  type DatabaseRecord,
+  type FrontmatterRecord,
+  type PageDocumentKind,
+  type SearchWorkspaceRequest,
+  type SearchWorkspaceResult,
+  type SearchWorkspaceResultItem
 } from "@rumi/contracts";
 import { parseMarkdownFile } from "@rumi/markdown";
 import {
@@ -38,6 +40,8 @@ export class WorkspaceIndex {
   private readonly rootPath: string;
   private readonly storagePath: string;
   private readonly documents: Map<string, IndexedDocumentRow>;
+  private readonly icons = new Map<string, string>();
+  private iconsChangedListener: ((paths: string[]) => void) | null = null;
   private builtAt: string | null;
   private buildPromise: Promise<number> | null = null;
   private persistPromise: Promise<void> = Promise.resolve();
@@ -52,7 +56,17 @@ export class WorkspaceIndex {
     this.documents = new Map(
       (persisted?.documents ?? []).map((document) => [document.path, document])
     );
+    for (const document of this.documents.values()) this.setIcon(document);
     this.builtAt = persisted?.builtAt ?? null;
+  }
+
+  /** Called when re-indexing one document changes its frontmatter icon. */
+  onIconsChanged(listener: (paths: string[]) => void): void {
+    this.iconsChangedListener = listener;
+  }
+
+  iconFor(inputPath: string): string | undefined {
+    return this.icons.get(normalizeWorkspacePath(inputPath));
   }
 
   static async open(rootPath: string): Promise<WorkspaceIndex> {
@@ -101,7 +115,7 @@ export class WorkspaceIndex {
     if (stat.isDirectory()) {
       const files = await collectMarkdownFiles(this.rootPath, relPath);
       const rows = await readRows(this.rootPath, files);
-      this.writeRows(rows);
+      this.notifyIconsChanged(this.writeRows(rows));
       await this.persist();
       return;
     }
@@ -109,7 +123,7 @@ export class WorkspaceIndex {
     const row = await readRow(this.rootPath, relPath);
 
     if (row) {
-      this.writeRows([row]);
+      this.notifyIconsChanged(this.writeRows([row]));
       await this.persist();
     }
   }
@@ -124,6 +138,7 @@ export class WorkspaceIndex {
         (descendantPrefix && documentPath.startsWith(descendantPrefix))
       ) {
         this.documents.delete(documentPath);
+        this.icons.delete(documentPath);
       }
     }
 
@@ -196,6 +211,7 @@ export class WorkspaceIndex {
   private async rebuildNow(): Promise<number> {
     const files = await collectMarkdownFiles(this.rootPath, "");
     this.documents.clear();
+    this.icons.clear();
 
     for (let offset = 0; offset < files.length; offset += 32) {
       const rows = await readRows(this.rootPath, files.slice(offset, offset + 32));
@@ -207,10 +223,26 @@ export class WorkspaceIndex {
     return this.documentCount();
   }
 
-  private writeRows(rows: IndexedDocumentRow[]): void {
+  /** Stores rows and returns the paths whose icon changed. */
+  private writeRows(rows: IndexedDocumentRow[]): string[] {
+    const changedIcons: string[] = [];
     for (const row of rows) {
       this.documents.set(row.path, row);
+      if (this.setIcon(row)) changedIcons.push(row.path);
     }
+    return changedIcons;
+  }
+
+  private setIcon(row: IndexedDocumentRow): boolean {
+    const icon = iconFromFrontmatterJson(row.frontmatter_json);
+    if (this.icons.get(row.path) === icon) return false;
+    if (icon) this.icons.set(row.path, icon);
+    else this.icons.delete(row.path);
+    return true;
+  }
+
+  private notifyIconsChanged(paths: string[]): void {
+    if (paths.length > 0) this.iconsChangedListener?.(paths);
   }
 
   private async persist(): Promise<void> {
@@ -322,6 +354,16 @@ async function readRow(rootPath: string, relPath: string): Promise<IndexedDocume
     content_hash: hashText(content),
     modified_at: Math.round(stat.mtimeMs)
   };
+}
+
+function iconFromFrontmatterJson(frontmatterJson: string): string | undefined {
+  try {
+    const value = (JSON.parse(frontmatterJson) as FrontmatterRecord)[WORKSPACE_ICON_KEY];
+    const icon = typeof value === "string" ? value.trim() : "";
+    return icon && icon.length <= MAX_WORKSPACE_ICON_LENGTH ? icon : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isIndexedKind(kind: WorkspaceFileKind): boolean {

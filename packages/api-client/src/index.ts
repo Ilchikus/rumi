@@ -38,6 +38,7 @@ import type {
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   SetDatabaseRecordPagePropertyVisibilityRequest,
+  SetWorkspaceItemIconRequest,
   TrashListResult,
   TrashPageResult,
   UpdateImagePresentationRequest,
@@ -379,6 +380,14 @@ export class RumiApiClient {
 
   async renameNode(request: RenameNodeRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/nodes/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async setWorkspaceItemIcon(request: SetWorkspaceItemIconRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/nodes/icon", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request)

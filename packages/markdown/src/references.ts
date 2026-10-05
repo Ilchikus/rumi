@@ -75,10 +75,38 @@ export function rewriteMarkdownReferences(
     return rewritten;
   };
 
+  const withIcon = rewriteFrontmatterIcon(markdown, previous, next, () => {
+    referenceCount += 1;
+  });
+
   return {
-    markdown: rewriteOutsideCode(markdown, rewriteText),
+    markdown: rewriteOutsideCode(withIcon, rewriteText),
     referenceCount
   };
+}
+
+// An uploaded item icon is a workspace-root path in the top-level frontmatter
+// `icon` key, e.g. `icon: .assets/logo.png`, so it follows asset moves too.
+function rewriteFrontmatterIcon(
+  markdown: string,
+  previousPath: string,
+  nextPath: string,
+  onRewrite: () => void
+): string {
+  const frontmatter = markdown.match(/^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/u)?.[0];
+  if (!frontmatter) return markdown;
+
+  const rewritten = frontmatter.replace(
+    /^(icon:[ \t]*)(["']?)([^"'\r\n]+?)\2([ \t]*)$/mu,
+    (match, opening: string, quote: string, value: string, trailing: string) => {
+      const mapped = rewriteReferenceTarget(value, previousPath, nextPath, undefined, false);
+      if (!mapped) return match;
+      onRewrite();
+      return `${opening}${quote}${mapped}${quote}${trailing}`;
+    }
+  );
+
+  return rewritten === frontmatter ? markdown : rewritten + markdown.slice(frontmatter.length);
 }
 
 function rewriteDestinationBody(

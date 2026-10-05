@@ -113,6 +113,15 @@ import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from "./lib/authSession";
 import { useAppUpdate } from "./lib/appUpdate";
+import {
+  parseWorkspaceIcon,
+  publishWorkspaceIcons,
+  withWorkspaceNodeIcon,
+  workspaceFaviconHref,
+  workspaceItemLabel
+} from "./lib/workspaceIcons";
+import { loadPhosphorCatalog } from "./components/icons/phosphorCatalog";
+import { PageIconHeader } from "./components/icons/PageIconHeader";
 import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
   mergeEditorScrollState,
@@ -185,6 +194,10 @@ const TrashView = lazy(async () => {
 const DeleteTrashItemDialog = lazy(async () => {
   const module = await import("./components/trash/TrashView");
   return { default: module.DeleteTrashItemDialog };
+});
+const IconPickerDialog = lazy(async () => {
+  const module = await import("./components/icons/IconPickerDialog");
+  return { default: module.IconPickerDialog };
 });
 
 type LoadState = "idle" | "loading" | "error";
@@ -408,6 +421,10 @@ export function App(): ReactElement {
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
   const resolvedTheme = resolveTheme(themePreference, systemPrefersDark);
+  const selectedNode = useMemo(
+    () => (tree && selection ? findWorkspaceNode(tree, selection.nodePath) : null),
+    [selection, tree]
+  );
   const pageTitle = page
     ? selection?.kind === "workspace"
       ? workspaceName
@@ -438,6 +455,35 @@ export function App(): ReactElement {
           : selection?.openPath
             ? pageScrollKey(selection.openPath)
             : null;
+
+  useEffect(() => {
+    publishWorkspaceIcons(tree);
+  }, [tree]);
+
+  const workspaceIcon = tree?.icon;
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) return;
+    link.dataset.rumiDefaultHref ??= link.getAttribute("href") ?? "";
+    const defaultHref = link.dataset.rumiDefaultHref;
+    const icon = parseWorkspaceIcon(workspaceIcon);
+    let active = true;
+
+    const apply = (href: string | null) => {
+      if (active) link.setAttribute("href", href ?? defaultHref);
+    };
+    if (icon?.type === "phosphor") {
+      void loadPhosphorCatalog().then(
+        (catalog) => apply(workspaceFaviconHref(icon, catalog.byName.get(icon.name)?.path)),
+        () => apply(null)
+      );
+    } else {
+      apply(icon ? workspaceFaviconHref(icon) : null);
+    }
+    return () => {
+      active = false;
+    };
+  }, [workspaceIcon]);
 
   useEffect(() => {
     document.title = activeTrashPage
@@ -1197,6 +1243,27 @@ export function App(): ReactElement {
     writePinnedItemPaths(window.localStorage, workspaceRootPath, nextPaths);
     setPinnedItemsState({ workspaceRootPath, paths: nextPaths });
   }, [workspaceRootPath]);
+
+  const [iconPickerNode, setIconPickerNode] = useState<WorkspaceNode | null>(null);
+  const openIconPicker = useCallback((node: WorkspaceNode) => setIconPickerNode(node), []);
+
+  // The icon lives in the item's frontmatter; the runtime writes it and the
+  // resulting tree change refreshes every surface. Update the tree right away
+  // so the choice shows without waiting for that round trip.
+  const changeWorkspaceItemIcon = useCallback(async (node: WorkspaceNode, icon: string | null) => {
+    setTree((current) => (current ? withWorkspaceNodeIcon(current, node.path, icon) : current));
+    try {
+      await api.setWorkspaceItemIcon({ path: node.path, icon });
+    } catch (error) {
+      setMessage(errorMessage(error));
+      void loadTree();
+    }
+  }, [api, loadTree, setMessage]);
+
+  const uploadWorkspaceItemIcon = useCallback(
+    async (file: File) => (await api.uploadAsset(file.name, file)).path,
+    [api]
+  );
 
   const openWorkspaceNodeRevisions = useCallback(async (node: WorkspaceNode) => {
     const revisionPath = openPathForNode(node);
@@ -3460,6 +3527,7 @@ export function App(): ReactElement {
             pinnedPaths={pinnedPaths}
             onPinnedChange={changePinnedNode}
             onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
+            onChangeIcon={openIconPicker}
             onDeleteNode={deleteNode}
             onOpenSettings={openSettings}
             onOpenMedia={openMedia}
@@ -3508,6 +3576,7 @@ export function App(): ReactElement {
           pinnedPaths={pinnedPaths}
           onPinnedChange={changePinnedNode}
           onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
+          onChangeIcon={openIconPicker}
           onMoveToTrash={deleteNode}
           leadingControls={(
             <>
@@ -3662,7 +3731,14 @@ export function App(): ReactElement {
         ) : page ? (
           <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
             <article className={EDITOR_PAGE_CONTAINER_CLASS}>
-              <div className="contents" data-rumi-area-selection-exclude="">
+              <div className="contents group/page-header" data-rumi-area-selection-exclude="">
+                {selectedNode ? (
+                  <PageIconHeader
+                    icon={selectedNode.icon}
+                    editable
+                    onChangeIcon={() => openIconPicker(selectedNode)}
+                  />
+                ) : null}
                 <EditablePageTitle
                   title={pageTitle ?? ""}
                   editable={Boolean(
@@ -3795,6 +3871,21 @@ export function App(): ReactElement {
               if (!open && deletingTrashId === null) setDeleteForeverTarget(null);
             }}
             onConfirm={deleteTrashItemForever}
+          />
+        </Suspense>
+      )}
+
+      {iconPickerNode && (
+        <Suspense fallback={null}>
+          <IconPickerDialog
+            open
+            itemName={workspaceItemLabel(iconPickerNode, workspaceName)}
+            currentIcon={(tree && findWorkspaceNode(tree, iconPickerNode.path))?.icon}
+            onOpenChange={(open) => {
+              if (!open) setIconPickerNode(null);
+            }}
+            onSelect={(icon) => void changeWorkspaceItemIcon(iconPickerNode, icon)}
+            onUpload={uploadWorkspaceItemIcon}
           />
         </Suspense>
       )}

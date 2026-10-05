@@ -1148,3 +1148,32 @@ async function resolveWithin(promise: Promise<void>, timeoutMs: number): Promise
     if (timeout) clearTimeout(timeout);
   }
 }
+
+describe("workspace item icon API", () => {
+  it("sets icons through the node route and returns them on the tree", async () => {
+    const root = await tempWorkspace();
+    await fs.writeFile(path.join(root, "Idea.md"), "# Idea", "utf8");
+    const { server } = await createRumiServer({ workspacePath: root, logLevel: "silent" });
+
+    const set = await server.inject({
+      method: "POST",
+      url: "/api/nodes/icon",
+      payload: { path: "Idea.md", icon: "ph:lightbulb" }
+    });
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toMatchObject({ status: "saved", path: "Idea.md" });
+
+    const tree = await server.inject({ method: "GET", url: "/api/tree" });
+    expect(tree.json().children).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "Idea.md", icon: "ph:lightbulb" })])
+    );
+
+    const invalid = await server.inject({
+      method: "POST",
+      url: "/api/nodes/icon",
+      payload: { path: "Idea.md", icon: 42 }
+    });
+    expect(invalid.statusCode).toBe(400);
+    await server.close();
+  });
+});

@@ -45,6 +45,7 @@ import {
 } from "./imagePresentation"
 import { mermaidNodeView } from "./plugins/mermaidNodeView"
 import { databaseEmbedNodeView } from "./plugins/databaseEmbedNodeView"
+import { linkMarkerNodeView } from "./plugins/linkMarkerNodeView"
 import { pasteHandlerPlugin } from "./plugins/pasteHandler"
 import { collapsibleHeadingsPlugin, headingNodeView } from "./plugins/collapsibleHeadings"
 import { createDocumentEndClickTransaction } from "./documentEnd"
@@ -237,6 +238,7 @@ function ProseMirrorEditor(
         }),
         mermaid: (node, view, getPos) => mermaidNodeView(node, view, getPos),
         database_embed: (node, view, getPos) => databaseEmbedNodeView(node, view, getPos),
+        link_marker: (node) => linkMarkerNodeView(node),
       },
       dispatchTransaction(transaction) {
         const newState = view.state.apply(transaction)

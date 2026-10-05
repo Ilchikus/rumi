@@ -1,3 +1,4 @@
+import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
 import { BracketsCurly } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CalendarBlank } from "@phosphor-icons/react/dist/csr/CalendarBlank";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
@@ -59,6 +60,9 @@ export function propertyCreateNameError(
 ): string {
   const propertyName = name.trim();
   if (!propertyName) return "Enter a property name.";
+  if (propertyName.toLocaleLowerCase() === WORKSPACE_ICON_KEY) {
+    return "“icon” is reserved for the item icon.";
+  }
   if (existingNames.some(
     (existing) => existing.toLocaleLowerCase() === propertyName.toLocaleLowerCase()
   )) {

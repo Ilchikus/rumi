@@ -14,6 +14,22 @@ export interface WorkspaceNode {
   kind: WorkspaceNodeKind;
   children?: WorkspaceNode[];
   companionPath?: string;
+  /** Raw frontmatter `icon` of the node's page or companion; see WORKSPACE_ICON_KEY. */
+  icon?: string;
+}
+
+/**
+ * Reserved frontmatter key holding an item's icon: one emoji, `ph:<name>` for
+ * a Phosphor icon, or a workspace asset path such as `.assets/logo.png`.
+ */
+export const WORKSPACE_ICON_KEY = "icon";
+export const MAX_WORKSPACE_ICON_LENGTH = 512;
+
+export interface SetWorkspaceItemIconRequest {
+  /** Workspace node path: a page, folder, database, or "" for the workspace. */
+  path: string;
+  /** New icon value, or null to remove it. */
+  icon: string | null;
 }
 
 export interface CreatePageRequest {

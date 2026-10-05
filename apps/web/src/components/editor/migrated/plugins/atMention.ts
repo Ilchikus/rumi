@@ -13,6 +13,12 @@ import {
 } from "./suggestionMenus"
 
 export { mentionKindForPath } from "../mentionTypes"
+import { loadPhosphorCatalog, peekPhosphorCatalog } from "../../../icons/phosphorCatalog"
+import {
+  parseWorkspaceIcon,
+  workspaceIconAssetUrl,
+  workspaceIconForPath
+} from "../../../../lib/workspaceIcons"
 
 export const atMentionPluginKey = new PluginKey("atMention")
 
@@ -410,7 +416,30 @@ export function createMentionLinkContent(schema: Schema, file: FileItem): Fragme
 }
 
 function mentionIconMarkup(file: FileItem): string {
-  return MENTION_ICONS[renderedMentionKind(file.kind, file.path)]
+  return customIconMarkup(workspaceIconForPath(file.path)) ??
+    MENTION_ICONS[renderedMentionKind(file.kind, file.path)]
+}
+
+// A custom item icon replaces the kind icon. Phosphor icons appear once their
+// catalog has loaded; until then the kind icon stays.
+function customIconMarkup(value: string | undefined): string | null {
+  const icon = parseWorkspaceIcon(value)
+  if (!icon) return null
+  if (icon.type === "emoji") {
+    return `<span class="at-mention-emoji" aria-hidden="true">${escapeHtml(icon.emoji)}</span>`
+  }
+  if (icon.type === "asset") {
+    return `<img class="at-mention-image" src="${escapeHtml(workspaceIconAssetUrl(icon))}" alt="" aria-hidden="true">`
+  }
+  const catalog = peekPhosphorCatalog()
+  if (!catalog) {
+    void loadPhosphorCatalog().catch(() => undefined)
+    return null
+  }
+  const definition = catalog.byName.get(icon.name)
+  return definition
+    ? `<svg viewBox="0 0 256 256" aria-hidden="true"><path d="${escapeHtml(definition.path)}"/></svg>`
+    : null
 }
 
 function highlightMatch(text: string, query: string): string {

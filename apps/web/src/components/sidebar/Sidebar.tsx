@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
+import { WorkspaceIcon } from "../icons/WorkspaceIcon";
 import { EditorHeaderIconButton } from "../layout/EditorHeaderIconButton";
 import {
   readSidebarExpandedPaths,
@@ -108,6 +109,7 @@ interface SidebarProps {
   pinnedPaths: readonly string[];
   onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
   onSeeRevisions: (node: WorkspaceNode) => void;
+  onChangeIcon: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => Promise<boolean>;
   onOpenSettings: () => void;
   onOpenMedia: () => void;
@@ -231,6 +233,7 @@ export function Sidebar({
   pinnedPaths,
   onPinnedChange,
   onSeeRevisions,
+  onChangeIcon,
   onDeleteNode,
   onOpenSettings,
   onOpenMedia,
@@ -538,6 +541,7 @@ export function Sidebar({
         onConvertNode={requestConvert}
         onPinnedChange={onPinnedChange}
         onSeeRevisions={onSeeRevisions}
+        onChangeIcon={onChangeIcon}
         onDeleteNode={requestDelete}
         onCancelRename={() => setRenamingRowKey(null)}
         onOpenContextMenu={openNodeMenu}
@@ -559,11 +563,17 @@ export function Sidebar({
                 if (tree) onOpenNode(tree);
               }}
             >
-              <span className="h-7 w-7 shrink-0" aria-hidden="true">
-                <img
-                  src="/rumi-logo.svg?v=20260819-1"
-                  alt=""
-                  className="block h-full w-full object-contain"
+              <span className="grid h-7 w-7 shrink-0 place-items-center text-neutral-500" aria-hidden="true">
+                <WorkspaceIcon
+                  icon={tree?.icon}
+                  size={26}
+                  fallback={
+                    <img
+                      src="/rumi-logo.svg?v=20260819-1"
+                      alt=""
+                      className="block h-full w-full object-contain"
+                    />
+                  }
                 />
               </span>
               <span className="truncate text-lg font-semibold">{workspaceName}</span>
@@ -691,6 +701,7 @@ export function Sidebar({
           onConvert={requestConvert}
           onPinnedChange={onPinnedChange}
           onSeeRevisions={onSeeRevisions}
+          onChangeIcon={onChangeIcon}
           onDelete={requestDelete}
         />
       )}
@@ -721,6 +732,7 @@ interface TreeNodeProps {
   onConvertNode: (node: WorkspaceNode) => void;
   onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
   onSeeRevisions: (node: WorkspaceNode) => void;
+  onChangeIcon: (node: WorkspaceNode) => void;
   onDeleteNode: (node: WorkspaceNode) => void;
   onCancelRename: () => void;
   onOpenContextMenu: (node: WorkspaceNode, event: MouseEvent<HTMLElement>) => void;
@@ -749,6 +761,7 @@ function TreeNode({
   onConvertNode,
   onPinnedChange,
   onSeeRevisions,
+  onChangeIcon,
   onDeleteNode,
   onCancelRename,
   onOpenContextMenu
@@ -836,7 +849,7 @@ function TreeNode({
         }}
         aria-label={`Open ${displayName(node.name)}`}
       >
-        <NodeIcon kind={node.kind} expanded={isExpanded} />
+        <NodeIcon kind={node.kind} expanded={isExpanded} icon={node.icon} />
       </button>
 
       {renaming ? (
@@ -874,6 +887,7 @@ function TreeNode({
           onConvert={onConvertNode}
           onPinnedChange={onPinnedChange}
           onSeeRevisions={onSeeRevisions}
+          onChangeIcon={onChangeIcon}
           onDelete={onDeleteNode}
         />
       )}
@@ -934,6 +948,7 @@ function NodeMenu({
   onConvert,
   onPinnedChange,
   onSeeRevisions,
+  onChangeIcon,
   onDelete
 }: {
   node: WorkspaceNode;
@@ -946,6 +961,7 @@ function NodeMenu({
   onConvert: (node: WorkspaceNode) => void;
   onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
   onSeeRevisions: (node: WorkspaceNode) => void;
+  onChangeIcon: (node: WorkspaceNode) => void;
   onDelete: (node: WorkspaceNode) => void;
 }): ReactElement {
   return (
@@ -974,6 +990,7 @@ function NodeMenu({
           onConvert={onConvert}
           onPinnedChange={onPinnedChange}
           onSeeRevisions={onSeeRevisions}
+          onChangeIcon={onChangeIcon}
           onDelete={onDelete}
         />
       </DropdownMenuContent>
@@ -1632,8 +1649,23 @@ function useOutsidePointerDown<T extends HTMLElement>(
   }, [onOutsidePointerDown, ref]);
 }
 
-function NodeIcon({ kind, expanded }: { kind: WorkspaceNode["kind"]; expanded: boolean }): ReactElement {
-  return <EntityIcon kind={kind} expanded={expanded} />;
+function NodeIcon({
+  kind,
+  expanded,
+  icon
+}: {
+  kind: WorkspaceNode["kind"];
+  expanded: boolean;
+  icon: string | undefined;
+}): ReactElement {
+  return (
+    <WorkspaceIcon
+      icon={icon}
+      size={16}
+      className={ENTITY_ICON_CLASS}
+      fallback={<EntityIcon kind={kind} expanded={expanded} />}
+    />
+  );
 }
 
 function EntityIcon({

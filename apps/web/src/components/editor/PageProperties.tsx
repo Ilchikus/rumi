@@ -6,6 +6,7 @@ import type {
   FrontmatterRecord,
   PageDatabaseContext
 } from "@rumi/contracts";
+import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
 import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
@@ -220,7 +221,10 @@ export function PageProperties({
   );
   const propertyNames = [
     ...visibleSchemaPropertyNames,
-    ...Object.keys(frontmatter).filter((name) => !schemaPropertyNames.includes(name))
+    // The item icon lives in frontmatter but is edited through the icon picker.
+    ...Object.keys(frontmatter).filter(
+      (name) => !schemaPropertyNames.includes(name) && name !== WORKSPACE_ICON_KEY
+    )
   ];
   const properties = propertyNames.map((name) => [name, frontmatter[name]] as const);
   const editable = Boolean(onChange);

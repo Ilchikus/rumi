@@ -9,6 +9,7 @@ import { LinkSimple } from "@phosphor-icons/react/dist/csr/LinkSimple";
 import { NotePencil } from "@phosphor-icons/react/dist/csr/NotePencil";
 import { PencilSimple } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { PushPin } from "@phosphor-icons/react/dist/csr/PushPin";
+import { Smiley } from "@phosphor-icons/react/dist/csr/Smiley";
 import { Table } from "@phosphor-icons/react/dist/csr/Table";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import type { WorkspaceNode } from "@rumi/contracts";
@@ -37,6 +38,7 @@ export type WorkspaceItemActionId =
   | "pin"
   | "unpin"
   | "rename"
+  | "change-icon"
   | "move"
   | "convert-to-database"
   | "convert-to-folder"
@@ -62,6 +64,7 @@ export interface WorkspaceItemActionCallbacks {
   onCreateDefault: (parentPath: string, kind: WorkspaceItemCreateKind) => Promise<void>;
   onCopy: (node: WorkspaceNode, action: PageCopyAction) => void;
   onRename: (node: WorkspaceNode) => void;
+  onChangeIcon: (node: WorkspaceNode) => void;
   onMove: (node: WorkspaceNode) => void;
   onConvert: (node: WorkspaceNode) => void;
   onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
@@ -84,6 +87,7 @@ const ACTION_PRESENTATION: Record<WorkspaceItemActionId, Omit<WorkspaceItemActio
   pin: { label: "Pin", group: "pin" },
   unpin: { label: "Unpin", group: "pin" },
   rename: { label: "Rename", group: "mutate" },
+  "change-icon": { label: "Change icon", group: "mutate" },
   move: { label: "Move", group: "mutate" },
   "convert-to-database": { label: "Convert to database", group: "mutate" },
   "convert-to-folder": { label: "Convert to folder", group: "mutate" },
@@ -104,9 +108,11 @@ export function workspaceItemActionModel(
   const hasCopyTarget = node.kind !== "workspace" || Boolean(node.companionPath);
   if (hasCopyTarget) ids.push("copy-url", "copy-relative-path");
 
-  if (node.kind !== "workspace") {
+  if (node.kind === "workspace") {
+    ids.push("change-icon");
+  } else {
     if (isPinnableWorkspaceNode(node)) ids.push(state.pinned ? "unpin" : "pin");
-    ids.push("rename", "move");
+    ids.push("rename", "change-icon", "move");
     if (node.kind === "folder") ids.push("convert-to-database");
     if (node.kind === "database") ids.push("convert-to-folder");
     if (node.kind === "page" || node.companionPath) ids.push("see-revisions");
@@ -141,6 +147,7 @@ export function WorkspaceItemMenuItems({
   onCreateDefault,
   onCopy,
   onRename,
+  onChangeIcon,
   onMove,
   onConvert,
   onPinnedChange,
@@ -195,6 +202,7 @@ export function WorkspaceItemMenuItems({
                 activateWorkspaceItemAction(action.id, node, {
                   onCopy,
                   onRename,
+                  onChangeIcon,
                   onMove,
                   onConvert,
                   onPinnedChange,
@@ -323,6 +331,7 @@ function activateWorkspaceItemAction(
     WorkspaceItemActionCallbacks,
     | "onCopy"
     | "onRename"
+    | "onChangeIcon"
     | "onMove"
     | "onConvert"
     | "onPinnedChange"
@@ -333,6 +342,7 @@ function activateWorkspaceItemAction(
   if (action === "copy-url") callbacks.onCopy(node, "url");
   if (action === "copy-relative-path") callbacks.onCopy(node, "relative-path");
   if (action === "rename") callbacks.onRename(node);
+  if (action === "change-icon") callbacks.onChangeIcon(node);
   if (action === "move") callbacks.onMove(node);
   if (action === "pin") callbacks.onPinnedChange(node, true);
   if (action === "unpin") callbacks.onPinnedChange(node, false);
@@ -357,6 +367,7 @@ function WorkspaceItemActionIcon({
     return <PushPin size={16} />;
   }
   if (action === "rename") return <PencilSimple size={16} />;
+  if (action === "change-icon") return <Smiley size={16} />;
   if (action === "move") return <ArrowRight size={16} />;
   if (action === "convert-to-folder") return <Folder size={16} />;
   if (action === "see-revisions") return <ClockCounterClockwise size={16} />;

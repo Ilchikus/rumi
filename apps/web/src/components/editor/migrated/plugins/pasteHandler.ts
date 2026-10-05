@@ -21,6 +21,7 @@ import {
   normalizePastedTables
 } from "../richClipboardNormalization"
 import { isLinkDestination, isWebLinkDestination } from "../linkHref"
+import { createInlineCodeSessionPasteTransaction } from "../inputrules"
 
 export { normalizePastedTables } from "../richClipboardNormalization"
 
@@ -344,6 +345,16 @@ export function pasteHandlerPlugin(schema: Schema) {
         if (!clipboard) return false
         const plainTextPaste = pasteWasExplicitlyPlainText
         pasteWasExplicitlyPlainText = false
+
+        const pendingInlineCodeTransaction = createInlineCodeSessionPasteTransaction(
+          view.state,
+          clipboard.getData("text/plain")
+        )
+        if (pendingInlineCodeTransaction) {
+          event.preventDefault()
+          view.dispatch(finishPasteTransaction(pendingInlineCodeTransaction))
+          return true
+        }
 
         // Handle image files from clipboard
         const imageFile = Array.from(clipboard.files).find(isImageFile)

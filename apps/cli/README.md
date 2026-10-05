@@ -59,6 +59,13 @@ rumi serve --host 0.0.0.0 --auth password --secure-cookies
 
 Do not expose a workspace publicly with authentication disabled.
 
+## Updates
+
+Rumi checks the npm registry for newer releases and marks Settings when one is available. A global
+npm install can update and restart from Settings when the instance uses password authentication or
+is opened directly on the same machine; other installations show the command to run. Use
+`rumi serve --no-update-check` to turn update checks off.
+
 ## Source and license
 
 Rumi is free and open-source software. Source code, issue tracking, and contribution instructions

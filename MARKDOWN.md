@@ -27,6 +27,19 @@ a trailing backslash, or an HTML `<br>`. Strict CommonMark renderers may display
 LF as a space; explicit hard-break syntax remains available when that cross-renderer presentation is
 required.
 
+Empty paragraphs are stored as additional blank lines. Blocks are normally separated by one blank
+line, so each extra blank line between two blocks is one empty paragraph in the editor:
+
+```markdown
+first paragraph
+
+
+third block after one empty paragraph
+```
+
+Leading and trailing blank lines are not kept, and a single blank line between list items does not
+create an empty paragraph.
+
 ## Rumi extensions
 
 ### Highlight
@@ -70,6 +83,21 @@ with existing Rumi files.
 In the web editor, typing `[]`, `[x]`, `- []`, `- [x]`, `-[]`, or `-[x]` at the beginning of a
 line creates a task item after the following Space is typed. The standard `- [ ]` form is accepted
 too.
+
+### Item icons
+
+A page, database record, folder, database, or the workspace can have an icon in the optional
+`icon` frontmatter key of its own file. Folders use their `<Folder>.index.md` companion, databases
+use `<Database>.db.md`, and the workspace uses its home page.
+
+```yaml
+icon: 🚀                       # one emoji
+icon: ph:rocket-launch         # a Phosphor icon (regular weight)
+icon: .assets/team-logo.png    # an uploaded image
+```
+
+Rumi shows the icon in place of the item's page, folder, or database icon. `icon` is reserved: it
+does not appear in the Properties panel and cannot be used as a database property.
 
 ### File and database embeds
 

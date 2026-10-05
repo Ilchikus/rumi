@@ -18,6 +18,7 @@ and CLI.
 ## Features
 
 - Block editing for pages, folder pages, and database records.
+- Emoji, Phosphor, or uploaded icons for pages, folders, databases, and the workspace.
 - Markdown links, mentions, media, tables, code blocks, Mermaid, and portable YAML properties.
 - Folder-backed databases with typed properties, filters, sorting, embedded views, and conversion
   to and from ordinary folders.
@@ -88,6 +89,14 @@ rumi serve --host 0.0.0.0 --auth password --secure-cookies
 
 Do not expose a workspace publicly with authentication disabled. See `rumi serve --help` for all
 hosting options.
+
+## Updates
+
+Rumi checks the npm registry for a newer `@rumi-md/server` release and marks Settings when one is
+available. A global npm install can update and restart from Settings when the instance uses
+password authentication or is opened directly on the same machine. Other installations show the
+command to run. Start the server with `--no-update-check` to turn off update checks entirely, for
+example on shared or managed hosts.
 
 ## Development
 

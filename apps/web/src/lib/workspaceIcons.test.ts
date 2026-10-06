@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkspaceNode } from "@rumi/contracts";
 import { WorkspaceIcon } from "../components/icons/WorkspaceIcon";
-import { applyLinkMarkerIcon } from "../components/editor/migrated/plugins/linkMarkerNodeView";
+import {
+  applyLinkMarkerIcon,
+  linkMarkerNodeView
+} from "../components/editor/migrated/plugins/linkMarkerNodeView";
+import { parseMarkdown } from "../components/editor/migrated/markdown";
+import { schema } from "../components/editor/migrated/schema";
 import {
   parseWorkspaceIcon,
   publishWorkspaceIcons,
@@ -137,5 +142,46 @@ describe("workspace icon rendering", () => {
     applyLinkMarkerIcon(marker, null);
     expect(marker.hasAttribute("data-custom-icon")).toBe(false);
     expect(marker.style.getPropertyValue("--rumi-link-icon")).toBe("");
+  });
+});
+
+describe("internal link icons in the editor", () => {
+  function markers(markdown: string) {
+    const found: Array<{ href: string; mention: boolean }> = [];
+    parseMarkdown(markdown, schema).descendants((node) => {
+      if (node.type.name === "link_marker") found.push({ href: node.attrs.href, mention: node.attrs.mention });
+    });
+    return found;
+  }
+
+  it("marks @ mentions apart from ordinary internal and external links", () => {
+    expect(markers("[@Idea](Idea.md), [my notes](Idea.md), [@site](https://example.com)")).toEqual([
+      { href: "Idea.md", mention: true },
+      { href: "Idea.md", mention: false },
+      { href: "https://example.com", mention: false }
+    ]);
+  });
+
+  it("shows the target's custom icon for mentions and the kind glyph for other links", () => {
+    publishWorkspaceIcons(tree);
+    const mention = linkMarkerNodeView(schema.nodes.link_marker!.create({
+      href: "Projects/Projects.index.md",
+      linkType: "internal",
+      mentionKind: "folder",
+      mention: true
+    }));
+    const plain = linkMarkerNodeView(schema.nodes.link_marker!.create({
+      href: "Projects/Projects.index.md",
+      linkType: "internal",
+      mentionKind: "folder"
+    }));
+
+    expect((mention.dom as HTMLElement).dataset.customIcon).toBe("asset");
+    expect((plain.dom as HTMLElement).hasAttribute("data-custom-icon")).toBe(false);
+
+    publishWorkspaceIcons({ ...tree, children: [] });
+    expect((mention.dom as HTMLElement).hasAttribute("data-custom-icon")).toBe(false);
+    mention.destroy?.();
+    plain.destroy?.();
   });
 });

@@ -590,7 +590,8 @@ function convertInline(node: MdastPhrasingContent, schema: Schema, marks: Array<
           schema.nodes.link_marker.create({
             href: external ? normalizeLinkHref(node.url) : node.url,
             linkType: external ? "external" : "internal",
-            mentionKind: mentionKindForPath(node.url)
+            mentionKind: mentionKindForPath(node.url),
+            mention: mention && !external
           }),
           ...linkContent
         ]

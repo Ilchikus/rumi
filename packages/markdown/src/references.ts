@@ -33,10 +33,7 @@ export function rewriteMarkdownReferences(
         const destination = rewriteDestinationBody(destinationBody, previous, next, sourcePath);
         if (!destination.changed) return match;
         referenceCount += 1;
-        const nextLabel = imagePrefix || label !== displayTitle(previous)
-          ? label
-          : displayTitle(next);
-        return `${imagePrefix}[${nextLabel}](${destination.value})`;
+        return `${imagePrefix}[${imagePrefix ? label : repairedLinkLabel(label, previous, next)}](${destination.value})`;
       }
     );
 
@@ -243,6 +240,15 @@ function firstSuffixIndex(target: string): number {
 
 function stripMarkdownExtension(value: string): string {
   return value.toLocaleLowerCase().endsWith(".md") ? value.slice(0, -3) : value;
+}
+
+// Labels generated from the target's title follow a rename: plain links that
+// show the title, and `@` mentions. Custom labels are the author's text.
+function repairedLinkLabel(label: string, previousPath: string, nextPath: string): string {
+  const previousTitle = displayTitle(previousPath);
+  if (label === previousTitle) return displayTitle(nextPath);
+  if (label === `@${previousTitle}`) return `@${displayTitle(nextPath)}`;
+  return label;
 }
 
 function displayTitle(value: string): string {

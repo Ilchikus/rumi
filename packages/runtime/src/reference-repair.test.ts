@@ -23,6 +23,24 @@ related: "[[Notes/Old]]"
     expect(result.markdown).toContain("[Encoded](Notes/Old%20copy.md)");
   });
 
+  it("updates @ mention labels with the renamed title but keeps custom labels", () => {
+    const source = [
+      "[@Old](Notes/Old.md)",
+      "[@Old copy](Notes/Old.md)",
+      "[Old](Notes/Old.md)",
+      "[about old](Notes/Old.md)"
+    ].join("\n");
+
+    expect(rewriteMarkdownReferences(source, "Notes/Old.md", "Notes/New.md").markdown).toBe([
+      "[@New](Notes/New.md)",
+      "[@Old copy](Notes/New.md)",
+      "[New](Notes/New.md)",
+      "[about old](Notes/New.md)"
+    ].join("\n"));
+    expect(rewriteMarkdownReferences("[@Projects](Projects/Projects.index.md)", "Projects", "Archive").markdown)
+      .toBe("[@Archive](Archive/Archive.index.md)");
+  });
+
   it("repairs folder descendants and renamed companion paths", () => {
     const source = [
       "[Folder](Projects)",

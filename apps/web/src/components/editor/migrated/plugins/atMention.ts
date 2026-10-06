@@ -410,7 +410,8 @@ export function createMentionLinkContent(schema: Schema, file: FileItem): Fragme
   const marker = schema.nodes.link_marker.create({
     href: file.path,
     linkType: "internal",
-    mentionKind
+    mentionKind,
+    mention: true
   })
   return Fragment.fromArray([marker, label])
 }

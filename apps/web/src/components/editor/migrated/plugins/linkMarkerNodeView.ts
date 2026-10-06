@@ -10,9 +10,10 @@ import {
 import { migratedEditorPlatform } from "../platform"
 
 /**
- * Renders the link marker exactly as its schema does, then puts the target
- * item's custom icon in place of the page, folder, or database glyph. The
- * icon is resolved at render time, so Markdown never stores it.
+ * Renders the link marker exactly as its schema does. For a mention, the
+ * target item's custom icon replaces the page, folder, or database glyph;
+ * other internal links keep the glyph. The icon is resolved at render time,
+ * so Markdown never stores it.
  */
 export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
   const spec = initialNode.type.spec.toDOM!(initialNode)
@@ -22,7 +23,7 @@ export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
 
   const render = () => {
     const id = ++renderId
-    const icon = node.attrs.linkType === "internal"
+    const icon = node.attrs.linkType === "internal" && node.attrs.mention
       ? workspaceIconForLink(node.attrs.href, migratedEditorPlatform().documentKey)
       : undefined
     const parsed = parseWorkspaceIcon(icon)
@@ -53,7 +54,8 @@ export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
         nextNode.type !== node.type ||
         nextNode.attrs.href !== node.attrs.href ||
         nextNode.attrs.linkType !== node.attrs.linkType ||
-        nextNode.attrs.mentionKind !== node.attrs.mentionKind
+        nextNode.attrs.mentionKind !== node.attrs.mentionKind ||
+        nextNode.attrs.mention !== node.attrs.mention
       ) return false
       node = nextNode
       return true

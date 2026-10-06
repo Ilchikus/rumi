@@ -96,8 +96,15 @@ icon: ph:rocket-launch         # a Phosphor icon (regular weight)
 icon: .assets/team-logo.png    # an uploaded image
 ```
 
-Rumi shows the icon in place of the item's page, folder, or database icon. `icon` is reserved: it
-does not appear in the Properties panel and cannot be used as a database property.
+Rumi shows the icon in place of the item's page, folder, or database icon, including in `@`
+mentions. Other internal links keep the page, folder, or database icon. `icon` is reserved: it does
+not appear in the Properties panel and cannot be used as a database property.
+
+### Mentions
+
+A mention is an internal link whose label starts with `@`, such as `[@Roadmap](Roadmap.md)`. When
+the mentioned item is renamed, Rumi updates both the destination and the `@` label. Links with other
+labels keep their text.
 
 ### File and database embeds
 

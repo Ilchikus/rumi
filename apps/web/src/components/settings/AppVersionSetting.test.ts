@@ -74,6 +74,15 @@ describe("app version setting", () => {
     });
     expect(failed.text).toContain("EACCES");
     expect(failed.command).toBe("npm install --global @rumi-md/server@latest");
+    expect(failed.button?.textContent).toBe("Try again");
+
+    const refused = render(available, {
+      status: "error",
+      message: "This Rumi installation cannot update itself.",
+      installFailed: true,
+      command: "npx @rumi-md/server@latest serve"
+    });
+    expect(refused.command).toBe("npx @rumi-md/server@latest serve");
 
     const timedOut = render(available, {
       status: "error",

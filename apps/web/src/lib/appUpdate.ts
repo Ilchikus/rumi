@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import type { RumiApiClient } from "@rumi/api-client";
+import { RumiApiError, type RumiApiClient } from "@rumi/api-client";
 import type { AppInfoResult } from "@rumi/contracts";
 
+/** Fallback when a failed request carries no install-specific command from the server. */
 export const MANUAL_UPDATE_COMMAND = "npm install --global @rumi-md/server@latest";
 
 export type AppUpdateState =
   | { status: "idle" }
   | { status: "updating" }
   | { status: "restarting"; version: string }
-  | { status: "error"; message: string; installFailed: boolean };
+  | { status: "error"; message: string; installFailed: boolean; command?: string };
 
 export interface AppUpdateController {
   info: AppInfoResult | null;
@@ -69,7 +70,13 @@ export function useAppUpdate(
       try {
         version = (await api.updateApp()).version;
       } catch (error) {
-        setState({ status: "error", message: errorMessage(error), installFailed: true });
+        const command = error instanceof RumiApiError ? error.details?.command : undefined;
+        setState({
+          status: "error",
+          message: errorMessage(error),
+          installFailed: true,
+          ...(typeof command === "string" ? { command } : {})
+        });
         return;
       }
 

@@ -97,6 +97,10 @@ describe("RumiApiClient authentication errors", () => {
     expect(error).toBeInstanceOf(RumiApiError);
     expect(error).toMatchObject({ status: 401, code: "authentication_required" });
     expect(isAuthenticationRequiredError(error)).toBe(true);
+    expect((error as RumiApiError).details).toEqual({
+      code: "authentication_required",
+      message: "Authentication required"
+    });
     expect(onAuthenticationRequired).toHaveBeenCalledTimes(1);
   });
 

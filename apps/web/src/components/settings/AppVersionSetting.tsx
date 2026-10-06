@@ -11,7 +11,7 @@ export function AppVersionSetting({ info, state, update }: AppUpdateController):
 
   const busy = state.status === "updating" || state.status === "restarting";
   const manualCommand = state.status === "error"
-    ? state.installFailed ? MANUAL_UPDATE_COMMAND : undefined
+    ? state.installFailed ? state.command ?? MANUAL_UPDATE_COMMAND : undefined
     : info.updateAvailable && info.update.mode === "manual"
       ? info.update.command
       : undefined;
@@ -51,13 +51,15 @@ export function AppVersionSetting({ info, state, update }: AppUpdateController):
         <span className="text-sm font-medium">Version</span>
         <div className="flex items-center gap-3">
           <span className="text-sm tabular-nums text-muted-foreground">{info.version ?? "dev"}</span>
-          {info.updateAvailable && info.update.mode === "self" && state.status !== "error" ? (
+          {info.updateAvailable && info.update.mode === "self" ? (
             <Button type="button" variant="outline" disabled={busy} onClick={update}>
               {state.status === "updating"
                 ? "Updating…"
                 : state.status === "restarting"
                   ? "Restarting…"
-                  : `Update to ${info.latestVersion}`}
+                  : state.status === "error"
+                    ? "Try again"
+                    : `Update to ${info.latestVersion}`}
             </Button>
           ) : null}
         </div>

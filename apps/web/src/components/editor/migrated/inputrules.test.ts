@@ -504,7 +504,7 @@ describe("live editor inline-code input across paste", () => {
   function modifiedKey(
     harness: ReturnType<typeof createTypingHarness>,
     key: string,
-    modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey">>
+    modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "code">>
   ) {
     const event = {
       key,
@@ -546,13 +546,15 @@ describe("live editor inline-code input across paste", () => {
     expect(inlineCodeInputSessionKey.getState(harness.state)).toBeNull()
   })
 
-  it("keeps the session through Ctrl, plain-text, and Shift-Insert paste chords", () => {
+  it("keeps the session through Ctrl, plain-text, Shift-Insert, and non-Latin paste chords", () => {
     const harness = createTypingHarness()
     harness.type("`x")
     modifiedKey(harness, "Control", { ctrlKey: true })
     modifiedKey(harness, "v", { ctrlKey: true })
     modifiedKey(harness, "V", { metaKey: true, shiftKey: true })
     modifiedKey(harness, "Insert", { shiftKey: true })
+
+    modifiedKey(harness, "м", { ctrlKey: true, code: "KeyV" })
 
     expect(inlineCodeInputSessionKey.getState(harness.state)).not.toBeNull()
     modifiedKey(harness, "z", { ctrlKey: true })

@@ -44,6 +44,8 @@ describe("version comparison", () => {
     expect(compareVersions("0.1.17", "0.1.17")).toBe(0);
     expect(compareVersions("0.1.16", "0.1.17")).toBe(-1);
     expect(compareVersions("0.1.18-beta.1", "0.1.17")).toBe(0);
+    expect(compareVersions("0.2.0", "0.2.0-beta.1")).toBe(1);
+    expect(compareVersions("0.2.0-beta.1", "0.2.0")).toBe(-1);
     expect(compareVersions("not-a-version", "0.1.17")).toBe(0);
   });
 
@@ -163,6 +165,33 @@ describe("app version API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "restarting", version: "0.1.18" });
     await vi.waitFor(() => expect(events).toEqual(["install 0.1.18", "restart"]));
+    await server.close();
+  });
+
+  it("installs and restarts once for concurrent and repeated update requests", async () => {
+    const { globalRoot, entryPath } = await globalInstall();
+    const installVersion = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const restart = vi.fn();
+    const server = await serverWith({
+      entryPath,
+      fetchLatestVersion: async () => "0.1.18",
+      globalPackageRoot: async () => globalRoot,
+      installVersion,
+      restart
+    });
+
+    const responses = await Promise.all([
+      server.inject({ method: "POST", url: "/api/app/update" }),
+      server.inject({ method: "POST", url: "/api/app/update" })
+    ]);
+    const later = await server.inject({ method: "POST", url: "/api/app/update" });
+
+    expect([...responses, later].map((response) => response.statusCode)).toEqual([200, 200, 200]);
+    expect(installVersion).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(restart).toHaveBeenCalled());
+    expect(restart).toHaveBeenCalledTimes(1);
     await server.close();
   });
 

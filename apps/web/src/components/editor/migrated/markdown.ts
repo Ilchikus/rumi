@@ -845,9 +845,13 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
     case "blockquote":
       const quoteLines: string[] = []
       serializeBlocks(node, quoteLines, "")
+      // End the quote with a plain blank line like every other block, so a
+      // following empty paragraph adds exactly one more blank line.
+      while (quoteLines.length > 0 && quoteLines[quoteLines.length - 1] === "") quoteLines.pop()
       quoteLines.forEach((line) => {
         lines.push(indent + "> " + line)
       })
+      lines.push("")
       break
 
     case "code_block":

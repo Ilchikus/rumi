@@ -45,7 +45,10 @@ export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
   }
 
   render()
-  const unsubscribe = subscribeWorkspaceIcons(render)
+  // Only mentions can show a custom icon, and a change to the mention flag
+  // recreates this view, so other links never need icon updates.
+  const showsCustomIcon = node.attrs.linkType === "internal" && node.attrs.mention
+  const unsubscribe = showsCustomIcon ? subscribeWorkspaceIcons(render) : () => undefined
 
   return {
     dom,

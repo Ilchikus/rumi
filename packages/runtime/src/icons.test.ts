@@ -43,6 +43,12 @@ describe("workspace item icons", () => {
       "Tasks/First.md": "---\nicon: \"  \"\n---\n"
     });
 
+    // A never-indexed workspace serves its tree at once, then announces icons.
+    const events: RumiEventEnvelope[] = [];
+    runtime.events.subscribe((event) => events.push(event));
+    await runtime.getTree();
+    await runtime.flushBackgroundTasks();
+    expect(events.map((envelope) => envelope.event.name)).toContain("workspace.treeChanged");
     const tree = await runtime.getTree();
 
     expect(tree.icon).toBe("🏠");
@@ -100,6 +106,7 @@ describe("workspace item icons", () => {
   it("announces a tree change only when an icon actually changes, including external edits", async () => {
     const { root, runtime } = await workspace({ "Idea.md": "---\nstatus: draft\n---\nIdea" });
     await runtime.getTree();
+    await runtime.flushBackgroundTasks();
     // The server watches from startup; reconcile once to take the same baseline.
     await runtime.reconcileWorkspace();
     const events: RumiEventEnvelope[] = [];

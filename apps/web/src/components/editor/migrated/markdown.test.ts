@@ -521,6 +521,19 @@ describe("blank lines between blocks", () => {
     expect(parseMarkdown(markdown, schema).toJSON()).toEqual(doc.toJSON())
   })
 
+  it("keeps empty paragraphs right after a blockquote", () => {
+    const doc = schema.nodes.doc!.create(null, [
+      schema.nodes.blockquote!.create(null, [paragraph("quoted")]),
+      paragraph(),
+      paragraph("after")
+    ])
+    const markdown = serializeMarkdown(doc)
+
+    expect(markdown).toBe("> quoted\n\n\nafter\n")
+    expect(parseMarkdown(markdown, schema).toJSON()).toEqual(doc.toJSON())
+    expect(serializeMarkdown(parseMarkdown("> Quote\n\nNext\n", schema))).toBe("> Quote\n\nNext\n")
+  })
+
   it("keeps empty paragraphs inside a blockquote", () => {
     const quote = schema.nodes.blockquote!.create(null, [
       paragraph("first"),

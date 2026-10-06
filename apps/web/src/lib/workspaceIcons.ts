@@ -62,6 +62,7 @@ export function workspaceIconsByPath(tree: WorkspaceNode | null): Map<string, st
 type Listener = () => void;
 let iconTree: WorkspaceNode | null = null;
 let iconsByPath = new Map<string, string>();
+let linkIcons = new Map<string, string | undefined>();
 const listeners = new Set<Listener>();
 
 /** App publishes the current tree; every surface reads item icons from here. */
@@ -69,13 +70,19 @@ export function publishWorkspaceIcons(tree: WorkspaceNode | null): void {
   if (tree === iconTree) return;
   iconTree = tree;
   iconsByPath = workspaceIconsByPath(tree);
+  linkIcons = new Map();
   for (const listener of listeners) listener();
 }
 
 /** Icon of the workspace item an editor link points to, resolved like link navigation. */
 export function workspaceIconForLink(href: string, sourceDocumentPath?: string | null): string | undefined {
+  // Resolving walks the tree, so remember each answer until the tree changes.
+  const key = `${sourceDocumentPath ?? ""}\u0000${href}`;
+  if (linkIcons.has(key)) return linkIcons.get(key);
   const icon = resolveWorkspaceDocumentLink(iconTree, href, sourceDocumentPath)?.icon;
-  return parseWorkspaceIcon(icon) ? icon : undefined;
+  const resolved = parseWorkspaceIcon(icon) ? icon : undefined;
+  linkIcons.set(key, resolved);
+  return resolved;
 }
 
 export function workspaceIconForPath(path: string | null | undefined): string | undefined {

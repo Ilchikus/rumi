@@ -82,6 +82,10 @@ export class WorkspaceIndex {
     return workspaceIndex;
   }
 
+  isBuilt(): boolean {
+    return this.builtAt !== null;
+  }
+
   async ensureBuilt(): Promise<number> {
     return this.builtAt ? this.documentCount() : this.rebuild();
   }

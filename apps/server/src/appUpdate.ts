@@ -42,6 +42,8 @@ export class AppUpdater {
   private latestRequest: Promise<string | null> | null = null;
   private installKind: Promise<"global" | "npx" | "other"> | null = null;
   private updateInFlight: Promise<string> | null = null;
+  private installedVersion: string | null = null;
+  private restartRequested = false;
 
   constructor(private readonly options: RumiAppOptions | undefined) {}
 
@@ -91,15 +93,28 @@ export class AppUpdater {
     };
   }
 
-  /** Installs the advertised latest version. Resolves with that version; never restarts. */
+  /**
+   * Installs the advertised latest version once. Concurrent and later
+   * requests share that result instead of installing again while the server
+   * restarts. Never restarts by itself.
+   */
   async update(selfUpdateAllowed: boolean): Promise<string> {
-    this.updateInFlight ??= this.installLatest(selfUpdateAllowed).finally(() => {
-      this.updateInFlight = null;
-    });
+    if (this.installedVersion) return this.installedVersion;
+    this.updateInFlight ??= this.installLatest(selfUpdateAllowed)
+      .then((version) => {
+        this.installedVersion = version;
+        return version;
+      })
+      .finally(() => {
+        this.updateInFlight = null;
+      });
     return this.updateInFlight;
   }
 
+  /** Hands off to the installed version; repeated calls do nothing. */
   restart(): void {
+    if (this.restartRequested) return;
+    this.restartRequested = true;
     this.options?.restart?.();
   }
 
@@ -163,7 +178,11 @@ export class AppUpdater {
   }
 }
 
-/** Compares numeric `major.minor.patch` versions. Prerelease versions never count as newer. */
+/**
+ * Compares `major.minor.patch` versions with semver prerelease precedence
+ * (0.2.0-beta.1 < 0.2.0). A prerelease `left` never counts as newer, so a
+ * prerelease published as `latest` is not offered as an update.
+ */
 export function compareVersions(left: string, right: string): number {
   const parse = (value: string) => {
     const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(-.+)?$/u);
@@ -180,7 +199,8 @@ export function compareVersions(left: string, right: string): number {
     if (difference !== 0) return a.prerelease && difference > 0 ? 0 : Math.sign(difference);
   }
 
-  return 0;
+  if (a.prerelease === b.prerelease) return 0;
+  return a.prerelease ? -1 : 1;
 }
 
 async function fetchRegistryLatestVersion(): Promise<string | null> {

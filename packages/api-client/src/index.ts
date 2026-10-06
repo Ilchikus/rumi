@@ -66,12 +66,15 @@ export interface RumiApiClientOptions {
 export class RumiApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  /** The response's `error` object, for route-specific fields such as an update command. */
+  readonly details?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "RumiApiError";
     this.status = status;
     if (code) this.code = code;
+    if (details) this.details = details;
   }
 }
 
@@ -491,7 +494,7 @@ export class RumiApiClient {
           ? errorBody.message
           : `Request failed with status ${response.status}`;
       const code = typeof errorBody?.code === "string" ? errorBody.code : undefined;
-      const error = new RumiApiError(message, response.status, code);
+      const error = new RumiApiError(message, response.status, code, errorBody ?? undefined);
 
       if (response.status === 401 && isAuthenticationRequiredError(error)) {
         this.onAuthenticationRequired?.();

@@ -63,10 +63,12 @@ export function createInlineCodeSessionPasteTransaction(
 
 const MODIFIER_KEYS = new Set(["Alt", "AltGraph", "CapsLock", "Control", "Meta", "Shift"])
 
+// Match the physical V key too: on non-Latin layouts Ctrl/Cmd+V reports the
+// layout's character (for example "м") in event.key.
 function isPasteShortcut(event: KeyboardEvent): boolean {
-  const key = event.key.toLowerCase()
+  const isV = event.key.toLowerCase() === "v" || event.code === "KeyV"
   return (
-    ((event.metaKey || event.ctrlKey) && !event.altKey && key === "v") ||
+    ((event.metaKey || event.ctrlKey) && !event.altKey && isV) ||
     (event.shiftKey && !event.metaKey && !event.ctrlKey && event.key === "Insert")
   )
 }

@@ -180,6 +180,7 @@ export class WorkspaceRuntime {
   private readonly workspaceIndex: WorkspaceIndex;
   private readonly backgroundTasks = new Set<Promise<void>>();
   private workspaceWatcher: WorkspaceWatcher | null = null;
+  private iconIndexBuild: Promise<void> | null = null;
 
   private constructor(
     rootPath: string,
@@ -246,7 +247,7 @@ export class WorkspaceRuntime {
   }
 
   async getTree(): Promise<WorkspaceNode> {
-    await this.workspaceIndex.ensureBuilt();
+    this.buildIconIndexInBackground();
     const tree = await this.readDirectoryTree("");
     this.attachIcons(tree);
     return tree;
@@ -1956,6 +1957,26 @@ export class WorkspaceRuntime {
     }
 
     return node;
+  }
+
+  // Tree icons come from the persisted index. A workspace that was never
+  // indexed serves its tree immediately and announces a tree change once the
+  // first build has read every icon; a failed build is retried on next load.
+  private buildIconIndexInBackground(): void {
+    if (this.workspaceIndex.isBuilt() || this.iconIndexBuild) return;
+
+    const task: Promise<void> = this.workspaceIndex.ensureBuilt()
+      .then(() => {
+        this.events.publish({ name: "workspace.treeChanged", path: "", affects: ["tree"] });
+      }, (error: unknown) => {
+        console.error("Rumi could not build the workspace index:", error);
+      })
+      .finally(() => {
+        this.iconIndexBuild = null;
+        this.backgroundTasks.delete(task);
+      });
+    this.iconIndexBuild = task;
+    this.backgroundTasks.add(task);
   }
 
   private attachIcons(node: WorkspaceNode): void {

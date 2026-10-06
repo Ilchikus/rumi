@@ -113,6 +113,7 @@ import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
 import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from "./lib/authSession";
 import { useAppUpdate } from "./lib/appUpdate";
+import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
 import {
   parseWorkspaceIcon,
   publishWorkspaceIcons,
@@ -221,6 +222,12 @@ type PageTitleEditRequest = {
   path: string;
   caretOffset?: number;
   selectAll?: boolean;
+};
+type LeftPageSnapshot = {
+  page: PageDocument;
+  markdownBody: string;
+  reason: SavePageReason;
+  dirty: { body: boolean; frontmatter: boolean };
 };
 type PinnedItemsState = {
   workspaceRootPath: string;
@@ -763,13 +770,6 @@ export function App(): ReactElement {
     setMessage("");
   }, []);
 
-  // Leaving the open page cancels its autosave timer and can unmount the
-  // editor, so start the pending save now while the latest Markdown is still
-  // readable from the editor.
-  const saveOpenPageBeforeLeaving = useCallback(() => {
-    if (saveStateRef.current === "dirty") void savePageRef.current?.();
-  }, []);
-
   const updatePageFrontmatter = useCallback(
     (frontmatter: PageDocument["frontmatter"]) => {
       const currentPage = pageRef.current;
@@ -799,6 +799,68 @@ export function App(): ReactElement {
   const cacheResolvedPage = useCallback((nextPage: PageDocument) => {
     pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
   }, []);
+
+  // Saves a page the user has already left. It touches no open-page state, so
+  // the page now open keeps its own save cycle.
+  const saveLeftPage = useCallback(async (snapshot: LeftPageSnapshot) => {
+    const { page: leftPage, markdownBody, reason, dirty } = snapshot;
+    let base = leftPage;
+    let body = markdownBody;
+    let frontmatter = leftPage.frontmatter;
+
+    try {
+      for (let attempt = 0; attempt < MAX_SAVE_REBASE_ATTEMPTS; attempt += 1) {
+        const result = await api.savePage({
+          path: leftPage.path,
+          baseVersion: base.version,
+          frontmatter,
+          markdownBody: body,
+          reason
+        });
+        if (result.status === "saved") {
+          forgetCachedPage(leftPage.path);
+          return;
+        }
+
+        base = rebasePageDocument(await api.openPage(leftPage.path), leftPage, markdownBody, dirty);
+        body = base.markdownBody;
+        frontmatter = base.frontmatter;
+      }
+      setMessage("Rumi could not save the previous page after refreshing its latest version.");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, [api, forgetCachedPage, setMessage]);
+
+  // Leaving the open page cancels its autosave timer and can unmount the
+  // editor, so capture the latest Markdown now. Without a running save,
+  // start the normal save. A running save holds older text, and savePage
+  // would only join it, so save the captured text once that save settles:
+  // through the normal cycle if the page is still open (Settings, Uploads,
+  // Trash), or as a left page otherwise.
+  const saveOpenPageBeforeLeaving = useCallback(() => {
+    if (saveStateRef.current !== "dirty") return;
+    const leavingPage = pageRef.current;
+    const inFlight = saveInFlightRef.current;
+    if (!leavingPage) return;
+    if (!inFlight) {
+      void savePageRef.current?.();
+      return;
+    }
+
+    const snapshot: LeftPageSnapshot = {
+      page: leavingPage,
+      markdownBody: getCurrentDraftBody(),
+      reason: saveReasonRef.current,
+      dirty: { body: dirtyBodyRef.current, frontmatter: dirtyFrontmatterRef.current }
+    };
+    draftBodyRef.current = snapshot.markdownBody;
+    setDraftBody(snapshot.markdownBody);
+    void inFlight.catch(() => false).then(() => {
+      if (pageRef.current?.path === leavingPage.path) return;
+      return saveLeftPage(snapshot);
+    });
+  }, [getCurrentDraftBody, saveLeftPage]);
 
   const updateOpenPageImagePresentation = useCallback(async (
     imageSrc: string,
@@ -1252,13 +1314,24 @@ export function App(): ReactElement {
   // so the choice shows without waiting for that round trip.
   const changeWorkspaceItemIcon = useCallback(async (node: WorkspaceNode, icon: string | null) => {
     setTree((current) => (current ? withWorkspaceNodeIcon(current, node.path, icon) : current));
+
+    // The open page saves its own frontmatter, so its icon goes through the
+    // same edit as properties. A separate server write would race unsaved
+    // property edits and be overwritten by the next autosave.
+    const currentPage = pageRef.current;
+    if (currentPage && currentPage.kind !== "database" && currentPage.path === openPathForNode(node)) {
+      const { [WORKSPACE_ICON_KEY]: _previousIcon, ...withoutIcon } = currentPage.frontmatter;
+      updatePageFrontmatter(icon ? { ...currentPage.frontmatter, [WORKSPACE_ICON_KEY]: icon } : withoutIcon);
+      return;
+    }
+
     try {
       await api.setWorkspaceItemIcon({ path: node.path, icon });
     } catch (error) {
       setMessage(errorMessage(error));
       void loadTree();
     }
-  }, [api, loadTree, setMessage]);
+  }, [api, loadTree, setMessage, updatePageFrontmatter]);
 
   const uploadWorkspaceItemIcon = useCallback(
     async (file: File) => (await api.uploadAsset(file.name, file)).path,

@@ -86,3 +86,19 @@ Current gaps to account for:
   a native type selector. A shared anchored menu avoids divergent keyboard and validation behavior.
 - Property rename/delete and select-option mutations currently rewrite only flat filters. Nested
   groups require recursive reference repair in the runtime.
+
+## Rumi New Web Client Lessons (0.1.18)
+
+- Every way of leaving the open page must start its pending save first. The autosave timer is
+  cancelled when the save state resets or the editor unmounts, so a save started afterwards reads
+  stale Markdown. Route new navigation entry points through `saveOpenPageBeforeLeaving`.
+- A 401 closes `EventSource` permanently, unlike a network error, so the event stream must be
+  resubscribed explicitly after signing in again.
+- A loopback client address does not mean "local user": reverse proxies and tunnels connect from
+  loopback. Check for proxy headers before granting machine-level actions such as self-update.
+- The persisted index is the cheap source for per-node frontmatter, such as tree icons. Any
+  single-document `indexPath` call is the choke point for frontmatter changes from saves, record
+  edits, and watcher reconciles.
+- Numbered-list numbers come from `numberedItemNumbers` for both the saved file and the editor
+  display (the numbered list plugin sets each item's CSS counter). Do not reintroduce CSS
+  `counter-increment` rules; sibling selectors cannot skip empty paragraphs, so the two drift.

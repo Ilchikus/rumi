@@ -1,27 +1,34 @@
-## Planned
+## Next release
 
-- ~~route not found on initial open~~
-- Slash command on mobile
-- Mobile editor header
-- Mobile zoom-in on focus (editor, login)
-- Block dnd and context actions on mobile
+- [x] [update app in settings](Tasks/M07-039-app-update-check-and-install.md) - when current ≠ latest npm, show indicator near `settings` in sidebar. add new item with version and update button if available
+- [x] [page/db/folder and workspace icon picker](Tasks/M07-040-workspace-item-icons.md): emojis, phosphor icons and custom uploaded icons
+    - [x]  the icon picker opens with noticable delay
+- [x] [instead of "authentification required" toast (or similar), show login screen](Tasks/M07-041-session-expiry-login-overlay.md). currently it's blocking edits save (which should remain), but on top of it should be login screen (with redirect to active page if was active at the moment of token expire)
+- [x] [any paste action (mouse/shortcut) should not break the sequence for \`\` inline code formatting](Tasks/M07-042-inline-code-input-survives-paste.md)
+- [x] [blank lines (or multiple bank lines in a row) are removed on page reload - they should preserve](Tasks/M07-043-preserve-blank-lines.md)
+- [x] [offset checkbox icon for list item lower 4px, and the list item - 4 px higher](Tasks/M07-044-list-marker-alignment.md)
+- [x] [edits typed right before leaving a page are lost](Tasks/M07-045-save-before-leaving-page.md) (found during QA, also on 0.1.17)
+
+## Backlog
+
+- [ ] images links failed: filenames on load created as `image (23).png`, but at some point insted of images i see only `.png)` - prob some replacement roles took place.
+    - [ ] regarding images, investigate the possibility to pass the original filename on image paste
+- [ ] when dragging parent list item, childs should move with it as a whole
+- [ ] emoji suggestions plugin unmounts its React root synchronously on editor destroy ("Attempted to synchronously unmount a root while React was already rendering" on every page switch); defer the unmount like the code-block and database-embed views do
+- [ ] preserve heading toggle state
+- [ ] add table of contents (in-source or front end only?)
+- [ ] on internal link hover, show page preview: title, props, content excerpt
+- [ ] Slash command on mobile
+- [ ] Mobile editor header
+- [ ] Mobile zoom-in on focus (editor, login)
+- [ ] Block dnd and context actions on mobile
 - [ ] Support links to page headings via `#heading` anchors
-- [ ] [context actions on items from breadcrumbs (rmb)](Tasks/M07-036-shared-breadcrumb-context-actions.md)
-    - [ ] include copy path and copy url to context actions. these context actions should be synced with sidebar and breadcrumbs - basically the same component and actions
-- [ ] [add pinned pages/folders/dbs](Tasks/M07-038-pinned-workspace-items.md)
 - [ ] drag-n-drop block into db:
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
 - [ ] [Inline-code caret boundary](Tasks/xxx-inline-code-caret-boundary.md)
-- [ ] [uploads library](Tasks/M07-034-media-library.md) - similarly to trash and settings add a page, where users can browse, delete, copy etc. uploaded files
-- [ ] [tab on search (cmd+k) cycles between tabs](Tasks/M07-032-search-tabs-and-recents.md)
-    - [ ] add "recent" tab that contains recently visited pages
-- [ ] [placing ](Tasks/M07-033-task-marker-content-preservation.md)[`-[]`](Tasks/M07-033-task-marker-content-preservation.md)[ in the start of a line before extisting content removes the content when appying the formatting - content should preserve](Tasks/M07-033-task-marker-content-preservation.md)
-- [ ] [when selecting multiple lines with text highlight or block selector, pressing tab/shift+tab should be applied to all lines in an active selection](Tasks/M07-035-multi-selection-tab-indentation.md)
-- [ ] paste in any form (mouse/shortcut) should not break the sequence for \`\` inline code formatting
-- [ ] text with both \`\` and link formatting applied should use inline code color, not link
-- [ ] offset checkbox icon for list item lower 4px
+- [ ] shortcut to delecte text cursor __block__ - currently `cmd+a` then `delete` (should i tho?)
 - [ ] sidebar database props visibility, sort, filter:
     - [ ] selector for property (-ies?) to display as labels next to text
     - [ ] sort/filter items in sidebar by prop
@@ -44,6 +51,24 @@
 
 ## Archive
 
+
+### Verified in the current product
+
+- [x] Initial deep links open the requested route instead of showing a transient not-found state.
+- [x] [Breadcrumb context actions](Tasks/M07-036-shared-breadcrumb-context-actions.md) use the same
+actions as the sidebar, including Copy URL and Copy relative path.
+- [x] [Pinned pages, folders, and databases](Tasks/M07-038-pinned-workspace-items.md) appear above
+the main workspace tree and follow rename, move, and deletion changes.
+- [x] [Uploads library](Tasks/M07-034-media-library.md) provides one place to browse, preview,
+download, copy, rename, and move uploaded files to Trash.
+- [x] [Search tabs cycle with Tab and Shift-Tab](Tasks/M07-032-search-tabs-and-recents.md), including
+a Recent tab for recently opened workspace documents.
+- [x] [Task markers typed before existing content preserve that content](Tasks/M07-033-task-marker-content-preservation.md).
+- [x] [Tab and Shift-Tab apply to every eligible item in a multi-line or block selection](Tasks/M07-035-multi-selection-tab-indentation.md).
+- [x] Text carrying both link and inline-code formatting uses the inline-code color.
+
+### Earlier completed items
+
 - [x] cmd+block selector to select several areas (like 3+2+4 with non-selected blocks in-between)
 - [x] rename change/create block from text to paragraph; add friendly names for block for create/change (e.g. h2, heading 2 will both focus on heading 2)
 - [x] add "Create page" for sidebar context menu for folders and databases
@@ -55,7 +80,7 @@
     - [x] Shift+Cmd+V - replaces highlighted text or pastes buffer as plain text
 
 > for links it's important to understand that buffer contains url: either contains http/https, www., or generic domain format domain.tld, sub.domain.tld, domain.com.tld etc.
-> 
+
 - [x] changing lists with identation to other list type resets ident - they need to be preserved
 - [x] paragraphs are pasted to google sheets with blank lines in-between, but lists are pasted just fine - fix paragraphs pls
 - [x] cmd+click on block handle should toggle block selection state (now it's just toggling on but not off)

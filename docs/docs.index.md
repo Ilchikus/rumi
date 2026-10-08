@@ -5,6 +5,8 @@ This folder stores the architecture artifacts for the fresh Rumi server/client r
 ## Narrative Docs
 
 - [vision](vision.md)
+- [product changelog](changelog.md)
+- [product TODO](todo.md)
 - [roadmap](roadmap.md)
 - [workflow](workflow.md)
 - [source layout](source-layout.md)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazyResource, useLazyResource } from "../../lib/lazyResource";
 
 export interface PhosphorIconDefinition {
   name: string;
@@ -15,40 +15,19 @@ export interface PhosphorCatalog {
   byName: ReadonlyMap<string, PhosphorIconDefinition>;
 }
 
-let catalogPromise: Promise<PhosphorCatalog> | null = null;
-let loadedCatalog: PhosphorCatalog | null = null;
+/** The full icon set is a separate chunk, loaded when a picker or a `ph:` icon needs it. */
+const phosphorCatalog = lazyResource(async (): Promise<PhosphorCatalog> => {
+  const module = await import("./phosphor-catalog.generated.json");
+  const generated = (module.default ?? module) as unknown as GeneratedPhosphorCatalog;
+  const icons = generated.icons.map(([name, tags, path]) => ({ name, tags, path }));
+  return { icons, byName: new Map(icons.map((icon) => [icon.name, icon])) };
+});
 
-/** The full icon set is a separate chunk, loaded only when a picker or a `ph:` icon needs it. */
-export function loadPhosphorCatalog(): Promise<PhosphorCatalog> {
-  catalogPromise ??= import("./phosphor-catalog.generated.json").then((module) => {
-    const generated = (module.default ?? module) as unknown as GeneratedPhosphorCatalog;
-    const icons = generated.icons.map(([name, tags, path]) => ({ name, tags, path }));
-    loadedCatalog = { icons, byName: new Map(icons.map((icon) => [icon.name, icon])) };
-    return loadedCatalog;
-  });
-  return catalogPromise;
-}
-
-/** The catalog if it has already loaded, for synchronous renderers. */
-export function peekPhosphorCatalog(): PhosphorCatalog | null {
-  return loadedCatalog;
-}
+export const loadPhosphorCatalog = phosphorCatalog.load;
+export const peekPhosphorCatalog = phosphorCatalog.peek;
 
 export function usePhosphorCatalog(enabled = true): PhosphorCatalog | null {
-  const [catalog, setCatalog] = useState<PhosphorCatalog | null>(loadedCatalog);
-
-  useEffect(() => {
-    if (!enabled || catalog) return;
-    let active = true;
-    void loadPhosphorCatalog().then((loaded) => {
-      if (active) setCatalog(loaded);
-    }, () => undefined);
-    return () => {
-      active = false;
-    };
-  }, [catalog, enabled]);
-
-  return catalog;
+  return useLazyResource(phosphorCatalog, enabled);
 }
 
 export function searchPhosphorIcons(

@@ -1255,7 +1255,7 @@ export function DatabaseView({
                 <span className="col-start-1 row-start-1 group-hover/clear-selection:opacity-0 group-focus-visible/clear-selection:opacity-0">
                   {selectedRecords.length} selected
                 </span>
-                <span className="col-start-1 row-start-1 text-primary underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
+                <span className="col-start-1 row-start-1 text-action underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
                   Clear all
                 </span>
               </button>

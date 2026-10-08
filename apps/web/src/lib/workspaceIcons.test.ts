@@ -10,11 +10,20 @@ import {
 } from "../components/editor/migrated/plugins/linkMarkerNodeView";
 import { parseMarkdown } from "../components/editor/migrated/markdown";
 import { schema } from "../components/editor/migrated/schema";
+import { loadPhosphorCatalog } from "../components/icons/phosphorCatalog";
 import {
+  drawableWorkspaceIcon,
+  loadDrawableWorkspaceIcon,
+  workspaceFaviconHref
+} from "../components/icons/drawableIcon";
+import {
+  WORKSPACE_ICON_COLORS,
+  getSavedIconColor,
   parseWorkspaceIcon,
+  phosphorIconValue,
   publishWorkspaceIcons,
+  saveIconColor,
   withWorkspaceNodeIcon,
-  workspaceFaviconHref,
   workspaceIconForLink,
   workspaceIconForPath
 } from "./workspaceIcons";
@@ -30,6 +39,7 @@ afterEach(() => {
   root = null;
   container = null;
   publishWorkspaceIcons(null);
+  localStorage.clear();
 });
 
 const tree: WorkspaceNode = {
@@ -66,6 +76,35 @@ describe("workspace icon values", () => {
     }
   });
 
+  it("stores a Phosphor color after the name and leaves neutral icons unsuffixed", () => {
+    expect(parseWorkspaceIcon("ph:rocket-launch:blue")).toEqual({ type: "phosphor", name: "rocket-launch", color: "blue" });
+    expect(parseWorkspaceIcon("ph:rocket:neutral")).toEqual({ type: "phosphor", name: "rocket" });
+    expect(parseWorkspaceIcon("ph:rocket:chartreuse")).toEqual({ type: "phosphor", name: "rocket" });
+    for (const invalid of ["ph:rocket:", "ph:rocket:Blue", "ph:rocket:blue:red", "ph::blue"]) {
+      expect(parseWorkspaceIcon(invalid)).toBeNull();
+    }
+
+    expect(phosphorIconValue("rocket")).toBe("ph:rocket");
+    expect(phosphorIconValue("rocket", "neutral")).toBe("ph:rocket");
+    expect(phosphorIconValue("rocket", "rose")).toBe("ph:rocket:rose");
+  });
+
+  it("offers Tailwind 500 colors with neutral as the only gray", () => {
+    const names = WORKSPACE_ICON_COLORS.map((color) => color.name);
+    expect(names[0]).toBe("neutral");
+    expect(names).toHaveLength(18);
+    for (const gray of ["slate", "gray", "zinc", "stone"]) expect(names).not.toContain(gray);
+    expect(WORKSPACE_ICON_COLORS.find((color) => color.name === "sky")?.hex).toBe("#0ea5e9");
+  });
+
+  it("remembers the last picked icon color in this browser", () => {
+    expect(getSavedIconColor()).toBe("neutral");
+    saveIconColor("emerald");
+    expect(getSavedIconColor()).toBe("emerald");
+    localStorage.setItem("rumi-new-icon-color", "not-a-color");
+    expect(getSavedIconColor()).toBe("neutral");
+  });
+
   it("resolves icons by node path, companion path, and link destination", () => {
     publishWorkspaceIcons(tree);
 
@@ -92,12 +131,24 @@ describe("workspace icon values", () => {
     expect(withWorkspaceNodeIcon(tree, "", "🏠").icon).toBe("🏠");
   });
 
-  it("builds favicons from emoji, Phosphor paths, and uploads", () => {
-    expect(decodeURIComponent(workspaceFaviconHref({ type: "emoji", emoji: "🌲" })!)).toContain(">🌲</text>");
-    expect(decodeURIComponent(workspaceFaviconHref({ type: "phosphor", name: "tree" }, "M0,0Z")!))
-      .toContain('<path d="M0,0Z"/>');
-    expect(workspaceFaviconHref({ type: "phosphor", name: "tree" })).toBeNull();
-    expect(workspaceFaviconHref({ type: "asset", path: ".assets/logo.png" }))
+  it("resolves stored values to drawable emoji, images, and colored glyphs", async () => {
+    expect(drawableWorkspaceIcon("🌲", null)).toEqual({ type: "emoji", emoji: "🌲" });
+    expect(drawableWorkspaceIcon(".assets/logo.png", null))
+      .toEqual({ type: "image", url: "/api/asset?path=.assets%2Flogo.png" });
+    expect(drawableWorkspaceIcon("ph:tree", null)).toBeNull();
+    expect(await loadDrawableWorkspaceIcon("ph:tree:green")).toMatchObject({ type: "glyph", color: "#22c55e" });
+    expect(await loadDrawableWorkspaceIcon("ph:tree")).not.toHaveProperty("color");
+    expect(await loadDrawableWorkspaceIcon("ph:not-a-real-icon")).toBeNull();
+    expect(await loadDrawableWorkspaceIcon("plain words")).toBeNull();
+  });
+
+  it("builds favicons from emoji, glyphs, and uploads", () => {
+    expect(decodeURIComponent(workspaceFaviconHref({ type: "emoji", emoji: "🌲" }))).toContain(">🌲</text>");
+    expect(decodeURIComponent(workspaceFaviconHref({ type: "glyph", path: "M0,0Z" })))
+      .toContain('fill="#737373"><path d="M0,0Z"/>');
+    expect(decodeURIComponent(workspaceFaviconHref({ type: "glyph", path: "M0,0Z", color: "#22c55e" })))
+      .toContain('fill="#22c55e"');
+    expect(workspaceFaviconHref({ type: "image", url: "/api/asset?path=.assets%2Flogo.png" }))
       .toBe("/api/asset?path=.assets%2Flogo.png");
   });
 });
@@ -122,6 +173,13 @@ describe("workspace icon rendering", () => {
     expect(render("plain words").querySelector("[data-kind-icon]")).not.toBeNull();
   });
 
+  it("draws colored Phosphor icons in their color and neutral ones in the inherited color", async () => {
+    await loadPhosphorCatalog();
+    expect(render("ph:rocket:violet").querySelector<SVGElement>("[data-workspace-icon='phosphor']")?.style.color)
+      .toBe("rgb(139, 92, 246)");
+    expect(render("ph:rocket").querySelector<SVGElement>("[data-workspace-icon='phosphor']")?.style.color).toBe("");
+  });
+
   it("falls back to the kind icon when an uploaded icon cannot load", () => {
     const view = render(".assets/missing.png");
     act(() => view.querySelector("img")?.dispatchEvent(new Event("error")));
@@ -135,13 +193,19 @@ describe("workspace icon rendering", () => {
     expect(marker.dataset.customIcon).toBe("emoji");
     expect(marker.dataset.iconEmoji).toBe("📁");
 
-    applyLinkMarkerIcon(marker, { type: "phosphor", path: "M0,0Z" });
+    applyLinkMarkerIcon(marker, { type: "glyph", path: "M0,0Z" });
     expect(marker.dataset.iconEmoji).toBeUndefined();
     expect(marker.style.getPropertyValue("--rumi-link-icon")).toContain("data:image/svg+xml");
+
+    expect(marker.style.getPropertyValue("--rumi-link-icon-color")).toBe("");
+
+    applyLinkMarkerIcon(marker, { type: "glyph", path: "M0,0Z", color: "#f97316" });
+    expect(marker.style.getPropertyValue("--rumi-link-icon-color")).toBe("#f97316");
 
     applyLinkMarkerIcon(marker, null);
     expect(marker.hasAttribute("data-custom-icon")).toBe(false);
     expect(marker.style.getPropertyValue("--rumi-link-icon")).toBe("");
+    expect(marker.style.getPropertyValue("--rumi-link-icon-color")).toBe("");
   });
 });
 
@@ -162,7 +226,8 @@ describe("internal link icons in the editor", () => {
     ]);
   });
 
-  it("shows the target's custom icon for mentions and the kind glyph for other links", () => {
+  it("shows the target's custom icon for mentions and the kind glyph for other links", async () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
     publishWorkspaceIcons(tree);
     const mention = linkMarkerNodeView(schema.nodes.link_marker!.create({
       href: "Projects/Projects.index.md",
@@ -176,10 +241,12 @@ describe("internal link icons in the editor", () => {
       mentionKind: "folder"
     }));
 
+    await settle();
     expect((mention.dom as HTMLElement).dataset.customIcon).toBe("asset");
     expect((plain.dom as HTMLElement).hasAttribute("data-custom-icon")).toBe(false);
 
     publishWorkspaceIcons({ ...tree, children: [] });
+    await settle();
     expect((mention.dom as HTMLElement).hasAttribute("data-custom-icon")).toBe(false);
     mention.destroy?.();
     plain.destroy?.();

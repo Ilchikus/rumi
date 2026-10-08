@@ -1,12 +1,10 @@
 import { DOMSerializer, type Node as ProseMirrorNode } from "prosemirror-model"
 import type { NodeView } from "prosemirror-view"
-import { loadPhosphorCatalog } from "../../../icons/phosphorCatalog"
 import {
-  parseWorkspaceIcon,
-  subscribeWorkspaceIcons,
-  workspaceIconAssetUrl,
-  workspaceIconForLink
-} from "../../../../lib/workspaceIcons"
+  loadDrawableWorkspaceIcon,
+  type DrawableWorkspaceIcon
+} from "../../../icons/drawableIcon"
+import { subscribeWorkspaceIcons, workspaceIconForLink } from "../../../../lib/workspaceIcons"
 import { migratedEditorPlatform } from "../platform"
 
 /**
@@ -23,31 +21,16 @@ export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
 
   const render = () => {
     const id = ++renderId
-    const icon = node.attrs.linkType === "internal" && node.attrs.mention
-      ? workspaceIconForLink(node.attrs.href, migratedEditorPlatform().documentKey)
-      : undefined
-    const parsed = parseWorkspaceIcon(icon)
-
-    if (parsed?.type !== "phosphor") {
-      applyLinkMarkerIcon(dom, parsed?.type === "emoji"
-        ? { type: "emoji", emoji: parsed.emoji }
-        : parsed?.type === "asset"
-          ? { type: "asset", url: workspaceIconAssetUrl(parsed) }
-          : null)
-      return
-    }
-
-    void loadPhosphorCatalog().then((catalog) => {
-      if (id !== renderId) return
-      const path = catalog.byName.get(parsed.name)?.path
-      applyLinkMarkerIcon(dom, path ? { type: "phosphor", path } : null)
+    const icon = workspaceIconForLink(node.attrs.href, migratedEditorPlatform().documentKey)
+    void loadDrawableWorkspaceIcon(icon).then((drawable) => {
+      if (id === renderId) applyLinkMarkerIcon(dom, drawable)
     }, () => undefined)
   }
 
-  render()
-  // Only mentions can show a custom icon, and a change to the mention flag
-  // recreates this view, so other links never need icon updates.
+  // Only mentions show a custom icon. Changing the link or its mention flag
+  // recreates this view, so other links never render or subscribe.
   const showsCustomIcon = node.attrs.linkType === "internal" && node.attrs.mention
+  if (showsCustomIcon) render()
   const unsubscribe = showsCustomIcon ? subscribeWorkspaceIcons(render) : () => undefined
 
   return {
@@ -71,13 +54,9 @@ export function linkMarkerNodeView(initialNode: ProseMirrorNode): NodeView {
   }
 }
 
-type LinkMarkerIcon =
-  | { type: "emoji"; emoji: string }
-  | { type: "asset"; url: string }
-  | { type: "phosphor"; path: string }
-
-export function applyLinkMarkerIcon(dom: HTMLElement, icon: LinkMarkerIcon | null): void {
+export function applyLinkMarkerIcon(dom: HTMLElement, icon: DrawableWorkspaceIcon | null): void {
   dom.style.removeProperty("--rumi-link-icon")
+  dom.style.removeProperty("--rumi-link-icon-color")
   dom.style.removeProperty("--rumi-link-icon-image")
   dom.removeAttribute("data-icon-emoji")
 
@@ -86,13 +65,18 @@ export function applyLinkMarkerIcon(dom: HTMLElement, icon: LinkMarkerIcon | nul
     return
   }
 
-  dom.setAttribute("data-custom-icon", icon.type)
   if (icon.type === "emoji") {
+    dom.setAttribute("data-custom-icon", "emoji")
     dom.setAttribute("data-icon-emoji", icon.emoji)
-  } else if (icon.type === "asset") {
+  } else if (icon.type === "image") {
+    dom.setAttribute("data-custom-icon", "asset")
     dom.style.setProperty("--rumi-link-icon-image", `url(${JSON.stringify(icon.url)})`)
   } else {
+    // The glyph draws through the existing link-icon mask, in the link color
+    // unless the icon has its own.
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'><path d='${icon.path}'/></svg>`
+    dom.setAttribute("data-custom-icon", "phosphor")
     dom.style.setProperty("--rumi-link-icon", `url("data:image/svg+xml,${encodeURIComponent(svg)}")`)
+    if (icon.color) dom.style.setProperty("--rumi-link-icon-color", icon.color)
   }
 }

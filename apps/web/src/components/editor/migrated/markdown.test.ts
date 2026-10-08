@@ -521,6 +521,20 @@ describe("blank lines between blocks", () => {
     expect(parseMarkdown(markdown, schema).toJSON()).toEqual(doc.toJSON())
   })
 
+  it("ends a document whose last list is followed by empty paragraphs with one newline", () => {
+    const doc = schema.nodes.doc!.create(null, [bullet("a"), bullet("b"), paragraph(), paragraph()])
+
+    expect(serializeMarkdown(doc)).toBe("- a\n- b\n")
+  })
+
+  it("keeps ordered-list numbering across empty paragraphs", () => {
+    const markdown = "1. first\n\n\n2. second\n"
+
+    expect(types(markdown)).toEqual(["numbered_item", "empty", "numbered_item"])
+    expect(serializeMarkdown(parseMarkdown(markdown, schema))).toBe(markdown)
+    expect(serializeMarkdown(parseMarkdown("1. a\n\nText\n\n1. b\n", schema))).toBe("1. a\n\nText\n\n1. b\n")
+  })
+
   it("keeps empty paragraphs right after a blockquote", () => {
     const doc = schema.nodes.doc!.create(null, [
       schema.nodes.blockquote!.create(null, [paragraph("quoted")]),

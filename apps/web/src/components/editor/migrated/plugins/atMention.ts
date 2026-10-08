@@ -13,12 +13,8 @@ import {
 } from "./suggestionMenus"
 
 export { mentionKindForPath } from "../mentionTypes"
-import { loadPhosphorCatalog, peekPhosphorCatalog } from "../../../icons/phosphorCatalog"
-import {
-  parseWorkspaceIcon,
-  workspaceIconAssetUrl,
-  workspaceIconForPath
-} from "../../../../lib/workspaceIcons"
+import { drawableWorkspaceIcon, loadDrawableWorkspaceIcon } from "../../../icons/drawableIcon"
+import { workspaceIconForPath } from "../../../../lib/workspaceIcons"
 
 export const atMentionPluginKey = new PluginKey("atMention")
 
@@ -421,26 +417,22 @@ function mentionIconMarkup(file: FileItem): string {
     MENTION_ICONS[renderedMentionKind(file.kind, file.path)]
 }
 
-// A custom item icon replaces the kind icon. Phosphor icons appear once their
+// A custom item icon replaces the kind icon. A Phosphor icon appears once its
 // catalog has loaded; until then the kind icon stays.
 function customIconMarkup(value: string | undefined): string | null {
-  const icon = parseWorkspaceIcon(value)
-  if (!icon) return null
+  const icon = drawableWorkspaceIcon(value)
+  if (!icon) {
+    void loadDrawableWorkspaceIcon(value).catch(() => undefined)
+    return null
+  }
   if (icon.type === "emoji") {
     return `<span class="at-mention-emoji" aria-hidden="true">${escapeHtml(icon.emoji)}</span>`
   }
-  if (icon.type === "asset") {
-    return `<img class="at-mention-image" src="${escapeHtml(workspaceIconAssetUrl(icon))}" alt="" aria-hidden="true">`
+  if (icon.type === "image") {
+    return `<img class="at-mention-image" src="${escapeHtml(icon.url)}" alt="" aria-hidden="true">`
   }
-  const catalog = peekPhosphorCatalog()
-  if (!catalog) {
-    void loadPhosphorCatalog().catch(() => undefined)
-    return null
-  }
-  const definition = catalog.byName.get(icon.name)
-  return definition
-    ? `<svg viewBox="0 0 256 256" aria-hidden="true"><path d="${escapeHtml(definition.path)}"/></svg>`
-    : null
+  const style = icon.color ? ` style="color:${escapeHtml(icon.color)}"` : ""
+  return `<svg viewBox="0 0 256 256" aria-hidden="true"${style}><path d="${escapeHtml(icon.path)}"/></svg>`
 }
 
 function highlightMatch(text: string, query: string): string {

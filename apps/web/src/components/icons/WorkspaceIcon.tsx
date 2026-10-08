@@ -1,6 +1,7 @@
-import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
-import { parseWorkspaceIcon, workspaceIconAssetUrl } from "../../lib/workspaceIcons";
+import { parseWorkspaceIcon } from "../../lib/workspaceIcons";
+import { drawableWorkspaceIcon } from "./drawableIcon";
 import { usePhosphorCatalog } from "./phosphorCatalog";
 
 export interface WorkspaceIconProps {
@@ -13,38 +14,40 @@ export interface WorkspaceIconProps {
 }
 
 export function WorkspaceIcon({ icon, size, fallback = null, className }: WorkspaceIconProps): ReactElement {
-  const parsed = parseWorkspaceIcon(icon);
-  const catalog = usePhosphorCatalog(parsed?.type === "phosphor");
-  const box: CSSProperties = { width: size, height: size };
+  const loadsGlyph = parseWorkspaceIcon(icon)?.type === "phosphor";
+  const catalog = usePhosphorCatalog(loadsGlyph);
+  const drawable = drawableWorkspaceIcon(icon, catalog);
 
-  if (!parsed) return <>{fallback}</>;
+  if (!drawable) {
+    // Keep the glyph's space while the icon catalog loads, so rows never shift.
+    return loadsGlyph && !catalog
+      ? <span className={cn("inline-block shrink-0", className)} style={{ width: size, height: size }} />
+      : <>{fallback}</>;
+  }
 
-  if (parsed.type === "emoji") {
+  if (drawable.type === "emoji") {
     return (
       <span
         className={cn("inline-grid shrink-0 select-none place-items-center leading-none", className)}
-        style={{ ...box, fontSize: Math.round(size * 0.86) }}
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.86) }}
         aria-hidden="true"
         data-workspace-icon="emoji"
       >
-        {parsed.emoji}
+        {drawable.emoji}
       </span>
     );
   }
 
-  if (parsed.type === "asset") {
+  if (drawable.type === "image") {
     return (
       <UploadedIcon
-        src={workspaceIconAssetUrl(parsed)}
+        src={drawable.url}
         size={size}
         fallback={fallback}
         {...(className ? { className } : {})}
       />
     );
   }
-
-  const definition = catalog?.byName.get(parsed.name);
-  if (catalog && !definition) return <>{fallback}</>;
 
   return (
     <svg
@@ -54,9 +57,10 @@ export function WorkspaceIcon({ icon, size, fallback = null, className }: Worksp
       fill="currentColor"
       aria-hidden="true"
       className={cn("shrink-0", className)}
+      {...(drawable.color ? { style: { color: drawable.color } } : {})}
       data-workspace-icon="phosphor"
     >
-      {definition ? <path d={definition.path} /> : null}
+      <path d={drawable.path} />
     </svg>
   );
 }

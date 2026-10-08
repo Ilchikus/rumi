@@ -115,13 +115,14 @@ import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from ".
 import { useAppUpdate } from "./lib/appUpdate";
 import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
 import {
-  parseWorkspaceIcon,
   publishWorkspaceIcons,
   withWorkspaceNodeIcon,
-  workspaceFaviconHref,
   workspaceItemLabel
 } from "./lib/workspaceIcons";
+import { loadDrawableWorkspaceIcon, workspaceFaviconHref } from "./components/icons/drawableIcon";
+import { IconPickerDialog } from "./components/icons/IconPickerDialog";
 import { loadPhosphorCatalog } from "./components/icons/phosphorCatalog";
+import { loadEmojiCatalog } from "./components/emoji/emojiCatalogLoader";
 import { PageIconHeader } from "./components/icons/PageIconHeader";
 import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
@@ -196,10 +197,7 @@ const DeleteTrashItemDialog = lazy(async () => {
   const module = await import("./components/trash/TrashView");
   return { default: module.DeleteTrashItemDialog };
 });
-const IconPickerDialog = lazy(async () => {
-  const module = await import("./components/icons/IconPickerDialog");
-  return { default: module.IconPickerDialog };
-});
+
 
 type LoadState = "idle" | "loading" | "error";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -253,7 +251,7 @@ function showReservedSystemRouteToast(
   toast.info(
     <span>
       “{route.label}” is reserved for the system page{" "}
-      <a className="text-primary underline underline-offset-2 hover:text-primary-hover" href={route.url}>
+      <a className="text-action underline underline-offset-2 hover:text-action-hover" href={route.url}>
         {route.label}
       </a>.
     </span>
@@ -467,26 +465,32 @@ export function App(): ReactElement {
     publishWorkspaceIcons(tree);
   }, [tree]);
 
+  // The icon picker's emoji and Phosphor sets are large lazy chunks. Fetch them
+  // once the workspace is up and the browser is idle, so the picker never
+  // waits on the network.
+  const workspaceLoaded = tree !== null;
+  useEffect(() => {
+    if (!workspaceLoaded) return;
+    return whenBrowserIdle(() => {
+      void loadEmojiCatalog().then(loadPhosphorCatalog).catch(() => undefined);
+    });
+  }, [workspaceLoaded]);
+
   const workspaceIcon = tree?.icon;
   useEffect(() => {
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!link) return;
     link.dataset.rumiDefaultHref ??= link.getAttribute("href") ?? "";
     const defaultHref = link.dataset.rumiDefaultHref;
-    const icon = parseWorkspaceIcon(workspaceIcon);
     let active = true;
-
-    const apply = (href: string | null) => {
-      if (active) link.setAttribute("href", href ?? defaultHref);
+    const apply = (href: string) => {
+      if (active) link.setAttribute("href", href);
     };
-    if (icon?.type === "phosphor") {
-      void loadPhosphorCatalog().then(
-        (catalog) => apply(workspaceFaviconHref(icon, catalog.byName.get(icon.name)?.path)),
-        () => apply(null)
-      );
-    } else {
-      apply(icon ? workspaceFaviconHref(icon) : null);
-    }
+
+    void loadDrawableWorkspaceIcon(workspaceIcon).then(
+      (icon) => apply(icon ? workspaceFaviconHref(icon) : defaultHref),
+      () => apply(defaultHref)
+    );
     return () => {
       active = false;
     };
@@ -835,9 +839,10 @@ export function App(): ReactElement {
   // Leaving the open page cancels its autosave timer and can unmount the
   // editor, so capture the latest Markdown now. Without a running save,
   // start the normal save. A running save holds older text, and savePage
-  // would only join it, so save the captured text once that save settles:
-  // through the normal cycle if the page is still open (Settings, Uploads,
-  // Trash), or as a left page otherwise.
+  // would only join it, so save the captured text once that save settles.
+  // The left page may still be in state at that point (another page is
+  // loading, or Settings is open), so always save the capture itself; a later
+  // autosave of the same text is a harmless repeat.
   const saveOpenPageBeforeLeaving = useCallback(() => {
     if (saveStateRef.current !== "dirty") return;
     const leavingPage = pageRef.current;
@@ -856,10 +861,7 @@ export function App(): ReactElement {
     };
     draftBodyRef.current = snapshot.markdownBody;
     setDraftBody(snapshot.markdownBody);
-    void inFlight.catch(() => false).then(() => {
-      if (pageRef.current?.path === leavingPage.path) return;
-      return saveLeftPage(snapshot);
-    });
+    void inFlight.catch(() => false).then(() => saveLeftPage(snapshot));
   }, [getCurrentDraftBody, saveLeftPage]);
 
   const updateOpenPageImagePresentation = useCallback(async (
@@ -1326,11 +1328,13 @@ export function App(): ReactElement {
     }
 
     try {
-      await api.setWorkspaceItemIcon({ path: node.path, icon });
+      const result = await api.setWorkspaceItemIcon({ path: node.path, icon });
+      if (result.status === "saved") return;
+      setMessage("The icon was not saved because the item changed at the same time. Try again.");
     } catch (error) {
       setMessage(errorMessage(error));
-      void loadTree();
     }
+    void loadTree();
   }, [api, loadTree, setMessage, updatePageFrontmatter]);
 
   const uploadWorkspaceItemIcon = useCallback(
@@ -2797,15 +2801,15 @@ export function App(): ReactElement {
           }
         }
 
+        if (!result || result.status !== "saved") {
+          throw new Error("Rumi could not save this page after refreshing its latest version.");
+        }
+
         if (pageRef.current?.path !== savingPage.path) {
           // The user left while this save ran. Drop the cached copy so
           // returning loads what was written instead of the pre-save version.
-          if (result?.status === "saved") forgetCachedPage(savingPage.path);
-          return result?.status === "saved";
-        }
-
-        if (!result || result.status !== "saved") {
-          throw new Error("Rumi could not save this page after refreshing its latest version.");
+          forgetCachedPage(savingPage.path);
+          return true;
         }
 
         const savedPage = {
@@ -2844,10 +2848,11 @@ export function App(): ReactElement {
 
         return true;
       } catch (error) {
+        // Report the failure even after the user left: the edit was not written.
+        setMessage(errorMessage(error));
         if (pageRef.current?.path === savingPage.path) {
           saveStateRef.current = "error";
           setSaveState("error");
-          setMessage(errorMessage(error));
         }
         return false;
       }
@@ -3804,11 +3809,10 @@ export function App(): ReactElement {
         ) : page ? (
           <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
             <article className={EDITOR_PAGE_CONTAINER_CLASS}>
-              <div className="contents group/page-header" data-rumi-area-selection-exclude="">
+              <div className="contents" data-rumi-area-selection-exclude="">
                 {selectedNode ? (
                   <PageIconHeader
                     icon={selectedNode.icon}
-                    editable
                     onChangeIcon={() => openIconPicker(selectedNode)}
                   />
                 ) : null}
@@ -3874,7 +3878,7 @@ export function App(): ReactElement {
                 )}
               </div>
 
-              <div className={page.kind === "database" || Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
+              <div className={page.kind === "database" ? "mt-10" : Object.keys(page.frontmatter).length > 0 ? "mt-5" : "mt-4"}>
                 <Suspense fallback={null}>
                   <RumiBlockEditor
                     ref={editorRef}
@@ -3949,18 +3953,15 @@ export function App(): ReactElement {
       )}
 
       {iconPickerNode && (
-        <Suspense fallback={null}>
-          <IconPickerDialog
-            open
-            itemName={workspaceItemLabel(iconPickerNode, workspaceName)}
-            currentIcon={(tree && findWorkspaceNode(tree, iconPickerNode.path))?.icon}
-            onOpenChange={(open) => {
-              if (!open) setIconPickerNode(null);
-            }}
-            onSelect={(icon) => void changeWorkspaceItemIcon(iconPickerNode, icon)}
-            onUpload={uploadWorkspaceItemIcon}
-          />
-        </Suspense>
+        <IconPickerDialog
+          itemName={workspaceItemLabel(iconPickerNode, workspaceName)}
+          currentIcon={(tree && findWorkspaceNode(tree, iconPickerNode.path))?.icon}
+          onOpenChange={(open) => {
+            if (!open) setIconPickerNode(null);
+          }}
+          onSelect={(icon) => void changeWorkspaceItemIcon(iconPickerNode, icon)}
+          onUpload={uploadWorkspaceItemIcon}
+        />
       )}
 
       {revisionHistoryTarget && (
@@ -4135,4 +4136,13 @@ function mergeReferenceRepairIntoPage(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function whenBrowserIdle(callback: () => void): () => void {
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(callback, { timeout: 5000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const timer = window.setTimeout(callback, 2000);
+  return () => window.clearTimeout(timer);
 }

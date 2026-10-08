@@ -105,8 +105,8 @@
 
   .rumi-checkbox:checked,
   .rumi-checkbox:indeterminate {
-    border-color: hsl(var(--primary));
-    background-color: hsl(var(--primary));
+    border-color: hsl(var(--action));
+    background-color: hsl(var(--action));
   }
 
   .rumi-checkbox:checked {
@@ -299,8 +299,8 @@
   }
 
   .rumi-prosemirror li.rumi-task-item[data-checked="true"] > .rumi-task-checkbox {
-    border-color: hsl(var(--primary));
-    background: hsl(var(--primary));
+    border-color: hsl(var(--action));
+    background: hsl(var(--action));
   }
 
   .rumi-prosemirror li.rumi-task-item[data-checked="true"] > .rumi-list-item-content {

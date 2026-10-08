@@ -716,6 +716,9 @@ export function serializeMarkdown(doc: ProseMirrorNode): string {
 interface SerializeState {
   numberedCounters: number[] // Counter per indent level for numbered items
   prevNodeType: string | null
+  // Last block with content: an empty paragraph between numbered items keeps
+  // their numbering, matching Markdown where blank lines do not end a list.
+  prevContentType: string | null
   prevIndent: number
 }
 
@@ -723,15 +726,14 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
   const state: SerializeState = {
     numberedCounters: [0, 0, 0, 0, 0],
     prevNodeType: null,
+    prevContentType: null,
     prevIndent: -1
   }
 
   const listItemTypes = ["bullet_item", "numbered_item", "task_item"]
-  let lastIndex = -1
   let firstContentIndex = -1
   let lastContentIndex = -1
   parent.forEach((node, _, index) => {
-    lastIndex = index
     if (isEmptyParagraph(node)) return
     if (firstContentIndex < 0) firstContentIndex = index
     lastContentIndex = index
@@ -760,9 +762,10 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
 
     serializeBlock(node, lines, indent, index, state)
     state.prevNodeType = typeName
+    state.prevContentType = typeName
 
-    // Add empty line after last list item at end of document
-    if (isListItem && index === lastIndex) {
+    // End a final list with a blank line; trailing empty paragraphs are not stored.
+    if (isListItem && index === lastContentIndex) {
       lines.push("")
     }
   })
@@ -775,7 +778,7 @@ function isEmptyParagraph(node: ProseMirrorNode): boolean {
 function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, index: number, state?: SerializeState): void {
   // Initialize state if not provided (for recursive calls)
   if (!state) {
-    state = { numberedCounters: [0, 0, 0, 0, 0], prevNodeType: null, prevIndent: -1 }
+    state = { numberedCounters: [0, 0, 0, 0, 0], prevNodeType: null, prevContentType: null, prevIndent: -1 }
   }
 
   const typeName = node.type.name
@@ -809,7 +812,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
 
     case "numbered_item": {
       const itemIndent = node.attrs.indent || 0
-      if (state.prevNodeType !== "numbered_item") {
+      if (state.prevContentType !== "numbered_item") {
         state.numberedCounters.fill(0)
       } else if (itemIndent > state.prevIndent) {
         for (let i = itemIndent; i < state.numberedCounters.length; i++) {

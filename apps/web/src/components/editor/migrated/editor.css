@@ -523,7 +523,7 @@
 
 /* Links */
 .prosemirror-editor .ProseMirror a {
-  color: hsl(var(--primary));
+  color: hsl(var(--action));
   font-weight: 400;
   text-decoration: none;
   text-underline-offset: 0.18em;
@@ -531,7 +531,7 @@
 }
 
 .prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover {
-  color: hsl(var(--primary-hover));
+  color: hsl(var(--action-hover));
   text-decoration: underline;
   cursor: pointer;
 }
@@ -563,7 +563,7 @@
   bottom: -0.16em;
   width: 1.2em;
   height: 1.2em;
-  background-color: hsl(var(--primary));
+  background-color: var(--rumi-link-icon-color, hsl(var(--action)));
   -webkit-mask: var(--rumi-link-icon) center / contain no-repeat;
   mask: var(--rumi-link-icon) center / contain no-repeat;
 }
@@ -573,7 +573,8 @@
 }
 
 /* A target's custom icon replaces the kind glyph: Phosphor icons keep the
-   link-colored mask through --rumi-link-icon; emoji and uploads draw as-is. */
+   mask through --rumi-link-icon, in the link color unless the icon has its own
+   (--rumi-link-icon-color); emoji and uploads draw as-is. */
 .prosemirror-editor .ProseMirror .rumi-link-icon[data-custom-icon="emoji"]::before {
   content: attr(data-icon-emoji);
   background: none;
@@ -665,7 +666,7 @@
   border-radius: 3px;
   background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: hsl(var(--primary));
+  accent-color: hsl(var(--action));
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item .task-content {
@@ -861,13 +862,13 @@
   border-radius: 3px;
   background-color: hsl(var(--background));
   cursor: pointer;
-  accent-color: hsl(var(--primary));
+  accent-color: hsl(var(--action));
 }
 
 .prosemirror-editor .ProseMirror li.task-list-item input[type="checkbox"]:checked,
 .prosemirror-editor .ProseMirror .task-item input[type="checkbox"]:checked {
-  border-color: hsl(var(--primary));
-  background-color: hsl(var(--primary));
+  border-color: hsl(var(--action));
+  background-color: hsl(var(--action));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: center;
   background-repeat: no-repeat;

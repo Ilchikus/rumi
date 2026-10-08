@@ -67,6 +67,7 @@ import type {
 import {
   MAX_WORKSPACE_ICON_LENGTH,
   WORKSPACE_ICON_KEY,
+  isReservedPropertyName,
   type SetWorkspaceItemIconRequest
 } from "@rumi/contracts";
 import { DATABASE_PROPERTY_OPTION_COLORS } from "@rumi/contracts";
@@ -264,24 +265,31 @@ export class WorkspaceRuntime {
     }
 
     const documentPath = await this.iconDocumentPath(request.path);
-    const content = await fs.readFile(this.resolveAbsolutePath(documentPath), "utf8").catch(
-      (error: unknown) => {
+    const absolutePath = this.resolveAbsolutePath(documentPath);
+    let result: SavePageResult | null = null;
+
+    // Read, change only `icon`, and save against the version read. A save that
+    // races another write re-reads and tries again.
+    for (let attempt = 0; attempt < 3 && result?.status !== "saved"; attempt += 1) {
+      const content = await fs.readFile(absolutePath, "utf8").catch((error: unknown) => {
         if (isNodeError(error) && error.code === "ENOENT") return null;
         throw error;
-      }
-    );
-    const parsed = content === null ? { frontmatter: {}, body: "" } : parseMarkdownFile(content);
-    const frontmatter: FrontmatterRecord = { ...parsed.frontmatter };
-    if (icon) frontmatter[WORKSPACE_ICON_KEY] = icon;
-    else delete frontmatter[WORKSPACE_ICON_KEY];
+      });
+      const parsed = content === null ? { frontmatter: {}, body: "" } : parseMarkdownFile(content);
+      const frontmatter: FrontmatterRecord = { ...parsed.frontmatter };
+      if (icon) frontmatter[WORKSPACE_ICON_KEY] = icon;
+      else delete frontmatter[WORKSPACE_ICON_KEY];
 
-    return this.savePage({
-      path: documentPath,
-      ...(content === null ? {} : { baseVersion: hashText(content) }),
-      frontmatter,
-      markdownBody: parsed.body,
-      reason: "property-edit"
-    });
+      result = await this.savePage({
+        path: documentPath,
+        ...(content === null ? {} : { baseVersion: hashText(content) }),
+        frontmatter,
+        markdownBody: parsed.body,
+        reason: "property-edit"
+      });
+    }
+
+    return result!;
   }
 
   async readAsset(inputPath: string): Promise<WorkspaceAsset> {
@@ -1041,7 +1049,7 @@ export class WorkspaceRuntime {
     const property = request.property.trim();
 
     if (!property) throw new DatabaseRequestError("Database property name cannot be empty");
-    if (property === WORKSPACE_ICON_KEY) throw reservedIconPropertyError();
+    if (isReservedPropertyName(property)) throw reservedIconPropertyError();
     if (
       config.schema.properties[property] ||
       config.schema.unsupportedProperties.includes(property)
@@ -1495,7 +1503,7 @@ export class WorkspaceRuntime {
       throw new Error("Database property name cannot be empty");
     }
 
-    if (newName === WORKSPACE_ICON_KEY && property !== newName) {
+    if (isReservedPropertyName(newName) && property !== newName) {
       throw reservedIconPropertyError();
     }
 
@@ -1960,15 +1968,13 @@ export class WorkspaceRuntime {
   }
 
   // Tree icons come from the persisted index. A workspace that was never
-  // indexed serves its tree immediately and announces a tree change once the
-  // first build has read every icon; a failed build is retried on next load.
+  // indexed serves its tree immediately; the build announces the icons it
+  // finds through onIconsChanged. A failed build is retried on next load.
   private buildIconIndexInBackground(): void {
     if (this.workspaceIndex.isBuilt() || this.iconIndexBuild) return;
 
     const task: Promise<void> = this.workspaceIndex.ensureBuilt()
-      .then(() => {
-        this.events.publish({ name: "workspace.treeChanged", path: "", affects: ["tree"] });
-      }, (error: unknown) => {
+      .then(() => undefined, (error: unknown) => {
         console.error("Rumi could not build the workspace index:", error);
       })
       .finally(() => {

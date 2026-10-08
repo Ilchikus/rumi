@@ -135,18 +135,35 @@ describe("workspace item icons", () => {
     expect(findNode(await runtime.getTree(), "Idea.md")?.icon).toBe("🌙");
   });
 
+  it("announces icons changed by a full index rebuild", async () => {
+    const { root, runtime } = await workspace({ "Idea.md": "Idea" });
+    await runtime.getTree();
+    await runtime.flushBackgroundTasks();
+    const events: RumiEventEnvelope[] = [];
+    runtime.events.subscribe((event) => events.push(event));
+
+    await fs.writeFile(path.join(root, "Idea.md"), "---\nicon: 🌙\n---\nIdea", "utf8");
+    await runtime.rebuildIndex();
+    await runtime.rebuildIndex();
+
+    expect(events.filter((envelope) => envelope.event.name === "workspace.treeChanged")).toHaveLength(1);
+    expect(findNode(await runtime.getTree(), "Idea.md")?.icon).toBe("🌙");
+  });
+
   it("keeps the icon key out of database schemas", async () => {
     const { runtime } = await workspace({
       "Tasks/Tasks.db.md": "---\ntype: database\nproperties:\n  status:\n    type: text\n---\n"
     });
     const query = await runtime.queryDatabase({ databasePath: "Tasks" });
 
-    await expect(runtime.createDatabaseProperty({
-      databasePath: "Tasks",
-      baseVersion: query.schemaVersion,
-      property: "icon",
-      type: "text"
-    })).rejects.toThrow("reserved for the item icon");
+    for (const property of ["icon", "Icon"]) {
+      await expect(runtime.createDatabaseProperty({
+        databasePath: "Tasks",
+        baseVersion: query.schemaVersion,
+        property,
+        type: "text"
+      })).rejects.toThrow("reserved for the item icon");
+    }
     await expect(runtime.renameDatabaseProperty({
       databasePath: "Tasks",
       baseVersion: query.schemaVersion,

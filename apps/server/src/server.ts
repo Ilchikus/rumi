@@ -51,6 +51,7 @@ import {
   enterRumiEventSourceClient,
   WorkspaceRuntime
 } from "@rumi/runtime";
+import { MAX_WORKSPACE_ICON_LENGTH } from "@rumi/contracts";
 import { LocalPasswordAuth, type RumiAuthOptions } from "./auth";
 import { AppUpdateError, AppUpdater, type RumiAppOptions } from "./appUpdate";
 
@@ -770,13 +771,18 @@ export async function createRumiServer(options: CreateRumiServerOptions): Promis
 
   server.post<{ Body: SetWorkspaceItemIconRequest }>("/api/nodes/icon", async (request, reply) => {
     const body = request.body as Partial<SetWorkspaceItemIconRequest> | undefined;
-    if (typeof body?.path !== "string" || (body.icon !== null && typeof body.icon !== "string")) {
+    const validIcon = body?.icon === null ||
+      (typeof body?.icon === "string" && body.icon.trim().length <= MAX_WORKSPACE_ICON_LENGTH);
+    if (typeof body?.path !== "string" || !validIcon) {
       return reply.status(400).send({
-        error: { code: "invalid_request", message: "Icon requests need a path and an icon or null" }
+        error: {
+          code: "invalid_request",
+          message: `Icon requests need a path and an icon of at most ${MAX_WORKSPACE_ICON_LENGTH} characters, or null`
+        }
       });
     }
     request.log.info({ path: body.path, icon: body.icon }, "node.icon");
-    return runtime.setWorkspaceItemIcon({ path: body.path, icon: body.icon });
+    return runtime.setWorkspaceItemIcon({ path: body.path, icon: body.icon ?? null });
   });
 
   server.post<{ Body: MoveNodeRequest }>("/api/nodes/move", async (request) => {

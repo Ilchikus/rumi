@@ -152,11 +152,13 @@ For menus, dialogs, popovers, inputs, buttons, and similar UI, first look for an
 
 ## Frontend Color Rule
 
-Default the official web client to Tailwind's neutral palette, plus white and black. Sky 500 is the
-product accent for checked checkboxes and other explicitly accented interactive states; Sky 400 is
-the related hover color. Do not
+Default the official web client to Tailwind's neutral palette, plus white and black. Sky 500
+(`--primary`) is the product accent for explicitly accented interactive states. Links, checked
+checkboxes, and filled action buttons use the `--action` tokens one shade deeper: Sky 600 with a Sky
+700 hover in Light, and Sky 500 with a Sky 400 hover in Dark. Do not
 introduce other colored palettes for general layout, controls, borders, messages, decoration, or
-entity icons unless a product decision explicitly calls for color. Theme-aware Rose is reserved for
+entity icons unless a product decision explicitly calls for color. Custom Phosphor item icons may
+use the icon palette from [025](docs/Decisions/025-workspace-item-icons-in-frontmatter.md). Theme-aware Rose is reserved for
 inline code text, while the semantic destructive token is reserved for explicit destructive hover
 emphasis.
 

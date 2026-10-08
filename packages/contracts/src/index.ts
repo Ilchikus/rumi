@@ -19,11 +19,17 @@ export interface WorkspaceNode {
 }
 
 /**
- * Reserved frontmatter key holding an item's icon: one emoji, `ph:<name>` for
- * a Phosphor icon, or a workspace asset path such as `.assets/logo.png`.
+ * Reserved frontmatter key holding an item's icon: one emoji, `ph:<name>` or
+ * `ph:<name>:<color>` for a Phosphor icon, or a workspace asset path such as
+ * `.assets/logo.png`.
  */
 export const WORKSPACE_ICON_KEY = "icon";
 export const MAX_WORKSPACE_ICON_LENGTH = 512;
+
+/** `icon` in any letter case is reserved and never an ordinary or database property. */
+export function isReservedPropertyName(name: string): boolean {
+  return name.trim().toLowerCase() === WORKSPACE_ICON_KEY;
+}
 
 export interface SetWorkspaceItemIconRequest {
   /** Workspace node path: a page, folder, database, or "" for the workspace. */

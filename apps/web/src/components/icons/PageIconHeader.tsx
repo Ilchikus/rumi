@@ -3,49 +3,53 @@ import { Smiley } from "@phosphor-icons/react/dist/csr/Smiley";
 import { parseWorkspaceIcon } from "../../lib/workspaceIcons";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
+// The icon and the "Add icon" control share one square slot in the page's top
+// padding, 12px above the title: a 56px icon in 6px padding, offset left so the
+// icon lines up with the title text.
+const ICON_SLOT_CLASS = "absolute bottom-3 left-0 -ml-1.5 grid place-items-center rounded-lg p-1.5";
+const ICON_SIZE = 56;
+
 /**
  * The item's custom icon above its title. Without one, an "Add icon" control
- * appears on hover in the space above the title so the title never shifts.
- * Place inside an element with the `group/page-header` class.
+ * the same size appears in the same place while the pointer is over it. Both
+ * sit in the space above the title, so the title never shifts.
  */
 export function PageIconHeader({
   icon,
-  editable,
   onChangeIcon
 }: {
   icon: string | undefined;
-  editable: boolean;
   onChangeIcon: () => void;
-}): ReactElement | null {
-  if (parseWorkspaceIcon(icon)) {
-    return (
-      <button
-        type="button"
-        className="-ml-1.5 mb-3 grid rounded-lg p-1.5 text-neutral-500 transition-colors enabled:hover:bg-accent disabled:cursor-default"
-        aria-label="Change icon"
-        title={editable ? "Change icon" : undefined}
-        disabled={!editable}
-        onClick={onChangeIcon}
-        data-page-icon=""
-      >
-        <WorkspaceIcon icon={icon} size={56} />
-      </button>
-    );
-  }
-
-  if (!editable) return null;
+}): ReactElement {
+  const hasIcon = Boolean(parseWorkspaceIcon(icon));
 
   return (
     <div className="relative h-0">
-      <button
-        type="button"
-        className="absolute -top-9 left-0 flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/page-header:opacity-100"
-        onClick={onChangeIcon}
-        data-page-add-icon=""
-      >
-        <Smiley size={16} />
-        Add icon
-      </button>
+      {hasIcon ? (
+        <button
+          type="button"
+          className={`${ICON_SLOT_CLASS} text-neutral-500 transition-colors hover:bg-accent`}
+          aria-label="Change icon"
+          title="Change icon"
+          onClick={onChangeIcon}
+          data-page-icon=""
+        >
+          <WorkspaceIcon icon={icon} size={ICON_SIZE} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`${ICON_SLOT_CLASS} text-muted-foreground opacity-0 transition-[opacity,background-color,color] hover:bg-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100`}
+          aria-label="Add icon"
+          title="Add icon"
+          onClick={onChangeIcon}
+          data-page-add-icon=""
+        >
+          <span className="grid place-items-center" style={{ width: ICON_SIZE, height: ICON_SIZE }}>
+            <Smiley size={28} />
+          </span>
+        </button>
+      )}
     </div>
   );
 }

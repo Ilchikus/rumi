@@ -1168,12 +1168,14 @@ describe("workspace item icon API", () => {
       expect.arrayContaining([expect.objectContaining({ path: "Idea.md", icon: "ph:lightbulb" })])
     );
 
-    const invalid = await server.inject({
-      method: "POST",
-      url: "/api/nodes/icon",
-      payload: { path: "Idea.md", icon: 42 }
-    });
-    expect(invalid.statusCode).toBe(400);
+    for (const icon of [42, "x".repeat(600)]) {
+      const invalid = await server.inject({
+        method: "POST",
+        url: "/api/nodes/icon",
+        payload: { path: "Idea.md", icon }
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
     await server.close();
   });
 });

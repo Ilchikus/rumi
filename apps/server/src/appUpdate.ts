@@ -41,8 +41,7 @@ export class AppUpdater {
   private latest: { version: string | null; checkedAt: number } | null = null;
   private latestRequest: Promise<string | null> | null = null;
   private installKind: Promise<"global" | "npx" | "other"> | null = null;
-  private updateInFlight: Promise<string> | null = null;
-  private installedVersion: string | null = null;
+  private installation: Promise<string> | null = null;
   private restartRequested = false;
 
   constructor(private readonly options: RumiAppOptions | undefined) {}
@@ -99,16 +98,11 @@ export class AppUpdater {
    * restarts. Never restarts by itself.
    */
   async update(selfUpdateAllowed: boolean): Promise<string> {
-    if (this.installedVersion) return this.installedVersion;
-    this.updateInFlight ??= this.installLatest(selfUpdateAllowed)
-      .then((version) => {
-        this.installedVersion = version;
-        return version;
-      })
-      .finally(() => {
-        this.updateInFlight = null;
-      });
-    return this.updateInFlight;
+    this.installation ??= this.installLatest(selfUpdateAllowed).catch((error: unknown) => {
+      this.installation = null;
+      throw error;
+    });
+    return this.installation;
   }
 
   /** Hands off to the installed version; repeated calls do nothing. */
@@ -221,17 +215,27 @@ async function installGlobalVersion(version: string): Promise<void> {
   await runNpm(["install", "--global", `${RUMI_PACKAGE_NAME}@${version}`], NPM_TIMEOUT_MS);
 }
 
-// Prefer the npm that ships beside the running Node so service managers with a
-// minimal PATH still find it.
-async function npmExecutable(): Promise<string> {
-  const bundled = path.join(path.dirname(process.execPath), "npm");
-  return (await fs.access(bundled).then(() => true, () => false)) ? bundled : "npm";
+// Run the npm that ships with the running Node through that same Node binary,
+// so service managers with a minimal PATH (no `node`, no `npm`) still work.
+// Other layouts fall back to `npm` on PATH.
+async function npmCommand(): Promise<{ file: string; prefix: string[] }> {
+  const nodeDirectory = path.dirname(process.execPath);
+  const candidates = [
+    path.join(nodeDirectory, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    path.join(nodeDirectory, "node_modules", "npm", "bin", "npm-cli.js")
+  ];
+  for (const candidate of candidates) {
+    if (await fs.access(candidate).then(() => true, () => false)) {
+      return { file: process.execPath, prefix: [candidate] };
+    }
+  }
+  return { file: "npm", prefix: [] };
 }
 
 async function runNpm(args: string[], timeout: number): Promise<string> {
-  const executable = await npmExecutable();
+  const npm = await npmCommand();
   return new Promise((resolve, reject) => {
-    execFile(executable, args, { timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(npm.file, [...npm.prefix, ...args], { timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(String(stderr || error.message)));
         return;

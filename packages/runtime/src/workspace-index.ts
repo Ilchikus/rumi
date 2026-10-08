@@ -214,13 +214,19 @@ export class WorkspaceIndex {
 
   private async rebuildNow(): Promise<number> {
     const files = await collectMarkdownFiles(this.rootPath, "");
-    this.documents.clear();
-    this.icons.clear();
+    const rows: IndexedDocumentRow[] = [];
 
     for (let offset = 0; offset < files.length; offset += 32) {
-      const rows = await readRows(this.rootPath, files.slice(offset, offset + 32));
-      this.writeRows(rows);
+      rows.push(...await readRows(this.rootPath, files.slice(offset, offset + 32)));
     }
+
+    // Swap in the complete result at once, so search and tree icons never see
+    // a half-built index, and announce only icons that actually changed.
+    const previousIcons = new Map(this.icons);
+    this.documents.clear();
+    this.icons.clear();
+    this.writeRows(rows);
+    this.notifyIconsChanged(changedIconPaths(previousIcons, this.icons));
 
     this.builtAt = new Date().toISOString();
     await this.persist();
@@ -358,6 +364,11 @@ async function readRow(rootPath: string, relPath: string): Promise<IndexedDocume
     content_hash: hashText(content),
     modified_at: Math.round(stat.mtimeMs)
   };
+}
+
+function changedIconPaths(previous: Map<string, string>, next: Map<string, string>): string[] {
+  const paths = new Set([...previous.keys(), ...next.keys()]);
+  return [...paths].filter((path) => previous.get(path) !== next.get(path));
 }
 
 function iconFromFrontmatterJson(frontmatterJson: string): string | undefined {

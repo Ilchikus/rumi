@@ -71,6 +71,9 @@ describe("release theme palette", () => {
       ".prosemirror-editor .ProseMirror mark {\n  background-color: var(--highlight-background);\n  color: hsl(var(--foreground));"
     );
     expect(styles).toContain(".rumi-checkbox:checked {");
+    expect(styles).toContain(
+      ".rumi-checkbox:indeterminate {\n    border-color: hsl(var(--action));\n    background-color: hsl(var(--action));"
+    );
     expect(styles).toContain("stroke='white'");
     expect(databaseView).toContain("rumi-checkbox");
     expect(settingsView).toContain("rumi-checkbox");

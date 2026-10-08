@@ -783,30 +783,9 @@
   content: "•";
 }
 
-/* Numbered item - CSS counters for auto-numbering */
-.prosemirror-editor .ProseMirror {
-  counter-reset: numbered-item-0 numbered-item-1 numbered-item-2 numbered-item-3;
-}
-
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="0"] {
-  counter-increment: numbered-item-0;
-  counter-reset: numbered-item-1 numbered-item-2 numbered-item-3;
-}
-
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"] {
-  counter-increment: numbered-item-1;
-  counter-reset: numbered-item-2 numbered-item-3;
-}
-
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="2"] {
-  counter-increment: numbered-item-2;
-  counter-reset: numbered-item-3;
-}
-
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"] {
-  counter-increment: numbered-item-3;
-}
-
+/* Numbered item: the numbered list plugin sets each item's numbered-item
+   counter to the number the file is saved with, and the marker formats it
+   per indent level. */
 .prosemirror-editor .ProseMirror .numbered-item .list-decoration::before {
   color: inherit;
   font-variant-numeric: tabular-nums;
@@ -819,25 +798,17 @@
   justify-content: flex-start;
 }
 
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="0"] .numbered-decoration::before {
-  content: counter(numbered-item-0) ".";
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="0"] .numbered-decoration::before,
+.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"] .numbered-decoration::before {
+  content: counter(numbered-item) ".";
 }
 
 .prosemirror-editor .ProseMirror .numbered-item[data-indent="1"] .numbered-decoration::before {
-  content: counter(numbered-item-1, lower-alpha) ".";
+  content: counter(numbered-item, lower-alpha) ".";
 }
 
 .prosemirror-editor .ProseMirror .numbered-item[data-indent="2"] .numbered-decoration::before {
-  content: counter(numbered-item-2, lower-roman) ".";
-}
-
-.prosemirror-editor .ProseMirror .numbered-item[data-indent="3"] .numbered-decoration::before {
-  content: counter(numbered-item-3) ".";
-}
-
-/* Reset counters when a non-numbered-item block appears */
-.prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"] {
-  counter-set: numbered-item-0 1;
+  content: counter(numbered-item, lower-roman) ".";
 }
 
 /* Task item styling */

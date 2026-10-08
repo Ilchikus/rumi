@@ -136,9 +136,9 @@ describe("editor layout contracts", () => {
       editorStyles,
       '.prosemirror-editor .ProseMirror :is(.bullet-item, .numbered-item, .task-item)[data-indent]:not([data-indent="0"])::after'
     );
-    const counterRestartRule = cssRule(
+    const numberedMarkerRule = cssRule(
       editorStyles,
-      '.prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"]'
+      '.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"] .numbered-decoration::before'
     );
 
     expect(flatListRule).toContain("--rumi-list-decoration-width: 1.25em;");
@@ -164,8 +164,9 @@ describe("editor layout contracts", () => {
     expect(indentGuideRule).toContain("background-size: 1.5em 100%;");
     expect(indentGuideRule).toContain("hsl(var(--border))");
     expect(indentGuideRule).toContain("var(--rumi-list-guide-x)");
-    expect(counterRestartRule).toContain("counter-set: numbered-item-0 1;");
-    expect(counterRestartRule).not.toContain("counter-reset:");
+    // The numbered list plugin sets each item's number; CSS only formats it.
+    expect(numberedMarkerRule).toContain("counter(numbered-item, lower-alpha)");
+    expect(editorStyles).not.toMatch(/counter-(increment|reset|set):/u);
     expect(editorSchema).toContain('class: "list-decoration bullet-decoration"');
     expect(editorSchema).toContain('class: "list-decoration numbered-decoration"');
     expect(editorSchema).toContain('class: "list-item-content"');

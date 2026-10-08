@@ -21,6 +21,7 @@ import { mermaidModePlugin } from "./plugins/mermaidMode"
 import { buildInputRules, inlineCodeInputSessionPlugin } from "./inputrules"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
 import { taskListPlugin } from "./plugins/taskList"
+import { numberedListPlugin } from "./plugins/numberedList"
 import { slashCommandsPlugin } from "./plugins/slashCommands"
 import {
   selectionToolbarPlugin,
@@ -209,6 +210,7 @@ function ProseMirrorEditor(
         history(),
         pasteHandlerPlugin(schema),
         taskListPlugin(schema),
+        numberedListPlugin(),
         blockDragHandlePlugin(schema),
         slashCommandsPlugin(schema),
         selectionToolbarPlugin(schema, editorToolbar, allowedUploadFileTypes),

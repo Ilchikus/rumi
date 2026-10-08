@@ -712,23 +712,33 @@ export function serializeMarkdown(doc: ProseMirrorNode): string {
   return result
 }
 
-// Track state for serializing consecutive list items
-interface SerializeState {
-  numberedCounters: number[] // Counter per indent level for numbered items
-  prevNodeType: string | null
-  // Last block with content: an empty paragraph between numbered items keeps
-  // their numbering, matching Markdown where blank lines do not end a list.
-  prevContentType: string | null
-  prevIndent: number
+/**
+ * The number of each numbered item among `parent`'s children, by child index.
+ * The file and the editor both number lists with this, so they always agree.
+ * An empty paragraph does not end a list, matching Markdown where blank lines
+ * between items keep one list; any other block does. Each indent level counts
+ * on from its last item, and returning to a level restarts every deeper one.
+ */
+export function numberedItemNumbers(parent: ProseMirrorNode): Map<number, number> {
+  const numbers = new Map<number, number>()
+  let counters: number[] = []
+  parent.forEach((node, _offset, index) => {
+    if (isEmptyParagraph(node)) return
+    if (node.type.name !== "numbered_item") {
+      counters = []
+      return
+    }
+    const level: number = node.attrs.indent || 0
+    counters = counters.slice(0, level + 1)
+    counters[level] = (counters[level] ?? 0) + 1
+    numbers.set(index, counters[level])
+  })
+  return numbers
 }
 
 function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: string): void {
-  const state: SerializeState = {
-    numberedCounters: [0, 0, 0, 0, 0],
-    prevNodeType: null,
-    prevContentType: null,
-    prevIndent: -1
-  }
+  const numbers = numberedItemNumbers(parent)
+  let prevNodeType: string | null = null
 
   const listItemTypes = ["bullet_item", "numbered_item", "task_item"]
   let firstContentIndex = -1
@@ -742,7 +752,7 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
   parent.forEach((node, _, index) => {
     const typeName = node.type.name
     const isListItem = listItemTypes.includes(typeName)
-    const wasListItem = state.prevNodeType && listItemTypes.includes(state.prevNodeType)
+    const wasListItem = prevNodeType !== null && listItemTypes.includes(prevNodeType)
 
     // An empty paragraph between blocks is one blank line beyond the normal
     // separator. Leading and trailing empty paragraphs are not stored.
@@ -750,7 +760,7 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
       if (index > firstContentIndex && index < lastContentIndex) {
         if (wasListItem) lines.push("")
         lines.push("")
-        state.prevNodeType = typeName
+        prevNodeType = typeName
       }
       return
     }
@@ -760,9 +770,8 @@ function serializeBlocks(parent: ProseMirrorNode, lines: string[], indent: strin
       lines.push("")
     }
 
-    serializeBlock(node, lines, indent, index, state)
-    state.prevNodeType = typeName
-    state.prevContentType = typeName
+    serializeBlock(node, lines, indent, numbers.get(index))
+    prevNodeType = typeName
 
     // End a final list with a blank line; trailing empty paragraphs are not stored.
     if (isListItem && index === lastContentIndex) {
@@ -775,21 +784,8 @@ function isEmptyParagraph(node: ProseMirrorNode): boolean {
   return node.type.name === "paragraph" && node.content.size === 0
 }
 
-function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, index: number, state?: SerializeState): void {
-  // Initialize state if not provided (for recursive calls)
-  if (!state) {
-    state = { numberedCounters: [0, 0, 0, 0, 0], prevNodeType: null, prevContentType: null, prevIndent: -1 }
-  }
-
-  const typeName = node.type.name
-  const isListItem = typeName === "bullet_item" || typeName === "numbered_item" || typeName === "task_item"
-
-  // Reset numbered counters when transitioning from list to non-list
-  if (!isListItem && state.prevNodeType && ["bullet_item", "numbered_item", "task_item"].includes(state.prevNodeType)) {
-    state.numberedCounters = [0, 0, 0, 0, 0]
-  }
-
-  switch (typeName) {
+function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, listNumber = 1): void {
+  switch (node.type.name) {
     case "paragraph":
       lines.push(indent + serializeInline(node))
       lines.push("")
@@ -805,32 +801,12 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       const itemIndent = node.attrs.indent || 0
       const indentStr = "    ".repeat(itemIndent)
       lines.push(indent + indentStr + "- " + serializeInline(node))
-      state.prevNodeType = typeName
-      state.prevIndent = itemIndent
       break
     }
 
     case "numbered_item": {
-      const itemIndent = node.attrs.indent || 0
-      if (state.prevContentType !== "numbered_item") {
-        state.numberedCounters.fill(0)
-      } else if (itemIndent > state.prevIndent) {
-        for (let i = itemIndent; i < state.numberedCounters.length; i++) {
-          state.numberedCounters[i] = 0
-        }
-      } else if (itemIndent < state.prevIndent) {
-        // Keep the existing counter at the level we return to, but reset every
-        // deeper level so a later nested list begins at one again.
-        for (let i = itemIndent + 1; i < state.numberedCounters.length; i++) {
-          state.numberedCounters[i] = 0
-        }
-      }
-      state.numberedCounters[itemIndent]++
-      const num = state.numberedCounters[itemIndent]
-      const indentStr = "    ".repeat(itemIndent)
-      lines.push(indent + indentStr + `${num}. ` + serializeInline(node))
-      state.prevNodeType = typeName
-      state.prevIndent = itemIndent
+      const indentStr = "    ".repeat(node.attrs.indent || 0)
+      lines.push(indent + indentStr + `${listNumber}. ` + serializeInline(node))
       break
     }
 
@@ -840,8 +816,6 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       const indentStr = "    ".repeat(itemIndent)
       const content = serializeInline(node)
       lines.push(indent + indentStr + `- ${checkbox}` + (content ? ` ${content}` : ""))
-      state.prevNodeType = typeName
-      state.prevIndent = itemIndent
       break
     }
 
@@ -974,7 +948,7 @@ function serializeListItem(node: ProseMirrorNode, lines: string[], indent: strin
         lines.push(indent + bullet + serializeInline(child))
       } else {
         const subLines: string[] = []
-        serializeBlock(child, subLines, "", 0)
+        serializeBlock(child, subLines, "")
         if (subLines.length > 0) {
           lines.push(indent + bullet + subLines[0])
           for (let i = 1; i < subLines.length; i++) {
@@ -985,7 +959,7 @@ function serializeListItem(node: ProseMirrorNode, lines: string[], indent: strin
       first = false
     } else {
       // Subsequent children are indented
-      serializeBlock(child, lines, indent + "  ", 0)
+      serializeBlock(child, lines, indent + "  ")
     }
   })
 }

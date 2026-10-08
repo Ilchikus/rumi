@@ -6,6 +6,7 @@ import type {
   FrontmatterRecord,
   PageDatabaseContext
 } from "@rumi/contracts";
+import { WORKSPACE_ICON_KEY, isReservedPropertyName } from "@rumi/contracts";
 import { ArrowsClockwise } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
@@ -19,6 +20,7 @@ import { Square } from "@phosphor-icons/react/dist/csr/Square";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -184,6 +186,7 @@ export function renameFrontmatterProperty(
   if (
     !normalizedName ||
     normalizedName === previousName ||
+    isReservedPropertyName(normalizedName) ||
     Object.prototype.hasOwnProperty.call(frontmatter, normalizedName)
   ) {
     return frontmatter;
@@ -220,7 +223,10 @@ export function PageProperties({
   );
   const propertyNames = [
     ...visibleSchemaPropertyNames,
-    ...Object.keys(frontmatter).filter((name) => !schemaPropertyNames.includes(name))
+    // The item icon lives in frontmatter but is edited through the icon picker.
+    ...Object.keys(frontmatter).filter(
+      (name) => !schemaPropertyNames.includes(name) && name !== WORKSPACE_ICON_KEY
+    )
   ];
   const properties = propertyNames.map((name) => [name, frontmatter[name]] as const);
   const editable = Boolean(onChange);
@@ -259,7 +265,7 @@ export function PageProperties({
   };
 
   return (
-    <section className="group/properties relative mt-4" aria-label="Page properties">
+    <section className="group/properties relative" aria-label="Page properties">
       {(properties.length > 0 || database) && (
         <div className="mb-1 flex min-h-7 items-center gap-1">
           {properties.length > 0 && (
@@ -372,7 +378,10 @@ export function PageProperties({
               type="button"
               size="sm"
               variant="ghost"
-              className="pointer-events-none mt-1 h-7 text-muted-foreground opacity-0 transition-opacity group-hover/properties:pointer-events-auto group-hover/properties:opacity-100 group-focus-within/properties:pointer-events-auto group-focus-within/properties:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+              className={cn(
+                "pointer-events-none h-7 px-0 text-muted-foreground opacity-0 transition-[opacity,color] hover:bg-transparent hover:text-foreground group-hover/properties:pointer-events-auto group-hover/properties:opacity-100 group-focus-within/properties:pointer-events-auto group-focus-within/properties:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
+                properties.length > 0 && "mt-1"
+              )}
             >
               <Plus size={13} aria-hidden="true" />
               Create new property
@@ -720,6 +729,12 @@ function PropertyNameInput({
       return;
     }
 
+    if (nextName !== name && isReservedPropertyName(nextName)) {
+      setDraft(name);
+      setError("“icon” is reserved for the item icon.");
+      return;
+    }
+
     setError("");
     onRename(nextName);
     onFinish();
@@ -861,7 +876,7 @@ function PropertyValueEditor({
         >
           <Icon
             size={16}
-            className={checked ? "text-primary" : "text-neutral-400"}
+            className={checked ? "text-action" : "text-neutral-400"}
             aria-hidden="true"
           />
           <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>
@@ -1219,7 +1234,7 @@ function CheckboxValue({ checked }: { checked: boolean }): ReactElement {
     <span className="inline-flex items-center" title={checked ? "Checked" : "Unchecked"}>
       <Icon
         size={16}
-        className={checked ? "text-primary" : "text-neutral-400"}
+        className={checked ? "text-action" : "text-neutral-400"}
         aria-hidden="true"
       />
       <span className="sr-only">{checked ? "Checked" : "Unchecked"}</span>

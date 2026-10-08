@@ -5,7 +5,8 @@ coverage/
 .vite/
 .turbo/
 .rumi/
-/docs/
+/docs/*
+!/docs/changelog.md
 
 .env
 .env.*

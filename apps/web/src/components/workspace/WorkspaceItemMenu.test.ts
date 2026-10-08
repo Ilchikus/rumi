@@ -27,6 +27,7 @@ describe("workspace-item action model", () => {
       "copy-relative-path",
       "pin",
       "rename",
+      "change-icon",
       "move",
       "see-revisions",
       "move-to-trash"
@@ -47,6 +48,7 @@ describe("workspace-item action model", () => {
       "copy-relative-path",
       "pin",
       "rename",
+      "change-icon",
       "move",
       "convert-to-database",
       "see-revisions",
@@ -63,6 +65,7 @@ describe("workspace-item action model", () => {
       "copy-relative-path",
       "pin",
       "rename",
+      "change-icon",
       "move",
       "convert-to-folder",
       "see-revisions",
@@ -94,13 +97,15 @@ describe("workspace-item action model", () => {
       "new-folder",
       "new-database",
       "copy-url",
-      "copy-relative-path"
+      "copy-relative-path",
+      "change-icon"
     ]);
     const { companionPath: _companionPath, ...rootWithoutCompanion } = root;
     expect(actionIds(rootWithoutCompanion)).toEqual([
       "new-page",
       "new-folder",
-      "new-database"
+      "new-database",
+      "change-icon"
     ]);
   });
 

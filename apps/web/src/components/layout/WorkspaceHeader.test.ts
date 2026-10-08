@@ -70,6 +70,7 @@ describe("workspace address bar", () => {
         onPinnedChange: () => undefined,
         onMoveToTrash: async () => true,
         onSeeRevisions: () => undefined,
+        onChangeIcon: () => undefined,
         leadingControls: createElement("button", { "aria-label": "Create new" }, "+")
       })
     );
@@ -81,7 +82,7 @@ describe("workspace address bar", () => {
     expect(markup).toContain("pointer-events-none");
     expect(markup).toContain("pointer-events-auto");
     expect(markup).toContain('data-rumi-address-bar=""');
-    expect(markup).toMatch(/<button[^>]*>notes<\/button>/u);
+    expect(markup).toMatch(/<button[^>]*><span[^>]*>notes<\/span><\/button>/u);
     expect(markup).toContain("bg-surface-subtle");
     expect(markup).toContain("Launch plan");
     expect(markup).toContain('aria-label="Toggle search (Command K)"');

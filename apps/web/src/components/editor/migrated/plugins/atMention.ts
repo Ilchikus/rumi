@@ -13,6 +13,8 @@ import {
 } from "./suggestionMenus"
 
 export { mentionKindForPath } from "../mentionTypes"
+import { drawableWorkspaceIcon, loadDrawableWorkspaceIcon } from "../../../icons/drawableIcon"
+import { workspaceIconForPath } from "../../../../lib/workspaceIcons"
 
 export const atMentionPluginKey = new PluginKey("atMention")
 
@@ -404,13 +406,33 @@ export function createMentionLinkContent(schema: Schema, file: FileItem): Fragme
   const marker = schema.nodes.link_marker.create({
     href: file.path,
     linkType: "internal",
-    mentionKind
+    mentionKind,
+    mention: true
   })
   return Fragment.fromArray([marker, label])
 }
 
 function mentionIconMarkup(file: FileItem): string {
-  return MENTION_ICONS[renderedMentionKind(file.kind, file.path)]
+  return customIconMarkup(workspaceIconForPath(file.path)) ??
+    MENTION_ICONS[renderedMentionKind(file.kind, file.path)]
+}
+
+// A custom item icon replaces the kind icon. A Phosphor icon appears once its
+// catalog has loaded; until then the kind icon stays.
+function customIconMarkup(value: string | undefined): string | null {
+  const icon = drawableWorkspaceIcon(value)
+  if (!icon) {
+    void loadDrawableWorkspaceIcon(value).catch(() => undefined)
+    return null
+  }
+  if (icon.type === "emoji") {
+    return `<span class="at-mention-emoji" aria-hidden="true">${escapeHtml(icon.emoji)}</span>`
+  }
+  if (icon.type === "image") {
+    return `<img class="at-mention-image" src="${escapeHtml(icon.url)}" alt="" aria-hidden="true">`
+  }
+  const style = icon.color ? ` style="color:${escapeHtml(icon.color)}"` : ""
+  return `<svg viewBox="0 0 256 256" aria-hidden="true"${style}><path d="${escapeHtml(icon.path)}"/></svg>`
 }
 
 function highlightMatch(text: string, query: string): string {

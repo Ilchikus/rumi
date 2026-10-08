@@ -16,6 +16,7 @@ import {
   type EmojiDefinition,
   type EmojiSearchResult
 } from "../../../emoji/emojiCatalog";
+import { loadEmojiCatalog, peekEmojiCatalog } from "../../../emoji/emojiCatalogLoader";
 import {
   claimSuggestionMenu,
   suggestionMenuClaim
@@ -76,21 +77,6 @@ interface EmojiSuggestionMeta {
 
 const PICKER_ID = "rumi-editor-emoji-picker";
 const RECENT_LIMIT = 24;
-let loadedEmojiSearch: EmojiSearchFunction | null = null;
-let emojiSearchPromise: Promise<EmojiSearchFunction> | null = null;
-
-function loadEmojiSearch(): Promise<EmojiSearchFunction> {
-  emojiSearchPromise ??= import("../../../emoji/emojiCatalog")
-    .then((module) => {
-      loadedEmojiSearch = module.searchEmoji;
-      return module.searchEmoji;
-    })
-    .catch((error: unknown) => {
-      emojiSearchPromise = null;
-      throw error;
-    });
-  return emojiSearchPromise;
-}
 
 export function emojiSuggestionsPlugin(
   schema: Schema,
@@ -218,8 +204,8 @@ export function emojiSuggestionsPlugin(
           } satisfies EmojiSuggestionMeta);
         transaction = claimSuggestionMenu(transaction, "emoji");
         view.dispatch(transaction);
-        if (!options.searchEmoji && !loadedEmojiSearch) {
-          void loadEmojiSearch().catch(() => undefined);
+        if (!options.searchEmoji && !peekEmojiCatalog()) {
+          void loadEmojiCatalog().catch(() => undefined);
         }
         return true;
       },
@@ -235,11 +221,11 @@ export function emojiSuggestionsPlugin(
         }
         if (!pluginState.active || !pluginState.range) return false;
 
-        const searchEmoji = options.searchEmoji ?? loadedEmojiSearch;
+        const searchEmoji = options.searchEmoji ?? peekEmojiCatalog()?.searchEmoji;
         if (!searchEmoji && event.key === "Enter") {
           event.preventDefault();
           event.stopPropagation();
-          void loadEmojiSearch().catch(() => undefined);
+          void loadEmojiCatalog().catch(() => undefined);
           return true;
         }
         const results = searchEmoji
@@ -334,11 +320,11 @@ export function emojiSuggestionsPlugin(
           return;
         }
 
-        const searchEmoji = options.searchEmoji ?? loadedEmojiSearch;
+        const searchEmoji = options.searchEmoji ?? peekEmojiCatalog()?.searchEmoji;
         if (!searchEmoji) {
           if (!searchLoadRequested) {
             searchLoadRequested = true;
-            void loadEmojiSearch().then(
+            void loadEmojiCatalog().then(
               () => {
                 searchLoadRequested = false;
                 if (!destroyed) renderPicker();

@@ -154,6 +154,7 @@ async function renderSidebar(
         setPinnedPaths((current) => setPinnedItemPath(current, node.path, pinned));
       },
       onSeeRevisions: () => undefined,
+      onChangeIcon: () => undefined,
       onDeleteNode: async () => true,
       onOpenSettings: () => undefined,
       onOpenMedia: () => undefined,

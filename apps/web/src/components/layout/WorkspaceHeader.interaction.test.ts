@@ -63,6 +63,7 @@ describe("workspace breadcrumb context actions", () => {
       "Copy relative path",
       "Pin",
       "Rename",
+      "Change icon",
       "Move",
       "Convert to database",
       "See revisions",
@@ -152,6 +153,7 @@ async function renderHeader(overrides: Record<string, unknown> = {}): Promise<vo
       onPinnedChange: () => undefined,
       onMoveToTrash: async () => true,
       onSeeRevisions: () => undefined,
+      onChangeIcon: () => undefined,
       leadingControls: null,
       ...overrides
     }));

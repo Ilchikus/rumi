@@ -68,6 +68,17 @@ are enforced as data arrives, and a verified upload appears atomically in `.asse
 invalid uploads are removed. Inventory and read responses never expose a raw workspace filesystem
 path.
 
+`POST /api/nodes/icon` accepts `{ path, icon }` for a page, folder, database, or the workspace
+(`""`) and sets or removes (`icon: null`) the frontmatter `icon` of the item's file, creating a
+missing folder companion. It returns the page save result. `GET /api/tree` carries each node's raw
+`icon`; see [025](../Decisions/025-workspace-item-icons-in-frontmatter.md). Icon changes from any
+source publish `workspace.treeChanged`.
+
+`GET /api/app` reports `{ version, latestVersion, updateAvailable, update: { mode, command? } }`.
+`POST /api/app/update` installs the advertised npm release and replies `{ status: "restarting" }`
+before the server restarts; it is refused unless `mode` is `self` for that request. See
+[026](../Decisions/026-in-app-update-and-restart.md).
+
 `POST /api/nodes/delete` moves the requested user-content payload to workspace-local Trash.
 `GET /api/trash` lists recoverable items and their original relative paths.
 `GET /api/trash/:id` reads a recoverable page for the muted read-only Trash view.
@@ -113,6 +124,11 @@ and directly shareable.
 `POST /api/auth/login` and `POST /api/auth/logout`; every other workspace API route, including the
 event stream, requires a valid session. None mode leaves workspace routes available to the network
 boundary selected by the operator.
+
+Requests rejected for a missing or expired session return 401 with code `authentication_required`.
+The official client treats that code as "session ended": it shows sign-in over the still-mounted
+workspace instead of reporting each failed request, and resumes after signing in. A failed login
+returns 401 with `invalid_credentials` and never triggers that flow.
 
 ## Event Stream
 

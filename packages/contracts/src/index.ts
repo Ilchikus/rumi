@@ -14,6 +14,28 @@ export interface WorkspaceNode {
   kind: WorkspaceNodeKind;
   children?: WorkspaceNode[];
   companionPath?: string;
+  /** Raw frontmatter `icon` of the node's page or companion; see WORKSPACE_ICON_KEY. */
+  icon?: string;
+}
+
+/**
+ * Reserved frontmatter key holding an item's icon: one emoji, `ph:<name>` or
+ * `ph:<name>:<color>` for a Phosphor icon, or a workspace asset path such as
+ * `.assets/logo.png`.
+ */
+export const WORKSPACE_ICON_KEY = "icon";
+export const MAX_WORKSPACE_ICON_LENGTH = 512;
+
+/** `icon` in any letter case is reserved and never an ordinary or database property. */
+export function isReservedPropertyName(name: string): boolean {
+  return name.trim().toLowerCase() === WORKSPACE_ICON_KEY;
+}
+
+export interface SetWorkspaceItemIconRequest {
+  /** Workspace node path: a page, folder, database, or "" for the workspace. */
+  path: string;
+  /** New icon value, or null to remove it. */
+  icon: string | null;
 }
 
 export interface CreatePageRequest {
@@ -603,4 +625,26 @@ export interface AuthSessionResult {
 export interface AuthLoginRequest {
   username: string;
   password: string;
+}
+
+/**
+ * `self`: this server can install the latest npm release and restart itself.
+ * `manual`: the operator updates with `command`. `disabled`: no update checks.
+ */
+export type AppUpdateMode = "self" | "manual" | "disabled";
+
+export interface AppInfoResult {
+  /** Installed `@rumi-md/server` version, or null for a development server. */
+  version: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  update: {
+    mode: AppUpdateMode;
+    command?: string;
+  };
+}
+
+export interface AppUpdateResult {
+  status: "restarting";
+  version: string;
 }

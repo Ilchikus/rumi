@@ -33,10 +33,7 @@ export function rewriteMarkdownReferences(
         const destination = rewriteDestinationBody(destinationBody, previous, next, sourcePath);
         if (!destination.changed) return match;
         referenceCount += 1;
-        const nextLabel = imagePrefix || label !== displayTitle(previous)
-          ? label
-          : displayTitle(next);
-        return `${imagePrefix}[${nextLabel}](${destination.value})`;
+        return `${imagePrefix}[${imagePrefix ? label : repairedLinkLabel(label, previous, next)}](${destination.value})`;
       }
     );
 
@@ -75,10 +72,38 @@ export function rewriteMarkdownReferences(
     return rewritten;
   };
 
+  const withIcon = rewriteFrontmatterIcon(markdown, previous, next, () => {
+    referenceCount += 1;
+  });
+
   return {
-    markdown: rewriteOutsideCode(markdown, rewriteText),
+    markdown: rewriteOutsideCode(withIcon, rewriteText),
     referenceCount
   };
+}
+
+// An uploaded item icon is a workspace-root path in the top-level frontmatter
+// `icon` key, e.g. `icon: .assets/logo.png`, so it follows asset moves too.
+function rewriteFrontmatterIcon(
+  markdown: string,
+  previousPath: string,
+  nextPath: string,
+  onRewrite: () => void
+): string {
+  const frontmatter = markdown.match(/^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/u)?.[0];
+  if (!frontmatter) return markdown;
+
+  const rewritten = frontmatter.replace(
+    /^(icon:[ \t]*)(["']?)([^"'\r\n]+?)\2([ \t]*)$/mu,
+    (match, opening: string, quote: string, value: string, trailing: string) => {
+      const mapped = rewriteReferenceTarget(value, previousPath, nextPath, undefined, false);
+      if (!mapped) return match;
+      onRewrite();
+      return `${opening}${quote}${mapped}${quote}${trailing}`;
+    }
+  );
+
+  return rewritten === frontmatter ? markdown : rewritten + markdown.slice(frontmatter.length);
 }
 
 function rewriteDestinationBody(
@@ -215,6 +240,15 @@ function firstSuffixIndex(target: string): number {
 
 function stripMarkdownExtension(value: string): string {
   return value.toLocaleLowerCase().endsWith(".md") ? value.slice(0, -3) : value;
+}
+
+// Labels generated from the target's title follow a rename: plain links that
+// show the title, and `@` mentions. Custom labels are the author's text.
+function repairedLinkLabel(label: string, previousPath: string, nextPath: string): string {
+  const previousTitle = displayTitle(previousPath);
+  if (label === previousTitle) return displayTitle(nextPath);
+  if (label === `@${previousTitle}`) return `@${displayTitle(nextPath)}`;
+  return label;
 }
 
 function displayTitle(value: string): string {

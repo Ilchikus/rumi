@@ -1,3 +1,4 @@
+import { isReservedPropertyName } from "@rumi/contracts";
 import { BracketsCurly } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CalendarBlank } from "@phosphor-icons/react/dist/csr/CalendarBlank";
 import { CheckSquare } from "@phosphor-icons/react/dist/csr/CheckSquare";
@@ -59,6 +60,9 @@ export function propertyCreateNameError(
 ): string {
   const propertyName = name.trim();
   if (!propertyName) return "Enter a property name.";
+  if (isReservedPropertyName(propertyName)) {
+    return "“icon” is reserved for the item icon.";
+  }
   if (existingNames.some(
     (existing) => existing.toLocaleLowerCase() === propertyName.toLocaleLowerCase()
   )) {

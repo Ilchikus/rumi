@@ -3,7 +3,7 @@ status: draft
 area: file-format
 owner: shared
 created: "2026-06-22"
-updated: "2026-08-22"
+updated: "2026-10-05"
 ---
 # File Format
 
@@ -13,6 +13,17 @@ Within prose, a single LF is a soft line break in the same paragraph and a blank
 paragraph/block boundary. The official editor displays soft line breaks visibly, matching Obsidian's
 non-strict line-break mode. Explicit Markdown hard breaks remain distinct and readable; Rumi does not
 require trailing spaces for ordinary multiline prose.
+
+Blocks are separated by one blank line (none between consecutive list items). Each additional blank
+line between two blocks is one empty paragraph, in both directions; leading and trailing blank lines
+in the body are not kept. A single blank line between list items is a loose list, not an empty
+paragraph.
+
+The optional top-level frontmatter key `icon` holds an item's icon: one emoji, `ph:<name>` for a
+Phosphor regular icon (`ph:<name>:<color>` for a colored one, where `<color>` is a Tailwind color
+name such as `blue`), or a `.assets/` image path. Folders, databases, and the workspace keep it in
+their companion or home page. `icon` is reserved and is never a database property. See
+[025](../Decisions/025-workspace-item-icons-in-frontmatter.md).
 
 Avoid:
 

@@ -19,6 +19,7 @@
     "check": "corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
     "check:server-package": "corepack pnpm --filter @rumi-md/server release:check",
     "generate:emoji": "node scripts/generate-emoji-catalog.mjs",
+    "generate:phosphor": "node scripts/generate-phosphor-catalog.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

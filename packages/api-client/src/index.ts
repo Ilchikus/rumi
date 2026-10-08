@@ -1,4 +1,6 @@
 import type {
+  AppInfoResult,
+  AppUpdateResult,
   AssetListResult,
   AuthLoginRequest,
   AuthSessionResult,
@@ -36,6 +38,7 @@ import type {
   SearchWorkspaceRequest,
   SearchWorkspaceResult,
   SetDatabaseRecordPagePropertyVisibilityRequest,
+  SetWorkspaceItemIconRequest,
   TrashListResult,
   TrashPageResult,
   UpdateImagePresentationRequest,
@@ -56,6 +59,27 @@ export interface RumiApiClientOptions {
   fetchImpl?: typeof fetch;
   eventSourceImpl?: typeof EventSource;
   clientId?: string;
+  /** Called before the request rejects when the server reports a missing or expired session. */
+  onAuthenticationRequired?: () => void;
+}
+
+export class RumiApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  /** The response's `error` object, for route-specific fields such as an update command. */
+  readonly details?: Record<string, unknown>;
+
+  constructor(message: string, status: number, code?: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "RumiApiError";
+    this.status = status;
+    if (code) this.code = code;
+    if (details) this.details = details;
+  }
+}
+
+export function isAuthenticationRequiredError(error: unknown): boolean {
+  return error instanceof RumiApiError && error.code === "authentication_required";
 }
 
 export class RumiApiClient {
@@ -63,12 +87,16 @@ export class RumiApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly eventSourceImpl?: typeof EventSource;
+  private readonly onAuthenticationRequired?: () => void;
 
   constructor(options: RumiApiClientOptions = {}) {
     this.clientId = options.clientId ?? createClientId();
     this.baseUrl = options.baseUrl ?? "";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.eventSourceImpl = options.eventSourceImpl ?? globalThis.EventSource;
+    if (options.onAuthenticationRequired) {
+      this.onAuthenticationRequired = options.onAuthenticationRequired;
+    }
   }
 
   async getAuthSession(): Promise<AuthSessionResult> {
@@ -89,6 +117,15 @@ export class RumiApiClient {
     return this.request<AuthSessionResult>("/api/auth/logout", {
       method: "POST"
     });
+  }
+
+  async getAppInfo(): Promise<AppInfoResult> {
+    return this.request<AppInfoResult>("/api/app");
+  }
+
+  /** Installs the latest release; the server restarts after replying. */
+  async updateApp(): Promise<AppUpdateResult> {
+    return this.request<AppUpdateResult>("/api/app/update", { method: "POST" });
   }
 
   async getWorkspace(): Promise<OpenWorkspaceResult> {
@@ -352,6 +389,14 @@ export class RumiApiClient {
     });
   }
 
+  async setWorkspaceItemIcon(request: SetWorkspaceItemIconRequest): Promise<SavePageResult> {
+    return this.request<SavePageResult>("/api/nodes/icon", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
   async moveNode(request: MoveNodeRequest): Promise<WorkspaceMutationResult> {
     return this.request<WorkspaceMutationResult>("/api/nodes/move", {
       method: "POST",
@@ -443,11 +488,19 @@ export class RumiApiClient {
         return data as T;
       }
 
+      const errorBody = isObject(data) && isObject(data.error) ? data.error : null;
       const message =
-        isObject(data) && isObject(data.error) && typeof data.error.message === "string"
-          ? data.error.message
+        typeof errorBody?.message === "string"
+          ? errorBody.message
           : `Request failed with status ${response.status}`;
-      throw new Error(message);
+      const code = typeof errorBody?.code === "string" ? errorBody.code : undefined;
+      const error = new RumiApiError(message, response.status, code, errorBody ?? undefined);
+
+      if (response.status === 401 && isAuthenticationRequiredError(error)) {
+        this.onAuthenticationRequired?.();
+      }
+
+      throw error;
     }
 
     return data as T;

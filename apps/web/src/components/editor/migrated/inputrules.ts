@@ -39,6 +39,40 @@ function validInlineCodeInputSession(
   return state.doc.resolve(session.openerPos).parent === selection.$from.parent
 }
 
+// Pasted text joins a pending inline-code span as literal text: it is about to
+// become code, so links, URLs, SVG files, and rich marks do not apply. Line
+// breaks cannot live in inline code, so multi-line clipboard text is left to
+// the normal paste path, which ends the session.
+export function createInlineCodeSessionPasteTransaction(
+  state: import("prosemirror-state").EditorState,
+  text: string
+): import("prosemirror-state").Transaction | null {
+  const session = inlineCodeInputSessionKey.getState(state)
+  const pastedText = text.replace(/(?:\r\n?|\n)+$/u, "")
+  if (
+    !session ||
+    !pastedText ||
+    /[\r\n]/u.test(pastedText) ||
+    !validInlineCodeInputSession(state, session)
+  ) return null
+
+  return state.tr
+    .insertText(pastedText, state.selection.from, state.selection.to)
+    .setMeta(inlineCodeInputSessionKey, { type: "continue" })
+}
+
+const MODIFIER_KEYS = new Set(["Alt", "AltGraph", "CapsLock", "Control", "Meta", "Shift"])
+
+// Match the physical V key too: on non-Latin layouts Ctrl/Cmd+V reports the
+// layout's character (for example "м") in event.key.
+function isPasteShortcut(event: KeyboardEvent): boolean {
+  const isV = event.key.toLowerCase() === "v" || event.code === "KeyV"
+  return (
+    ((event.metaKey || event.ctrlKey) && !event.altKey && isV) ||
+    (event.shiftKey && !event.metaKey && !event.ctrlKey && event.key === "Insert")
+  )
+}
+
 function transactionChangesOnlyPendingInlineCode(
   transaction: import("prosemirror-state").Transaction,
   session: InlineCodeInputSession
@@ -85,7 +119,11 @@ export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
           return validInlineCodeInputSession(newState, next) ? next : null
         }
         if (!transaction.docChanged) {
-          return transaction.selectionSet ? null : session
+          // A middle-click paste first places the caret at the pointer; landing
+          // exactly on the pending caret is not navigation.
+          const caretUnmoved =
+            newState.selection.empty && newState.selection.from === session.cursorPos
+          return transaction.selectionSet && !caretUnmoved ? null : session
         }
 
         const uiEvent = transaction.getMeta("uiEvent")
@@ -171,6 +209,9 @@ export function inlineCodeInputSessionPlugin(schema: Schema): Plugin {
       },
       handleKeyDown(view, event) {
         if (!inlineCodeInputSessionKey.getState(view.state)) return false
+        // Pressing Cmd or Ctrl on its own reports the modifier as active, and
+        // the paste chord itself is handled by the paste event.
+        if (MODIFIER_KEYS.has(event.key) || isPasteShortcut(event)) return false
 
         const breaksSession =
           event.altKey ||

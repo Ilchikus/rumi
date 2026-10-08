@@ -64,6 +64,12 @@ import type {
   WorkspaceNodeKind,
   WorkspaceMutationResult
 } from "@rumi/contracts";
+import {
+  MAX_WORKSPACE_ICON_LENGTH,
+  WORKSPACE_ICON_KEY,
+  isReservedPropertyName,
+  type SetWorkspaceItemIconRequest
+} from "@rumi/contracts";
 import { DATABASE_PROPERTY_OPTION_COLORS } from "@rumi/contracts";
 import { parseMarkdownFile, serializeMarkdownFile } from "@rumi/markdown";
 import {
@@ -175,6 +181,7 @@ export class WorkspaceRuntime {
   private readonly workspaceIndex: WorkspaceIndex;
   private readonly backgroundTasks = new Set<Promise<void>>();
   private workspaceWatcher: WorkspaceWatcher | null = null;
+  private iconIndexBuild: Promise<void> | null = null;
 
   private constructor(
     rootPath: string,
@@ -189,6 +196,11 @@ export class WorkspaceRuntime {
     this.presentation = presentation;
     this.trash = new WorkspaceTrash(rootPath);
     this.workspaceIndex = workspaceIndex;
+    // Icons render in the tree, so an icon edit from any source (save, record
+    // property, external edit) refreshes clients' trees.
+    workspaceIndex.onIconsChanged((paths) => {
+      this.events.publish({ name: "workspace.treeChanged", path: paths[0]!, affects: ["tree"] });
+    });
   }
 
   static async open(options: WorkspaceRuntimeOptions): Promise<WorkspaceRuntime> {
@@ -236,7 +248,48 @@ export class WorkspaceRuntime {
   }
 
   async getTree(): Promise<WorkspaceNode> {
-    return this.readDirectoryTree("");
+    this.buildIconIndexInBackground();
+    const tree = await this.readDirectoryTree("");
+    this.attachIcons(tree);
+    return tree;
+  }
+
+  /**
+   * Sets or removes the frontmatter icon of a page, record, folder, database,
+   * or the workspace (""). A folder without a companion page gets one.
+   */
+  async setWorkspaceItemIcon(request: SetWorkspaceItemIconRequest): Promise<SavePageResult> {
+    const icon = typeof request.icon === "string" ? request.icon.trim() : "";
+    if (icon.length > MAX_WORKSPACE_ICON_LENGTH) {
+      throw new Error("Icon value is too long");
+    }
+
+    const documentPath = await this.iconDocumentPath(request.path);
+    const absolutePath = this.resolveAbsolutePath(documentPath);
+    let result: SavePageResult | null = null;
+
+    // Read, change only `icon`, and save against the version read. A save that
+    // races another write re-reads and tries again.
+    for (let attempt = 0; attempt < 3 && result?.status !== "saved"; attempt += 1) {
+      const content = await fs.readFile(absolutePath, "utf8").catch((error: unknown) => {
+        if (isNodeError(error) && error.code === "ENOENT") return null;
+        throw error;
+      });
+      const parsed = content === null ? { frontmatter: {}, body: "" } : parseMarkdownFile(content);
+      const frontmatter: FrontmatterRecord = { ...parsed.frontmatter };
+      if (icon) frontmatter[WORKSPACE_ICON_KEY] = icon;
+      else delete frontmatter[WORKSPACE_ICON_KEY];
+
+      result = await this.savePage({
+        path: documentPath,
+        ...(content === null ? {} : { baseVersion: hashText(content) }),
+        frontmatter,
+        markdownBody: parsed.body,
+        reason: "property-edit"
+      });
+    }
+
+    return result!;
   }
 
   async readAsset(inputPath: string): Promise<WorkspaceAsset> {
@@ -996,6 +1049,7 @@ export class WorkspaceRuntime {
     const property = request.property.trim();
 
     if (!property) throw new DatabaseRequestError("Database property name cannot be empty");
+    if (isReservedPropertyName(property)) throw reservedIconPropertyError();
     if (
       config.schema.properties[property] ||
       config.schema.unsupportedProperties.includes(property)
@@ -1447,6 +1501,10 @@ export class WorkspaceRuntime {
 
     if (!newName) {
       throw new Error("Database property name cannot be empty");
+    }
+
+    if (isReservedPropertyName(newName) && property !== newName) {
+      throw reservedIconPropertyError();
     }
 
     const allPropertyNames = new Set([
@@ -1909,6 +1967,55 @@ export class WorkspaceRuntime {
     return node;
   }
 
+  // Tree icons come from the persisted index. A workspace that was never
+  // indexed serves its tree immediately; the build announces the icons it
+  // finds through onIconsChanged. A failed build is retried on next load.
+  private buildIconIndexInBackground(): void {
+    if (this.workspaceIndex.isBuilt() || this.iconIndexBuild) return;
+
+    const task: Promise<void> = this.workspaceIndex.ensureBuilt()
+      .then(() => undefined, (error: unknown) => {
+        console.error("Rumi could not build the workspace index:", error);
+      })
+      .finally(() => {
+        this.iconIndexBuild = null;
+        this.backgroundTasks.delete(task);
+      });
+    this.iconIndexBuild = task;
+    this.backgroundTasks.add(task);
+  }
+
+  private attachIcons(node: WorkspaceNode): void {
+    const icon = this.workspaceIndex.iconFor(node.companionPath ?? node.path);
+    if (icon) node.icon = icon;
+    for (const child of node.children ?? []) this.attachIcons(child);
+  }
+
+  private async iconDocumentPath(inputPath: string): Promise<string> {
+    const relPath = normalizeWorkspacePath(inputPath);
+    const stat = await fs.stat(this.resolveAbsolutePath(relPath));
+
+    if (!stat.isDirectory()) {
+      const kind = classifyFilePath(relPath);
+      if (kind !== "page" && kind !== "folder-index" && kind !== "database-config") {
+        throw new Error(`Only pages, folders, and databases can have icons: ${relPath}`);
+      }
+      return relPath;
+    }
+
+    if (relPath === "") {
+      for (const candidate of rootIndexPaths(this.name)) {
+        if (await fileExists(this.resolveAbsolutePath(candidate))) return candidate;
+      }
+      return "index.md";
+    }
+
+    const databaseConfigPath = databaseConfigPathForDirectory(relPath);
+    return await fileExists(this.resolveAbsolutePath(databaseConfigPath))
+      ? databaseConfigPath
+      : folderIndexPathForDirectory(relPath);
+  }
+
   private async ensureRootIndexPage(): Promise<void> {
     for (const candidate of rootIndexPaths(this.name)) {
       if (await fileExists(this.resolveAbsolutePath(candidate))) return;
@@ -2231,6 +2338,12 @@ function compareDirectoryEntries(a: import("node:fs").Dirent, b: import("node:fs
   }
 
   return a.name.localeCompare(b.name);
+}
+
+function reservedIconPropertyError(): DatabaseRequestError {
+  return new DatabaseRequestError(
+    `“${WORKSPACE_ICON_KEY}” is reserved for the item icon and cannot be a database property`
+  );
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

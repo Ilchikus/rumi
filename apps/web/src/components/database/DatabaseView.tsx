@@ -14,6 +14,8 @@ import type {
 } from "react";
 import { ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
+import { WorkspaceIcon } from "../icons/WorkspaceIcon";
+import { parseWorkspaceIcon } from "../../lib/workspaceIcons";
 import { CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretUp } from "@phosphor-icons/react/dist/csr/CaretUp";
 import { Check } from "@phosphor-icons/react/dist/csr/Check";
@@ -38,6 +40,7 @@ import type {
   QueryDatabaseResult,
   WorkspaceNode
 } from "@rumi/contracts";
+import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
 import {
   appShortcutPlatform,
   hasPrimaryModifier
@@ -1252,7 +1255,7 @@ export function DatabaseView({
                 <span className="col-start-1 row-start-1 group-hover/clear-selection:opacity-0 group-focus-visible/clear-selection:opacity-0">
                   {selectedRecords.length} selected
                 </span>
-                <span className="col-start-1 row-start-1 text-primary underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
+                <span className="col-start-1 row-start-1 text-action underline underline-offset-2 opacity-0 group-hover/clear-selection:opacity-100 group-focus-visible/clear-selection:opacity-100">
                   Clear all
                 </span>
               </button>
@@ -2080,8 +2083,17 @@ function DatabaseRecordNameCell({
     if (inputRef.current) resizeTextarea(inputRef.current);
   }, [edit?.draft]);
 
+  const icon = typeof record.frontmatter[WORKSPACE_ICON_KEY] === "string"
+    ? record.frontmatter[WORKSPACE_ICON_KEY]
+    : undefined;
+
   return (
-    <div className="relative min-h-7 w-full pr-7">
+    <div className="relative flex min-h-7 w-full items-start gap-1.5 pr-7">
+      {parseWorkspaceIcon(icon) ? (
+        <span className="grid h-7 shrink-0 place-items-center text-neutral-500" data-database-record-icon="">
+          <WorkspaceIcon icon={icon} size={16} />
+        </span>
+      ) : null}
       {edit ? (
         <textarea
           ref={connectInput}

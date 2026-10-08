@@ -350,7 +350,7 @@ function reconcileLinkMarkers(state, schema: Schema) {
   if (!markerType || !linkType) return null
 
   const expected = new Map<number, {
-    attrs: { href: string; linkType: "external" | "internal"; mentionKind: string }
+    attrs: { href: string; linkType: "external" | "internal"; mentionKind: string; mention: boolean }
   }>()
   state.doc.descendants((node, position) => {
     if (!node.isText) return
@@ -372,7 +372,7 @@ function reconcileLinkMarkers(state, schema: Schema) {
 
     if (isExternalLinkHref(href)) {
       expected.set(markerPosition, {
-        attrs: { href, linkType: "external", mentionKind: "page" }
+        attrs: { href, linkType: "external", mentionKind: "page", mention: false }
       })
       return
     }
@@ -381,7 +381,8 @@ function reconcileLinkMarkers(state, schema: Schema) {
       attrs: {
         href: sourceHref,
         linkType: "internal",
-        mentionKind: mark.attrs.mentionKind ?? mentionKindForPath(sourceHref)
+        mentionKind: mark.attrs.mentionKind ?? mentionKindForPath(sourceHref),
+        mention: mark.attrs.mention === true
       }
     })
   })
@@ -390,7 +391,7 @@ function reconcileLinkMarkers(state, schema: Schema) {
     kind: "delete" | "insert" | "replace"
     pos: number
     nodeSize?: number
-    attrs?: { href: string; linkType: "external" | "internal"; mentionKind: string }
+    attrs?: { href: string; linkType: "external" | "internal"; mentionKind: string; mention: boolean }
   }> = []
   state.doc.descendants((node, position) => {
     if (node.type !== markerType) return
@@ -406,7 +407,8 @@ function reconcileLinkMarkers(state, schema: Schema) {
       normalizeLinkHref(String(node.attrs.href ?? "")) !==
         normalizeLinkHref(expectedMarker.attrs.href) ||
       node.attrs.linkType !== expectedMarker.attrs.linkType ||
-      node.attrs.mentionKind !== expectedMarker.attrs.mentionKind
+      node.attrs.mentionKind !== expectedMarker.attrs.mentionKind ||
+      node.attrs.mention !== expectedMarker.attrs.mention
     ) {
       operations.push({
         kind: "replace",

@@ -136,9 +136,9 @@ describe("editor layout contracts", () => {
       editorStyles,
       '.prosemirror-editor .ProseMirror :is(.bullet-item, .numbered-item, .task-item)[data-indent]:not([data-indent="0"])::after'
     );
-    const counterRestartRule = cssRule(
+    const numberedMarkerRule = cssRule(
       editorStyles,
-      '.prosemirror-editor .ProseMirror > :not(.numbered-item) + .numbered-item[data-indent="0"]'
+      '.prosemirror-editor .ProseMirror .numbered-item[data-indent="1"] .numbered-decoration::before'
     );
 
     expect(flatListRule).toContain("--rumi-list-decoration-width: 1.25em;");
@@ -153,15 +153,20 @@ describe("editor layout contracts", () => {
     expect(bulletDecorationRule).toContain("line-height: 0.8;");
     expect(numberedDecorationRule).toContain("font-variant-numeric: tabular-nums;");
     expect(numberedDecorationRule).toContain("text-align: left;");
-    expect(checkboxRule).toContain("margin-top: 2px;");
+    expect(checkboxRule).toContain("margin-top: 6px;");
+    expect(cssRule(
+      editorStyles,
+      ".prosemirror-editor .ProseMirror .bullet-item .bullet-decoration"
+    )).toContain("top: -4px;");
     expect(checkboxInputRule).toContain("appearance: none;");
     expect(checkboxInputRule).toContain("border: 1px solid hsl(var(--input));");
     expect(indentGuideRule).toContain("width: var(--rumi-list-indent-offset);");
     expect(indentGuideRule).toContain("background-size: 1.5em 100%;");
     expect(indentGuideRule).toContain("hsl(var(--border))");
     expect(indentGuideRule).toContain("var(--rumi-list-guide-x)");
-    expect(counterRestartRule).toContain("counter-set: numbered-item-0 1;");
-    expect(counterRestartRule).not.toContain("counter-reset:");
+    // The numbered list plugin sets each item's number; CSS only formats it.
+    expect(numberedMarkerRule).toContain("counter(numbered-item, lower-alpha)");
+    expect(editorStyles).not.toMatch(/counter-(increment|reset|set):/u);
     expect(editorSchema).toContain('class: "list-decoration bullet-decoration"');
     expect(editorSchema).toContain('class: "list-decoration numbered-decoration"');
     expect(editorSchema).toContain('class: "list-item-content"');
@@ -298,8 +303,8 @@ describe("editor layout contracts", () => {
 
     expect(nestedTaskRule).toContain("border: 1px solid hsl(var(--input));");
     expect(flatTaskRule).toContain("border: 1px solid hsl(var(--input));");
-    expect(checkedTaskRule).toContain("border-color: hsl(var(--primary));");
-    expect(checkedTaskRule).toContain("background-color: hsl(var(--primary));");
+    expect(checkedTaskRule).toContain("border-color: hsl(var(--action));");
+    expect(checkedTaskRule).toContain("background-color: hsl(var(--action));");
   });
 
   it("uses the product accent with normal-weight links and matching link icons", () => {
@@ -309,12 +314,12 @@ describe("editor layout contracts", () => {
       ".prosemirror-editor .ProseMirror .rumi-link-icon::before"
     );
 
-    expect(linkRule).toContain("color: hsl(var(--primary));");
+    expect(linkRule).toContain("color: hsl(var(--action));");
     expect(linkRule).toContain("font-weight: 400;");
     expect(linkRule).toContain("text-decoration: none;");
     expect(editorStyles).toContain(".rumi-link-icon:hover + a");
-    expect(iconRule).toContain("background-color: hsl(var(--primary));");
-    expect(databaseEmbedNodeView).toContain("text-sm font-normal text-primary no-underline");
+    expect(iconRule).toContain("background-color: var(--rumi-link-icon-color, hsl(var(--action)));");
+    expect(databaseEmbedNodeView).toContain("text-sm font-normal text-action no-underline");
     expect(selectionToolbar).toContain(
       "background: hsl(var(--action)); color: hsl(var(--action-foreground));"
     );
@@ -472,7 +477,7 @@ describe("editor layout contracts", () => {
 
     expect(editorStyles).toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a:hover");
     expect(modifierHoverRule).toContain("text-decoration: underline;");
-    expect(modifierHoverRule).toContain("color: hsl(var(--primary-hover));");
+    expect(modifierHoverRule).toContain("color: hsl(var(--action-hover));");
     expect(modifierHoverRule).toContain("cursor: pointer;");
     expect(editorStyles).not.toContain(".prosemirror-editor.rumi-command-link-mode .ProseMirror a {");
     expect(editorStyles).not.toContain(".prosemirror-editor .ProseMirror a:hover,");

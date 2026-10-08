@@ -2,13 +2,16 @@ import { EditorState, TextSelection, type Plugin, type Transaction } from "prose
 import type { EditorView } from "prosemirror-view"
 import { history } from "prosemirror-history"
 import { describe, expect, it } from "vitest"
+import { Slice } from "prosemirror-model"
 import {
   buildInputRules,
+  createInlineCodeSessionPasteTransaction,
   inlineCodeInputSessionKey,
   inlineCodeInputSessionPlugin
 } from "./inputrules"
 import { buildKeymap } from "./keymap"
 import { parseMarkdown, serializeMarkdown } from "./markdown"
+import { pasteHandlerPlugin } from "./plugins/pasteHandler"
 import { schema } from "./schema"
 
 function createTypingHarness(
@@ -480,5 +483,118 @@ describe("live editor inline-code input rules", () => {
     expect(harness.state.doc.textContent).toBe("`value`")
     expect(harness.state.doc.firstChild?.firstChild?.marks).toHaveLength(0)
     expect(serializeMarkdown(harness.state.doc)).toBe("\\`value\\`\n")
+  })
+})
+
+describe("live editor inline-code input across paste", () => {
+  function pasteEvent(text: string, html = "") {
+    return {
+      clipboardData: {
+        files: [],
+        getData(type: string) {
+          if (type === "text/plain") return text
+          if (type === "text/html") return html
+          return ""
+        }
+      },
+      preventDefault() {}
+    } as unknown as ClipboardEvent
+  }
+
+  function modifiedKey(
+    harness: ReturnType<typeof createTypingHarness>,
+    key: string,
+    modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "code">>
+  ) {
+    const event = {
+      key,
+      code: key,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      ...modifiers,
+      preventDefault() {},
+      stopPropagation() {}
+    } as KeyboardEvent
+    const sessionPlugin = harness.plugins[0] as Plugin
+    sessionPlugin.props.handleKeyDown?.call(sessionPlugin, {
+      get state() { return harness.state },
+      dispatch: harness.dispatch
+    } as unknown as EditorView, event)
+  }
+
+  function paste(harness: ReturnType<typeof createTypingHarness>, text: string, html = "") {
+    const plugin = pasteHandlerPlugin(schema)
+    const view = {
+      get state() { return harness.state },
+      dispatch: harness.dispatch,
+      isDestroyed: false
+    } as unknown as EditorView
+    return plugin.props.handlePaste?.call(plugin, view, pasteEvent(text, html), Slice.empty)
+  }
+
+  it("formats text pasted between the opening and closing backtick", () => {
+    const harness = createTypingHarness()
+    harness.type("`a")
+    modifiedKey(harness, "Meta", { metaKey: true })
+    modifiedKey(harness, "v", { metaKey: true })
+    expect(paste(harness, "pasted text")).toBe(true)
+    harness.type("b`")
+
+    expect(serializeMarkdown(harness.state.doc)).toBe("`apasted textb`\n")
+    expect(inlineCodeInputSessionKey.getState(harness.state)).toBeNull()
+  })
+
+  it("keeps the session through Ctrl, plain-text, Shift-Insert, and non-Latin paste chords", () => {
+    const harness = createTypingHarness()
+    harness.type("`x")
+    modifiedKey(harness, "Control", { ctrlKey: true })
+    modifiedKey(harness, "v", { ctrlKey: true })
+    modifiedKey(harness, "V", { metaKey: true, shiftKey: true })
+    modifiedKey(harness, "Insert", { shiftKey: true })
+
+    modifiedKey(harness, "м", { ctrlKey: true, code: "KeyV" })
+
+    expect(inlineCodeInputSessionKey.getState(harness.state)).not.toBeNull()
+    modifiedKey(harness, "z", { ctrlKey: true })
+    expect(inlineCodeInputSessionKey.getState(harness.state)).toBeNull()
+  })
+
+  it("pastes URLs and rich text literally while inline code is pending", () => {
+    const harness = createTypingHarness()
+    harness.type("`")
+    expect(paste(harness, "https://example.com/a", "<a href=\"https://example.com/a\">link</a>"))
+      .toBe(true)
+    harness.type("`")
+
+    const text = harness.state.doc.firstChild?.firstChild
+    expect(text?.text).toBe("https://example.com/a")
+    expect(text?.marks.map((mark) => mark.type.name)).toEqual(["code"])
+  })
+
+  it("drops a trailing clipboard newline but leaves multi-line text to normal paste", () => {
+    const trailing = createTypingHarness()
+    trailing.type("`")
+    paste(trailing, "line\n")
+    trailing.type("`")
+    expect(serializeMarkdown(trailing.state.doc)).toBe("`line`\n")
+
+    const multiline = createTypingHarness()
+    multiline.type("`")
+    expect(createInlineCodeSessionPasteTransaction(multiline.state, "first\nsecond")).toBeNull()
+  })
+
+  it("keeps the session when a middle click places the caret at the pending position", () => {
+    const harness = createTypingHarness()
+    harness.type("`abc")
+    const cursor = harness.state.selection.from
+
+    harness.dispatch(harness.state.tr.setSelection(TextSelection.create(harness.state.doc, cursor)))
+    expect(inlineCodeInputSessionKey.getState(harness.state)).not.toBeNull()
+    paste(harness, "d")
+    harness.type("`")
+
+    expect(serializeMarkdown(harness.state.doc)).toBe("`abcd`\n")
   })
 })

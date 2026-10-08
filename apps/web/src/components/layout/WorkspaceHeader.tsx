@@ -9,6 +9,7 @@ import { isSecondaryContextGesture } from "../../lib/appBrowserInteractions";
 import type { PageCopyAction } from "../../lib/pageCopyActions";
 import type { WorkspaceSystemView } from "../../lib/workspaceRoute";
 import { cn } from "../../lib/utils";
+import { WorkspaceIcon } from "../icons/WorkspaceIcon";
 import type { SidebarSelection } from "../sidebar/Sidebar";
 import {
   FloatingWorkspaceItemMenu,
@@ -39,6 +40,7 @@ interface WorkspaceHeaderProps {
   pinnedPaths: readonly string[];
   onPinnedChange: (node: WorkspaceNode, pinned: boolean) => void;
   onSeeRevisions: (node: WorkspaceNode) => void;
+  onChangeIcon: (node: WorkspaceNode) => void;
   onMoveToTrash: (node: WorkspaceNode) => Promise<boolean>;
   leadingControls: ReactNode;
 }
@@ -66,6 +68,7 @@ export function WorkspaceHeader({
   pinnedPaths,
   onPinnedChange,
   onSeeRevisions,
+  onChangeIcon,
   onMoveToTrash,
   leadingControls
 }: WorkspaceHeaderProps): ReactElement {
@@ -114,7 +117,7 @@ export function WorkspaceHeader({
                       <button
                         type="button"
                         className={cn(
-                          "min-w-0 truncate rounded px-0.5 py-1 transition-colors hover:text-foreground hover:underline",
+                          "flex min-w-0 items-center gap-1 rounded px-0.5 py-1 transition-colors hover:text-foreground [&:hover>span]:underline",
                           breadcrumb.current && "font-medium text-foreground"
                         )}
                         aria-current={breadcrumb.current ? "page" : undefined}
@@ -147,7 +150,8 @@ export function WorkspaceHeader({
                           });
                         }}
                       >
-                        {breadcrumb.label}
+                        <WorkspaceIcon icon={breadcrumb.node.icon} size={14} className="text-neutral-500" />
+                        <span className="min-w-0 truncate">{breadcrumb.label}</span>
                       </button>
                     ) : (
                       <span
@@ -204,6 +208,7 @@ export function WorkspaceHeader({
                     onConvert={onConvertNode}
                     onPinnedChange={onPinnedChange}
                     onSeeRevisions={onSeeRevisions}
+                    onChangeIcon={onChangeIcon}
                     onDelete={(node) => void onMoveToTrash(node)}
                   />
                 </DropdownMenuContent>
@@ -227,6 +232,7 @@ export function WorkspaceHeader({
           onConvert={onConvertNode}
           onPinnedChange={onPinnedChange}
           onSeeRevisions={onSeeRevisions}
+          onChangeIcon={onChangeIcon}
           onDelete={(node) => void onMoveToTrash(node)}
         />
       )}

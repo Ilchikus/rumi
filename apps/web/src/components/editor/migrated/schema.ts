@@ -385,7 +385,10 @@ const nodes: { [key: string]: NodeSpec } = {
     attrs: {
       href: { default: "" },
       linkType: { default: "internal" },
-      mentionKind: { default: "page" }
+      mentionKind: { default: "page" },
+      // Mentions show the target's custom icon; other internal links keep the
+      // page, folder, or database glyph.
+      mention: { default: false }
     },
     leafText() {
       return ""
@@ -398,7 +401,8 @@ const nodes: { [key: string]: NodeSpec } = {
           linkType: dom.getAttribute("data-link-type") ??
             dom.getAttribute("data-rumi-link-icon") ??
             "internal",
-          mentionKind: dom.getAttribute("data-link-kind") ?? "page"
+          mentionKind: dom.getAttribute("data-link-kind") ?? "page",
+          mention: dom.getAttribute("data-mention") === "true"
         }
       }
     }],
@@ -410,6 +414,7 @@ const nodes: { [key: string]: NodeSpec } = {
         "data-href": node.attrs.href,
         "data-link-type": node.attrs.linkType,
         "data-link-kind": node.attrs.mentionKind,
+        ...(node.attrs.mention ? { "data-mention": "true" } : {}),
         contenteditable: "false",
         role: "link",
         "aria-label": external ? "Open external link" : "Open internal link",

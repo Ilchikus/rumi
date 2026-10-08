@@ -11,7 +11,6 @@ import {
 import type { ReactElement } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { Trash } from "@phosphor-icons/react/dist/csr/Trash";
-import { RumiApiClient } from "@rumi/api-client";
 import { toast } from "sonner";
 import {
   parseMarkdownFile,
@@ -112,6 +111,19 @@ import { rebasePageDocument } from "./lib/optimisticPageSync";
 import { insertOptimisticWorkspacePage } from "./lib/optimisticWorkspaceTree";
 import { resolveWorkspaceDocumentLink } from "./lib/workspaceDocumentLink";
 import { cn } from "./lib/utils";
+import { authSessionSnapshot, createWorkspaceApiClient, useAuthSession } from "./lib/authSession";
+import { useAppUpdate } from "./lib/appUpdate";
+import { WORKSPACE_ICON_KEY } from "@rumi/contracts";
+import {
+  publishWorkspaceIcons,
+  withWorkspaceNodeIcon,
+  workspaceItemLabel
+} from "./lib/workspaceIcons";
+import { loadDrawableWorkspaceIcon, workspaceFaviconHref } from "./components/icons/drawableIcon";
+import { IconPickerDialog } from "./components/icons/IconPickerDialog";
+import { loadPhosphorCatalog } from "./components/icons/phosphorCatalog";
+import { loadEmojiCatalog } from "./components/emoji/emojiCatalogLoader";
+import { PageIconHeader } from "./components/icons/PageIconHeader";
 import { assetEndpointUrl, mediaAssetCopyValue } from "./lib/mediaAssets";
 import {
   mergeEditorScrollState,
@@ -186,6 +198,7 @@ const DeleteTrashItemDialog = lazy(async () => {
   return { default: module.DeleteTrashItemDialog };
 });
 
+
 type LoadState = "idle" | "loading" | "error";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type PageRenameIntent = {
@@ -207,6 +220,12 @@ type PageTitleEditRequest = {
   path: string;
   caretOffset?: number;
   selectAll?: boolean;
+};
+type LeftPageSnapshot = {
+  page: PageDocument;
+  markdownBody: string;
+  reason: SavePageReason;
+  dirty: { body: boolean; frontmatter: boolean };
 };
 type PinnedItemsState = {
   workspaceRootPath: string;
@@ -232,7 +251,7 @@ function showReservedSystemRouteToast(
   toast.info(
     <span>
       “{route.label}” is reserved for the system page{" "}
-      <a className="text-primary underline underline-offset-2 hover:text-primary-hover" href={route.url}>
+      <a className="text-action underline underline-offset-2 hover:text-action-hover" href={route.url}>
         {route.label}
       </a>.
     </span>
@@ -244,7 +263,8 @@ function waitForEditorFrame(): Promise<void> {
 }
 
 export function App(): ReactElement {
-  const api = useMemo(() => new RumiApiClient(), []);
+  const api = useMemo(() => createWorkspaceApiClient(), []);
+  const { restoredCount: authSessionRestoredCount } = useAuthSession();
   const startupSnapshot = useMemo(
     () => readWorkspaceStartupSnapshot(window.localStorage),
     []
@@ -264,7 +284,9 @@ export function App(): ReactElement {
     )
   );
   const setMessage = useCallback((message: string) => {
-    if (message) toast.error(message);
+    // Requests failing under an expired session are explained by the sign-in
+    // screen, not by one toast per failed request.
+    if (message && !authSessionSnapshot().expired) toast.error(message);
   }, []);
   const [workspaceName, setWorkspaceName] = useState(startupSnapshot?.workspace.name ?? "Rumi");
   const [workspaceRootPath, setWorkspaceRootPath] = useState(startupSnapshot?.workspace.rootPath ?? "");
@@ -368,6 +390,12 @@ export function App(): ReactElement {
   const saveReasonRef = useRef<SavePageReason>("editor-autosave");
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const savePageRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveBeforeAppUpdate = useCallback(async () => {
+    const currentSaveState = saveStateRef.current;
+    if (currentSaveState !== "error" && !hasUnsavedPageChanges(currentSaveState)) return true;
+    return (await savePageRef.current?.()) ?? true;
+  }, []);
+  const appUpdate = useAppUpdate(api, saveBeforeAppUpdate);
   const pageRenameIntentRef = useRef<PageRenameIntent | null>(null);
   const pageTitleUndoRef = useRef<PageTitleUndoAction | null>(null);
   const pageTitleUndoInFlightRef = useRef(false);
@@ -398,6 +426,10 @@ export function App(): ReactElement {
   const renderSidebar = !sidebarCollapsed || (isNarrow && sidebarMounted);
   const blurContent = isNarrow && !sidebarCollapsed;
   const resolvedTheme = resolveTheme(themePreference, systemPrefersDark);
+  const selectedNode = useMemo(
+    () => (tree && selection ? findWorkspaceNode(tree, selection.nodePath) : null),
+    [selection, tree]
+  );
   const pageTitle = page
     ? selection?.kind === "workspace"
       ? workspaceName
@@ -428,6 +460,41 @@ export function App(): ReactElement {
           : selection?.openPath
             ? pageScrollKey(selection.openPath)
             : null;
+
+  useEffect(() => {
+    publishWorkspaceIcons(tree);
+  }, [tree]);
+
+  // The icon picker's emoji and Phosphor sets are large lazy chunks. Fetch them
+  // once the workspace is up and the browser is idle, so the picker never
+  // waits on the network.
+  const workspaceLoaded = tree !== null;
+  useEffect(() => {
+    if (!workspaceLoaded) return;
+    return whenBrowserIdle(() => {
+      void loadEmojiCatalog().then(loadPhosphorCatalog).catch(() => undefined);
+    });
+  }, [workspaceLoaded]);
+
+  const workspaceIcon = tree?.icon;
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) return;
+    link.dataset.rumiDefaultHref ??= link.getAttribute("href") ?? "";
+    const defaultHref = link.dataset.rumiDefaultHref;
+    let active = true;
+    const apply = (href: string) => {
+      if (active) link.setAttribute("href", href);
+    };
+
+    void loadDrawableWorkspaceIcon(workspaceIcon).then(
+      (icon) => apply(icon ? workspaceFaviconHref(icon) : defaultHref),
+      () => apply(defaultHref)
+    );
+    return () => {
+      active = false;
+    };
+  }, [workspaceIcon]);
 
   useEffect(() => {
     document.title = activeTrashPage
@@ -736,6 +803,66 @@ export function App(): ReactElement {
   const cacheResolvedPage = useCallback((nextPage: PageDocument) => {
     pageLoadCacheRef.current.set(nextPage.path, Promise.resolve(nextPage));
   }, []);
+
+  // Saves a page the user has already left. It touches no open-page state, so
+  // the page now open keeps its own save cycle.
+  const saveLeftPage = useCallback(async (snapshot: LeftPageSnapshot) => {
+    const { page: leftPage, markdownBody, reason, dirty } = snapshot;
+    let base = leftPage;
+    let body = markdownBody;
+    let frontmatter = leftPage.frontmatter;
+
+    try {
+      for (let attempt = 0; attempt < MAX_SAVE_REBASE_ATTEMPTS; attempt += 1) {
+        const result = await api.savePage({
+          path: leftPage.path,
+          baseVersion: base.version,
+          frontmatter,
+          markdownBody: body,
+          reason
+        });
+        if (result.status === "saved") {
+          forgetCachedPage(leftPage.path);
+          return;
+        }
+
+        base = rebasePageDocument(await api.openPage(leftPage.path), leftPage, markdownBody, dirty);
+        body = base.markdownBody;
+        frontmatter = base.frontmatter;
+      }
+      setMessage("Rumi could not save the previous page after refreshing its latest version.");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, [api, forgetCachedPage, setMessage]);
+
+  // Leaving the open page cancels its autosave timer and can unmount the
+  // editor, so capture the latest Markdown now. Without a running save,
+  // start the normal save. A running save holds older text, and savePage
+  // would only join it, so save the captured text once that save settles.
+  // The left page may still be in state at that point (another page is
+  // loading, or Settings is open), so always save the capture itself; a later
+  // autosave of the same text is a harmless repeat.
+  const saveOpenPageBeforeLeaving = useCallback(() => {
+    if (saveStateRef.current !== "dirty") return;
+    const leavingPage = pageRef.current;
+    const inFlight = saveInFlightRef.current;
+    if (!leavingPage) return;
+    if (!inFlight) {
+      void savePageRef.current?.();
+      return;
+    }
+
+    const snapshot: LeftPageSnapshot = {
+      page: leavingPage,
+      markdownBody: getCurrentDraftBody(),
+      reason: saveReasonRef.current,
+      dirty: { body: dirtyBodyRef.current, frontmatter: dirtyFrontmatterRef.current }
+    };
+    draftBodyRef.current = snapshot.markdownBody;
+    setDraftBody(snapshot.markdownBody);
+    void inFlight.catch(() => false).then(() => saveLeftPage(snapshot));
+  }, [getCurrentDraftBody, saveLeftPage]);
 
   const updateOpenPageImagePresentation = useCallback(async (
     imageSrc: string,
@@ -1181,6 +1308,40 @@ export function App(): ReactElement {
     setPinnedItemsState({ workspaceRootPath, paths: nextPaths });
   }, [workspaceRootPath]);
 
+  const [iconPickerNode, setIconPickerNode] = useState<WorkspaceNode | null>(null);
+  const openIconPicker = useCallback((node: WorkspaceNode) => setIconPickerNode(node), []);
+
+  // The icon lives in the item's frontmatter; the runtime writes it and the
+  // resulting tree change refreshes every surface. Update the tree right away
+  // so the choice shows without waiting for that round trip.
+  const changeWorkspaceItemIcon = useCallback(async (node: WorkspaceNode, icon: string | null) => {
+    setTree((current) => (current ? withWorkspaceNodeIcon(current, node.path, icon) : current));
+
+    // The open page saves its own frontmatter, so its icon goes through the
+    // same edit as properties. A separate server write would race unsaved
+    // property edits and be overwritten by the next autosave.
+    const currentPage = pageRef.current;
+    if (currentPage && currentPage.kind !== "database" && currentPage.path === openPathForNode(node)) {
+      const { [WORKSPACE_ICON_KEY]: _previousIcon, ...withoutIcon } = currentPage.frontmatter;
+      updatePageFrontmatter(icon ? { ...currentPage.frontmatter, [WORKSPACE_ICON_KEY]: icon } : withoutIcon);
+      return;
+    }
+
+    try {
+      const result = await api.setWorkspaceItemIcon({ path: node.path, icon });
+      if (result.status === "saved") return;
+      setMessage("The icon was not saved because the item changed at the same time. Try again.");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+    void loadTree();
+  }, [api, loadTree, setMessage, updatePageFrontmatter]);
+
+  const uploadWorkspaceItemIcon = useCallback(
+    async (file: File) => (await api.uploadAsset(file.name, file)).path,
+    [api]
+  );
+
   const openWorkspaceNodeRevisions = useCallback(async (node: WorkspaceNode) => {
     const revisionPath = openPathForNode(node);
     if (!revisionPath || node.kind === "workspace") return;
@@ -1441,6 +1602,7 @@ export function App(): ReactElement {
       historyAction: "push" | "replace" = "push",
       historyEntryScrollTop?: number
     ) => {
+      saveOpenPageBeforeLeaving();
       const requestId = ++openRequestIdRef.current;
       const openPath = openPathForNode(node);
       if (historyAction === "push") {
@@ -1508,7 +1670,7 @@ export function App(): ReactElement {
         setMessage(errorMessage(error));
       }
     },
-    [isNarrow, loadPage, rememberRecentOpen]
+    [isNarrow, loadPage, rememberRecentOpen, saveOpenPageBeforeLeaving]
   );
 
   const redirectAfterDeletedNode = useCallback(async (deletedPath: string): Promise<void> => {
@@ -1581,6 +1743,7 @@ export function App(): ReactElement {
     historyAction: "push" | "replace" = "push",
     originalPagePath?: string
   ): Promise<void> => {
+    saveOpenPageBeforeLeaving();
     const id = typeof itemOrId === "string" ? itemOrId : itemOrId.id;
     pendingHistoryActionRef.current = historyAction;
     setLoadState("loading");
@@ -1601,7 +1764,7 @@ export function App(): ReactElement {
       setLoadState("error");
       setMessage(errorMessage(error));
     }
-  }, [api, isNarrow, setMessage]);
+  }, [api, isNarrow, saveOpenPageBeforeLeaving, setMessage]);
 
   useEffect(() => {
     if (!tree || !workspaceRootPath || restoredWorkspaceRef.current === workspaceRootPath) {
@@ -1715,6 +1878,7 @@ export function App(): ReactElement {
     if (!routeSyncReady || !tree) return;
 
     const handlePopState = (event: PopStateEvent) => {
+      saveOpenPageBeforeLeaving();
       historyEntryRevisionRef.current += 1;
       setScrollRestoreRevision((revision) => revision + 1);
       const route = parseWorkspaceRoute(window.location.pathname);
@@ -1792,6 +1956,7 @@ export function App(): ReactElement {
     openNode,
     openTrashPage,
     routeSyncReady,
+    saveOpenPageBeforeLeaving,
     tree
   ]);
 
@@ -2273,6 +2438,7 @@ export function App(): ReactElement {
   );
 
   const openTrash = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(false);
     setMediaOpen(false);
@@ -2281,9 +2447,10 @@ export function App(): ReactElement {
     setMessage("");
     void loadTrash();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadTrash]);
+  }, [isNarrow, loadTrash, saveOpenPageBeforeLeaving]);
 
   const openSettings = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(true);
     setMediaOpen(false);
@@ -2292,9 +2459,10 @@ export function App(): ReactElement {
     setMessage("");
     void loadWorkspaceSettings();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadWorkspaceSettings]);
+  }, [isNarrow, loadWorkspaceSettings, saveOpenPageBeforeLeaving]);
 
   const openMedia = useCallback(() => {
+    saveOpenPageBeforeLeaving();
     pendingHistoryActionRef.current = "push";
     setSettingsOpen(false);
     setMediaOpen(true);
@@ -2303,7 +2471,7 @@ export function App(): ReactElement {
     setMessage("");
     void loadAssets();
     if (isNarrow) setSidebarCollapsedState(true, setSidebarCollapsed);
-  }, [isNarrow, loadAssets]);
+  }, [isNarrow, loadAssets, saveOpenPageBeforeLeaving]);
 
   const previewMediaAsset = useCallback((asset: AssetListItem) => {
     const opened = window.open(
@@ -2633,10 +2801,15 @@ export function App(): ReactElement {
           }
         }
 
-        if (pageRef.current?.path !== savingPage.path) return false;
-
         if (!result || result.status !== "saved") {
           throw new Error("Rumi could not save this page after refreshing its latest version.");
+        }
+
+        if (pageRef.current?.path !== savingPage.path) {
+          // The user left while this save ran. Drop the cached copy so
+          // returning loads what was written instead of the pre-save version.
+          forgetCachedPage(savingPage.path);
+          return true;
         }
 
         const savedPage = {
@@ -2675,10 +2848,11 @@ export function App(): ReactElement {
 
         return true;
       } catch (error) {
+        // Report the failure even after the user left: the edit was not written.
+        setMessage(errorMessage(error));
         if (pageRef.current?.path === savingPage.path) {
           saveStateRef.current = "error";
           setSaveState("error");
-          setMessage(errorMessage(error));
         }
         return false;
       }
@@ -3297,6 +3471,33 @@ export function App(): ReactElement {
     [clearPageLoadCache, loadAssets, loadTrash, loadTree, redirectAfterDeletedNode]
   );
 
+  const loadStateRef = useRef(loadState);
+  loadStateRef.current = loadState;
+  const handledAuthRestoreRef = useRef(authSessionRestoredCount);
+
+  // After signing in again, finish what the expired session blocked. Save the
+  // draft first so reopening the route can never discard it, then reopen a
+  // route that failed to load or catch up on the tree. The event stream is
+  // resubscribed by the effect below because a 401 closes EventSource for good.
+  useEffect(() => {
+    if (handledAuthRestoreRef.current === authSessionRestoredCount) return;
+    handledAuthRestoreRef.current = authSessionRestoredCount;
+    const pageFailedToLoad = loadStateRef.current === "error";
+
+    void (async () => {
+      if (saveStateRef.current === "error" || hasUnsavedPageChanges(saveStateRef.current)) {
+        const saved = await savePageRef.current?.();
+        if (!saved) return;
+      }
+
+      if (pageFailedToLoad) {
+        window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      } else {
+        await loadTree();
+      }
+    })();
+  }, [authSessionRestoredCount, loadTree]);
+
   useEffect(() => {
     return api.subscribeEvents((event) => {
       if (event.name === "page.changed") {
@@ -3349,7 +3550,7 @@ export function App(): ReactElement {
         void refreshOpenPageDatabaseContext();
       }
     });
-  }, [api, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadAssets, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
+  }, [api, authSessionRestoredCount, clearPageLoadCache, handleDeletedEvent, handleMovedEvent, handlePageChangedEvent, loadAssets, loadTrash, loadTree, refreshOpenPageDatabaseContext]);
 
   return (
     <main className="relative flex h-screen max-h-screen min-h-0 overflow-hidden bg-background text-foreground">
@@ -3387,6 +3588,7 @@ export function App(): ReactElement {
             trashOpen={trashOpen}
             mediaOpen={mediaOpen}
             settingsOpen={settingsOpen}
+            updateAvailable={Boolean(appUpdate.info?.updateAvailable)}
             createTarget={sidebarCreateTarget}
             onCreateTargetChange={setSidebarCreateTarget}
             onPrefetchNode={prefetchNode}
@@ -3403,6 +3605,7 @@ export function App(): ReactElement {
             pinnedPaths={pinnedPaths}
             onPinnedChange={changePinnedNode}
             onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
+            onChangeIcon={openIconPicker}
             onDeleteNode={deleteNode}
             onOpenSettings={openSettings}
             onOpenMedia={openMedia}
@@ -3451,6 +3654,7 @@ export function App(): ReactElement {
           pinnedPaths={pinnedPaths}
           onPinnedChange={changePinnedNode}
           onSeeRevisions={(node) => void openWorkspaceNodeRevisions(node)}
+          onChangeIcon={openIconPicker}
           onMoveToTrash={deleteNode}
           leadingControls={(
             <>
@@ -3500,6 +3704,7 @@ export function App(): ReactElement {
               onReload={() => void loadWorkspaceSettings()}
               onSave={saveWorkspaceSettings}
               onThemePreferenceChange={changeThemePreference}
+              appUpdate={appUpdate}
             />
           </Suspense>
         ) : mediaOpen ? (
@@ -3605,6 +3810,12 @@ export function App(): ReactElement {
           <div className="relative min-h-0 flex-1 overflow-y-auto" data-rumi-editor-canvas="">
             <article className={EDITOR_PAGE_CONTAINER_CLASS}>
               <div className="contents" data-rumi-area-selection-exclude="">
+                {selectedNode ? (
+                  <PageIconHeader
+                    icon={selectedNode.icon}
+                    onChangeIcon={() => openIconPicker(selectedNode)}
+                  />
+                ) : null}
                 <EditablePageTitle
                   title={pageTitle ?? ""}
                   editable={Boolean(
@@ -3667,7 +3878,7 @@ export function App(): ReactElement {
                 )}
               </div>
 
-              <div className={page.kind === "database" || Object.keys(page.frontmatter).length > 0 ? "mt-10" : "mt-8"}>
+              <div className={page.kind === "database" ? "mt-10" : Object.keys(page.frontmatter).length > 0 ? "mt-5" : "mt-4"}>
                 <Suspense fallback={null}>
                   <RumiBlockEditor
                     ref={editorRef}
@@ -3739,6 +3950,18 @@ export function App(): ReactElement {
             onConfirm={deleteTrashItemForever}
           />
         </Suspense>
+      )}
+
+      {iconPickerNode && (
+        <IconPickerDialog
+          itemName={workspaceItemLabel(iconPickerNode, workspaceName)}
+          currentIcon={(tree && findWorkspaceNode(tree, iconPickerNode.path))?.icon}
+          onOpenChange={(open) => {
+            if (!open) setIconPickerNode(null);
+          }}
+          onSelect={(icon) => void changeWorkspaceItemIcon(iconPickerNode, icon)}
+          onUpload={uploadWorkspaceItemIcon}
+        />
       )}
 
       {revisionHistoryTarget && (
@@ -3913,4 +4136,13 @@ function mergeReferenceRepairIntoPage(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function whenBrowserIdle(callback: () => void): () => void {
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(callback, { timeout: 5000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const timer = window.setTimeout(callback, 2000);
+  return () => window.clearTimeout(timer);
 }

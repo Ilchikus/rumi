@@ -83,6 +83,18 @@ related: "[[Notes/Old]]"
     );
   });
 
+  it("rewrites image paths with spaces and parentheses, bracketed or bare", () => {
+    const rename = (markdown: string, next: string) =>
+      rewriteMarkdownReferences(markdown, ".assets/image (23).png", next).markdown;
+
+    expect(rename("![Chart](<.assets/image (23).png>)", ".assets/chart (2).png"))
+      .toBe("![Chart](<.assets/chart (2).png>)");
+    expect(rename("![](<.assets/image (23).png> \"Q3\")", ".assets/chart.png"))
+      .toBe("![](<.assets/chart.png> \"Q3\")");
+    expect(rename("![](.assets/image (23).png) and more", ".assets/chart (2).png"))
+      .toBe("![](.assets/chart%20(2).png) and more");
+  });
+
   it("repairs an encoded folder companion link without replacing file paths with app slugs", () => {
     const result = rewriteMarkdownReferences(
       "[inner](test%20folder/inner/inner.index.md)",

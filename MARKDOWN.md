@@ -5,7 +5,8 @@ Markdown flavor. Standard GFM syntax is the portability baseline for headings, e
 strikethrough, links, images, blockquotes, lists, task lists, tables, code, and thematic breaks.
 
 Rumi keeps Markdown files as the source of truth. Editor-only state, such as the cursor position,
-selection, and collapsed headings, is not written to them.
+selection, and collapsed headings, is not written to them. Collapsed headings are remembered in the
+browser for each page.
 
 Strikethrough uses the GFM double-tilde form: `~~struck through~~`.
 
@@ -128,7 +129,10 @@ Rumi-specific. Mermaid diagrams use ordinary fenced code blocks with the `mermai
 
 ## Read-time compatibility
 
-Workspace link destinations containing spaces are accepted without angle brackets and are saved in
-portable GFM form, for example `[Notes](<Project notes/index.md>)`.
+Workspace link and image destinations containing spaces are accepted without angle brackets and are
+saved in portable GFM form, for example `[Notes](<Project notes/index.md>)` and
+`![](<.assets/image (2).png>)`. One level of parentheses belongs to the path, so
+`![](.assets/image (2).png)` is read as that file, not as an image titled "2". Percent-encoded
+destinations such as `![](.assets/image%20(2).png)` name the same file.
 
 Custom inline syntax is not interpreted inside code.

@@ -143,6 +143,33 @@ describe("live editor Markdown round trips", () => {
     expect(parseMarkdown(serializeMarkdown(parsed), schema).toJSON()).toEqual(parsed.toJSON())
   })
 
+  it("keeps image paths with spaces and parentheses, including ones saved without angle brackets", () => {
+    const image = (markdown: string) => parseMarkdown(markdown, schema).firstChild
+
+    expect(image("![](.assets/image (23).png)\n")?.attrs.src).toBe(".assets/image (23).png")
+    expect(image("![Chart](<.assets/image (23).png> \"Q3\")\n")?.attrs).toMatchObject({
+      src: ".assets/image (23).png",
+      alt: "Chart",
+      title: "Q3"
+    })
+    const doc = schema.nodes.doc!.create(null, [
+      schema.nodes.image!.create({ src: ".assets/image (23).png", alt: "Chart" })
+    ])
+    expect(serializeMarkdown(doc)).toBe("![Chart](<.assets/image (23).png>)\n")
+    expect(parseMarkdown(serializeMarkdown(doc), schema).toJSON()).toEqual(doc.toJSON())
+    expect(serializeMarkdown(parseMarkdown("`![](.assets/image (23).png)`\n", schema)))
+      .toBe("`![](.assets/image (23).png)`\n")
+  })
+
+  it("reads link paths with one level of parentheses", () => {
+    const parsed = parseMarkdown("See [plan](Plans/Plan (draft).md)\n", schema)
+    const link = parsed.firstChild?.content.content
+      .find((node) => node.text === "plan")?.marks.find((mark) => mark.type.name === "link")
+
+    expect(link?.attrs.href).toBe("Plans/Plan (draft).md")
+    expect(serializeMarkdown(parsed)).toBe("See [plan](<Plans/Plan (draft).md>)\n")
+  })
+
   it("preserves the source at-sign while rendering a typed mention label", () => {
     const markdown = "Ask [@Inner notes](<test folder/inner.index.md>) for context.\n"
     const parsed = parseMarkdown(markdown, schema)

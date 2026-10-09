@@ -4,7 +4,7 @@ This is a short, product-focused record of changes shipped in the public `@rumi-
 package. It describes what changed for people using Rumi rather than implementation details. New
 entries go first; releases without meaningful product-behavior changes may be omitted.
 
-## 0.1.18 — Unreleased
+## 0.1.18 — 2026-10-09
 
 - Added icons for pages, database records, folders, databases, and the workspace: pick an emoji, a
 Phosphor icon, or an uploaded image. Icons are stored in the item's own frontmatter and replace the

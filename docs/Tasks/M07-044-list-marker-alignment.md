@@ -2,7 +2,7 @@
 status: verify
 type: feature
 milestone: M07
-release: 0.1.18
+release: "0.1.18"
 owner_layer: editor
 coverage:
   - ui-smoke

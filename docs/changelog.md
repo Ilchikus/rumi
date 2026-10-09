@@ -4,6 +4,17 @@ This is a short, product-focused record of changes shipped in the public `@rumi-
 package. It describes what changed for people using Rumi rather than implementation details. New
 entries go first; releases without meaningful product-behavior changes may be omitted.
 
+## 0.1.19 — Unreleased
+
+- Fixed images whose file name contains a space, such as `image (23).png`, turning into `.png)`
+after a reload and losing the image on the next save. Pages already saved that way show their
+images again.
+- Images renamed in Uploads to a name with a space now still display in pages.
+- Pasting an image copied from a web page keeps the original file name instead of `image.png`.
+- Dragging a list item now moves its nested items with it.
+- Collapsed headings stay collapsed when you come back to a page or reload it. This is remembered
+in your browser and never changes the file.
+
 ## 0.1.18 — 2026-10-09
 
 - Added icons for pages, database records, folders, databases, and the workspace: pick an emoji, a

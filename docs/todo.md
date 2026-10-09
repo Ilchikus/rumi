@@ -1,21 +1,12 @@
 ## Next release
 
-- [x] [update app in settings](Tasks/M07-039-app-update-check-and-install.md) - when current ≠ latest npm, show indicator near `settings` in sidebar. add new item with version and update button if available
-- [x] [page/db/folder and workspace icon picker](Tasks/M07-040-workspace-item-icons.md): emojis, phosphor icons and custom uploaded icons
-    - [x]  the icon picker opens with noticable delay
-- [x] [instead of "authentification required" toast (or similar), show login screen](Tasks/M07-041-session-expiry-login-overlay.md). currently it's blocking edits save (which should remain), but on top of it should be login screen (with redirect to active page if was active at the moment of token expire)
-- [x] [any paste action (mouse/shortcut) should not break the sequence for \`\` inline code formatting](Tasks/M07-042-inline-code-input-survives-paste.md)
-- [x] [blank lines (or multiple bank lines in a row) are removed on page reload - they should preserve](Tasks/M07-043-preserve-blank-lines.md)
-- [x] [offset checkbox icon for list item lower 4px, and the list item - 4 px higher](Tasks/M07-044-list-marker-alignment.md)
-- [x] [edits typed right before leaving a page are lost](Tasks/M07-045-save-before-leaving-page.md) (found during QA, also on 0.1.17)
+- [x] [images links failed](Tasks/M07-046-image-paths-with-spaces.md): filenames on load created as `image (23).png`, but at some point insted of images i see only `.png)` - prob some replacement roles took place.
+    - [x] regarding images, investigate the possibility to pass the original filename on image paste
+- [x] [when dragging parent list item, childs should move with it as a whole](Tasks/M07-047-drag-list-item-with-children.md)
+- [x] [preserve heading toggle state](Tasks/M07-048-remember-heading-collapse.md) - investigate if the editor can persist the last state of a heading 1..3 for the user, not conflicting with the file-first approach (no source file edits)
 
 ## Backlog
 
-- [ ] images links failed: filenames on load created as `image (23).png`, but at some point insted of images i see only `.png)` - prob some replacement roles took place.
-    - [ ] regarding images, investigate the possibility to pass the original filename on image paste
-- [ ] when dragging parent list item, childs should move with it as a whole
-- [ ] emoji suggestions plugin unmounts its React root synchronously on editor destroy ("Attempted to synchronously unmount a root while React was already rendering" on every page switch); defer the unmount like the code-block and database-embed views do
-- [ ] preserve heading toggle state
 - [ ] add table of contents (in-source or front end only?)
 - [ ] on internal link hover, show page preview: title, props, content excerpt
 - [ ] Slash command on mobile
@@ -51,9 +42,14 @@
 
 ## Archive
 
-
-### Verified in the current product
-
+- [x] [update app in settings](Tasks/M07-039-app-update-check-and-install.md) - when current ≠ latest npm, show indicator near `settings` in sidebar. add new item with version and update button if available
+- [x] [page/db/folder and workspace icon picker](Tasks/M07-040-workspace-item-icons.md): emojis, phosphor icons and custom uploaded icons
+    - [x]  the icon picker opens with noticable delay
+- [x] [instead of "authentification required" toast (or similar), show login screen](Tasks/M07-041-session-expiry-login-overlay.md). currently it's blocking edits save (which should remain), but on top of it should be login screen (with redirect to active page if was active at the moment of token expire)
+- [x] [any paste action (mouse/shortcut) should not break the sequence for \`\` inline code formatting](Tasks/M07-042-inline-code-input-survives-paste.md)
+- [x] [blank lines (or multiple bank lines in a row) are removed on page reload - they should preserve](Tasks/M07-043-preserve-blank-lines.md)
+- [x] [offset checkbox icon for list item lower 4px, and the list item - 4 px higher](Tasks/M07-044-list-marker-alignment.md)
+- [x] [edits typed right before leaving a page are lost](Tasks/M07-045-save-before-leaving-page.md) (found during QA, also on 0.1.17)
 - [x] Initial deep links open the requested route instead of showing a transient not-found state.
 - [x] [Breadcrumb context actions](Tasks/M07-036-shared-breadcrumb-context-actions.md) use the same
 actions as the sidebar, including Copy URL and Copy relative path.
@@ -66,9 +62,6 @@ a Recent tab for recently opened workspace documents.
 - [x] [Task markers typed before existing content preserve that content](Tasks/M07-033-task-marker-content-preservation.md).
 - [x] [Tab and Shift-Tab apply to every eligible item in a multi-line or block selection](Tasks/M07-035-multi-selection-tab-indentation.md).
 - [x] Text carrying both link and inline-code formatting uses the inline-code color.
-
-### Earlier completed items
-
 - [x] cmd+block selector to select several areas (like 3+2+4 with non-selected blocks in-between)
 - [x] rename change/create block from text to paragraph; add friendly names for block for create/change (e.g. h2, heading 2 will both focus on heading 2)
 - [x] add "Create page" for sidebar context menu for folders and databases

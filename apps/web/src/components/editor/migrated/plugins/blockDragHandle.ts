@@ -119,6 +119,45 @@ export function areaSelectionUpdate(
   return { selectedBlocks, anchorBlock }
 }
 
+const LIST_ITEM_TYPES = new Set(["bullet_item", "numbered_item", "task_item"])
+
+function isListItemNode(node: PmNode | null | undefined): boolean {
+  return Boolean(node && LIST_ITEM_TYPES.has(node.type.name))
+}
+
+/**
+ * Top-level block positions plus each list item's children: the list items
+ * right after it with a deeper indent. Any other block ends the children.
+ */
+export function withListChildren(doc: PmNode, positions: readonly number[]): number[] {
+  const result = new Set(positions)
+  for (const pos of positions) {
+    const item = doc.nodeAt(pos)
+    if (!isListItemNode(item)) continue
+    const indent = item.attrs.indent || 0
+    let next = pos + item.nodeSize
+    let child = doc.nodeAt(next)
+    while (isListItemNode(child) && (child.attrs.indent || 0) > indent) {
+      result.add(next)
+      next += child.nodeSize
+      child = doc.nodeAt(next)
+    }
+  }
+  return [...result].sort((a, b) => a - b)
+}
+
+/** The span of consecutive top-level blocks at sorted positions, or null when they have gaps. */
+export function contiguousBlockRange(doc: PmNode, positions: readonly number[]): { from: number; to: number } | null {
+  if (positions.length === 0) return null
+  let to = positions[0]
+  for (const pos of positions) {
+    const node = doc.nodeAt(pos)
+    if (pos !== to || !node) return null
+    to += node.nodeSize
+  }
+  return { from: positions[0], to }
+}
+
 interface HandledBlock {
   pos: number
   node: PmNode
@@ -1690,6 +1729,10 @@ class BlockDragHandleView {
       }
     }
 
+    // A list item brings its nested items along
+    const withChildren = withListChildren(this.view.state.doc, this.draggedMultiBlocks ?? [block.pos])
+    if (withChildren.length > 1) this.draggedMultiBlocks = withChildren
+
     const node = this.view.state.doc.nodeAt(block.pos)
     if (!node) return
 
@@ -1895,24 +1938,35 @@ class BlockDragHandleView {
 
     if (!closest) return null
 
-    // Check if dropping at same position (for list items, we allow this if indent changes)
-    if (this.draggedBlock !== null) {
-      const draggedNode = doc.nodeAt(this.draggedBlock.pos)
-      if (draggedNode) {
-        const dragEnd = this.draggedBlock.pos + draggedNode.nodeSize
-        if (closest.insertPos === this.draggedBlock.pos || closest.insertPos === dragEnd) {
-          // For list items, return target with flag so we can check indent later
-          const nodeType = this.draggedBlock.node.type.name
-          const isListItem = nodeType === "bullet_item" || nodeType === "numbered_item" || nodeType === "task_item"
-          if (isListItem) {
-            return { insertPos: closest.insertPos, y: closest.y, isSamePosition: true }
-          }
-          return null
-        }
-      }
+    // Dropping at either edge of the dragged blocks leaves them in place, though
+    // list items may still change indent. Dropping between them is not offered.
+    const dragged = this.draggedRange()
+    if (dragged && closest.insertPos >= dragged.from && closest.insertPos <= dragged.to) {
+      if (closest.insertPos !== dragged.from && closest.insertPos !== dragged.to) return null
+      return isListItemNode(this.draggedBlock?.node)
+        ? { insertPos: dragged.from, y: closest.y, isSamePosition: true }
+        : null
     }
 
     return closest
+  }
+
+  // The blocks a drop next to leaves in place: every dragged block when they are
+  // consecutive, otherwise the block under the handle.
+  private draggedRange(): { from: number; to: number } | null {
+    if (!this.draggedBlock) return null
+    const doc = this.view.state.doc
+    return contiguousBlockRange(doc, this.draggedMultiBlocks ?? [this.draggedBlock.pos])
+      ?? contiguousBlockRange(doc, [this.draggedBlock.pos])
+  }
+
+  // A dragged list item's indent once the block under the handle lands at
+  // targetIndent, or null when it does not change.
+  private shiftedIndent(node: PmNode, targetIndent: number, primaryOriginalIndent: number): number | null {
+    if (!isListItemNode(node)) return null
+    const current = node.attrs.indent || 0
+    const indent = Math.max(0, Math.min(this.MAX_INDENT, targetIndent + current - primaryOriginalIndent))
+    return indent === current ? null : indent
   }
 
   private showDropIndicator(target: { insertPos: number; y: number; isHeadingAppend?: boolean; headingPos?: number }) {
@@ -2054,6 +2108,22 @@ class BlockDragHandleView {
 
     if (blocks.length === 0) return
 
+    // Dropped in place: only a changed indent moves anything
+    const range = contiguousBlockRange(state.doc, blocks.map((b) => b.pos))
+    if (range && (dropPos === range.from || dropPos === range.to)) {
+      if (targetIndent === primaryOriginalIndent) return
+      let tr = state.tr
+      for (const b of blocks) {
+        const indent = this.shiftedIndent(b.node, targetIndent, primaryOriginalIndent)
+        if (indent !== null) tr = tr.setNodeMarkup(b.pos, null, { ...b.node.attrs, indent })
+      }
+      const selected = blocks.map((b) => b.pos)
+      tr = tr.setSelection(NodeSelection.create(tr.doc, selected[0]))
+      tr.setMeta(multiBlockSelectionKey, { selectedBlocks: selected, anchorBlock: selected[0] })
+      dispatch(tr)
+      return
+    }
+
     // Check if drop position is inside any selected block
     for (const b of blocks) {
       if (dropPos >= b.pos && dropPos <= b.pos + b.size) return
@@ -2075,18 +2145,11 @@ class BlockDragHandleView {
     let insertPos = mappedDrop
     const newPositions: number[] = []
     for (const b of blocks) {
-      const isListItem = b.node.type.name === "bullet_item" || b.node.type.name === "numbered_item" || b.node.type.name === "task_item"
-      let nodeToInsert = b.node
-
       // Apply indent to list items, preserving relative offsets from the primary block
-      if (isListItem) {
-        const relativeOffset = (b.node.attrs.indent || 0) - primaryOriginalIndent
-        const newIndent = Math.max(0, Math.min(this.MAX_INDENT, targetIndent + relativeOffset))
-        if (newIndent !== (b.node.attrs.indent || 0)) {
-          const newAttrs = { ...b.node.attrs, indent: newIndent }
-          nodeToInsert = b.node.type.create(newAttrs, b.node.content, b.node.marks)
-        }
-      }
+      const indent = this.shiftedIndent(b.node, targetIndent, primaryOriginalIndent)
+      const nodeToInsert = indent === null
+        ? b.node
+        : b.node.type.create({ ...b.node.attrs, indent }, b.node.content, b.node.marks)
 
       newPositions.push(insertPos)
       tr = tr.insert(insertPos, nodeToInsert)

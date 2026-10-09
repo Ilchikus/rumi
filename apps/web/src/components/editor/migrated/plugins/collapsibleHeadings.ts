@@ -10,6 +10,12 @@ import {
 import { Decoration, DecorationSet, EditorView, NodeView } from "prosemirror-view"
 import { Node as PmNode } from "prosemirror-model"
 import { multiBlockSelectionKey } from "./multiBlockSelection"
+import {
+  collapsedHeadingIdentities,
+  collapsedHeadingPositions,
+  readCollapsedHeadings,
+  writeCollapsedHeadings
+} from "../headingCollapseMemory"
 
 // Phosphor CaretDown (regular/outline) — rotated via CSS for collapsed state
 const CARET_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"></path></svg>`
@@ -183,13 +189,18 @@ export function createCollapsedHeadingExitAtDocumentEndTransaction(
   return null
 }
 
-export function collapsibleHeadingsPlugin() {
+/** With a storage key, collapsed headings are restored on open and remembered on change. */
+export function collapsibleHeadingsPlugin(storageKey: string | null = null) {
   return new Plugin<CollapsibleHeadingsState>({
     key: collapsibleHeadingsKey,
 
     state: {
-      init(): CollapsibleHeadingsState {
-        return { collapsed: new Set() }
+      init(_config, state): CollapsibleHeadingsState {
+        return {
+          collapsed: storageKey
+            ? collapsedHeadingPositions(state.doc, readCollapsedHeadings(storageKey))
+            : new Set()
+        }
       },
 
       apply(tr, value): CollapsibleHeadingsState {
@@ -209,6 +220,21 @@ export function collapsibleHeadingsPlugin() {
           }
         }
         return { collapsed: newCollapsed }
+      }
+    },
+
+    view() {
+      let remembered = storageKey ? JSON.stringify(readCollapsedHeadings(storageKey)) : ""
+      return {
+        update(view, previousState) {
+          const { collapsed } = collapsibleHeadingsKey.getState(view.state)
+          if (!storageKey || collapsed === collapsibleHeadingsKey.getState(previousState).collapsed) return
+          const identities = collapsedHeadingIdentities(view.state.doc, collapsed)
+          const serialized = JSON.stringify(identities)
+          if (serialized === remembered) return
+          remembered = serialized
+          writeCollapsedHeadings(storageKey, identities)
+        }
       }
     },
 

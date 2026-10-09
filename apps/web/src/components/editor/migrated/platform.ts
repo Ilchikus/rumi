@@ -45,7 +45,17 @@ export function subscribeMigratedEditorPlatform(listener: () => void): () => voi
 export function workspaceAssetUrl(src: string): string {
   const trimmed = src.trim();
   if (/^[a-z][a-z\d+.-]*:/iu.test(trimmed) || trimmed.startsWith("//")) return trimmed;
-  return `/api/asset?${new URLSearchParams({ path: trimmed }).toString()}`;
+  return `/api/asset?${new URLSearchParams({ path: decodedWorkspacePath(trimmed) }).toString()}`;
+}
+
+// Markdown destinations are URLs: `image%20(1).png`, as written by asset renames
+// and Obsidian, names the file `image (1).png`. A bare `%` is a literal one.
+function decodedWorkspacePath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }
 
 export function openEditorHref(

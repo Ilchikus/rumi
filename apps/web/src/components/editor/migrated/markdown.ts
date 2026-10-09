@@ -192,8 +192,9 @@ function preprocessPlainCustomSyntax(markdown: string): string {
 // CommonMark requires destinations containing spaces to use angle brackets,
 // but workspace paths are frequently authored without them. Accept that
 // convenient form on read and let serialization write the portable form.
+// One level of parentheses belongs to the path, as in `image (23).png`.
 function normalizeWorkspaceLinkDestinations(markdown: string): string {
-  return markdown.replace(/(!?\[[^\]\n]*\])\(([^)\n]+)\)/gu, (match, label, rawDestination) => {
+  return markdown.replace(/(!?\[[^\]\n]*\])\(((?:[^()\n]|\([^()\n]*\))+)\)/gu, (match, label, rawDestination) => {
     const { destination, title } = splitLinkDestinationAndTitle(rawDestination)
 
     if (
@@ -875,7 +876,7 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       if (node.attrs.caption) {
         lines.push(indent + `<!-- caption="${node.attrs.caption.replace(/"/g, '&quot;')}" -->`)
       }
-      lines.push(indent + `![${alt}](${src}${title})`)
+      lines.push(indent + `![${alt}](${serializeLinkDestination(src)}${title})`)
       lines.push("")
       break
 

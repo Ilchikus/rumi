@@ -23,6 +23,7 @@ import {
   createInlineCodePasteTransaction,
   isCompleteSvgSource,
   createUrlPasteTransaction,
+  namedClipboardImage,
   normalizePastedTables,
   pasteHandlerPlugin
 } from "./plugins/pasteHandler"
@@ -1222,5 +1223,22 @@ describe("live editor code paste", () => {
 
     expect(createCodeTextPasteTransaction(state, "", schema)).toBeNull()
     expect(state.doc.firstChild?.textContent).toBe("alphaBETAgamma")
+  })
+})
+
+describe("pasted image names", () => {
+  const bitmap = (name = "image.png") => new File([new Uint8Array([1])], name, { type: "image/png" })
+
+  it("names a copied web image after its source file", () => {
+    const named = namedClipboardImage(bitmap(), '<meta charset="utf-8"><img src="https://example.com/photos/Sunset%20Beach.jpg?w=800">')
+    expect(named.name).toBe("Sunset Beach.png")
+    expect(named.type).toBe("image/png")
+  })
+
+  it("keeps the browser name when the source has no usable file name", () => {
+    expect(namedClipboardImage(bitmap(), "").name).toBe("image.png")
+    expect(namedClipboardImage(bitmap(), '<img src="https://lh7.googleusercontent.com/docsz/AD_4nXf">').name).toBe("image.png")
+    expect(namedClipboardImage(bitmap(), '<img src="data:image/png;base64,AAAA">').name).toBe("image.png")
+    expect(namedClipboardImage(bitmap("diagram.png"), '<img src="https://example.com/other.jpg">').name).toBe("diagram.png")
   })
 })

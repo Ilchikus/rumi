@@ -52,6 +52,31 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith("image/") || file.name.toLocaleLowerCase().endsWith(".svg")
 }
 
+const IMAGE_NAME_EXTENSION = /\.(?:png|jpe?g|gif|webp|svg|avif)$/iu
+
+/**
+ * Browsers name clipboard bitmaps `image.png`. When the image was copied from a
+ * web page, the clipboard HTML still names the original file, so the upload
+ * keeps that name with the bitmap's own extension.
+ */
+export function namedClipboardImage(file: File, html: string): File {
+  if (!html || !/^image\.[a-z]+$/iu.test(file.name)) return file
+  const src = new DOMParser().parseFromString(html, "text/html").querySelector("img[src]")?.getAttribute("src") ?? ""
+  if (!/^https?:/iu.test(src)) return file
+  let name: string
+  try {
+    name = decodeURIComponent(new URL(src).pathname.split("/").pop() ?? "")
+  } catch {
+    return file
+  }
+  const stem = name.replace(IMAGE_NAME_EXTENSION, "")
+  if (!stem || stem === name) return file
+  return new File([file], stem + file.name.slice(file.name.lastIndexOf(".")), {
+    type: file.type,
+    lastModified: file.lastModified
+  })
+}
+
 export function isCompleteSvgSource(text: string): boolean {
   const source = text.trim()
   if (!source) return false
@@ -360,7 +385,7 @@ export function pasteHandlerPlugin(schema: Schema) {
         const imageFile = Array.from(clipboard.files).find(isImageFile)
 
         if (imageFile && schema.nodes.image) {
-          void uploadEditorAsset(imageFile)
+          void uploadEditorAsset(namedClipboardImage(imageFile, clipboard.getData("text/html")))
             .then((relativePath) => {
               if (!relativePath) return
               const image = schema.nodes.image.create({ src: relativePath })
@@ -508,7 +533,7 @@ export function pasteHandlerPlugin(schema: Schema) {
 
         if (imageFile && schema.nodes.image) {
           event.preventDefault()
-          void uploadEditorAsset(imageFile)
+          void uploadEditorAsset(namedClipboardImage(imageFile, event.dataTransfer.getData("text/html")))
             .then((relativePath) => {
               if (!relativePath) return
               const image = schema.nodes.image.create({ src: relativePath })

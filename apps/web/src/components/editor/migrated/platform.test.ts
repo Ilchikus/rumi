@@ -4,7 +4,8 @@ import {
   migratedEditorPlatform,
   openEditorHref,
   setMigratedEditorPlatform,
-  subscribeMigratedEditorPlatform
+  subscribeMigratedEditorPlatform,
+  workspaceAssetUrl
 } from "./platform";
 
 afterEach(() => {
@@ -66,5 +67,20 @@ describe("migrated editor platform updates", () => {
 
     openEditorHref("Notes.md", "new");
     expect(openDocument).toHaveBeenCalledWith("Notes.md", "new");
+  });
+});
+
+describe("workspace asset URLs", () => {
+  const requestedPath = (src: string) =>
+    new URL(workspaceAssetUrl(src), "http://rumi.test").searchParams.get("path");
+
+  it("reads percent-encoded Markdown destinations as file names", () => {
+    expect(requestedPath(".assets/after%20(1).png")).toBe(".assets/after (1).png");
+    expect(requestedPath(".assets/image (23).png")).toBe(".assets/image (23).png");
+    expect(requestedPath(".assets/100%.png")).toBe(".assets/100%.png");
+  });
+
+  it("leaves external URLs untouched", () => {
+    expect(workspaceAssetUrl("https://example.com/a%20b.png")).toBe("https://example.com/a%20b.png");
   });
 });

@@ -9,7 +9,9 @@ import {
   areaSelectionScrollVelocity,
   areaSelectionUpdate,
   blockDragHandleKey,
-  blockDragHandlePlugin
+  blockDragHandlePlugin,
+  contiguousBlockRange,
+  withListChildren
 } from "./blockDragHandle"
 import {
   BLOCK_CONTEXT_MENU_INTENT_META,
@@ -667,5 +669,43 @@ describe("selected-block handle menu trigger", () => {
     expect(() => transaction!.doc.check()).not.toThrow()
     expect(transaction!.doc.firstChild?.type).toBe(schema.nodes.paragraph)
     expect(transaction!.doc.firstChild?.textContent).toBe("Quoted")
+  })
+})
+
+describe("dragging list items with their children", () => {
+  const doc = parseMarkdown([
+    "- parent",
+    "    - child",
+    "        1. grandchild",
+    "    - [ ] task child",
+    "- sibling",
+    "    - sibling child",
+    "",
+    "",
+    "    - after a blank line",
+    ""
+  ].join("\n"), schema)
+  const positions: number[] = []
+  doc.forEach((_node, offset) => positions.push(offset))
+  const text = (found: number[]) => found.map((pos) => doc.nodeAt(pos)?.textContent || "(empty)")
+
+  it("adds the deeper list items that follow each dragged item", () => {
+    expect(text(withListChildren(doc, [positions[0]!])))
+      .toEqual(["parent", "child", "grandchild", "task child"])
+    expect(text(withListChildren(doc, [positions[1]!]))).toEqual(["child", "grandchild"])
+    expect(text(withListChildren(doc, [positions[2]!]))).toEqual(["grandchild"])
+  })
+
+  it("stops at an item of the same indent or at any other block", () => {
+    expect(text(withListChildren(doc, [positions[4]!]))).toEqual(["sibling", "sibling child"])
+    expect(text(withListChildren(doc, [positions[3]!, positions[4]!])))
+      .toEqual(["task child", "sibling", "sibling child"])
+  })
+
+  it("finds the span of consecutive blocks only", () => {
+    const end = positions[2]! + doc.nodeAt(positions[2]!)!.nodeSize
+    expect(contiguousBlockRange(doc, [positions[0]!, positions[1]!, positions[2]!]))
+      .toEqual({ from: positions[0], to: end })
+    expect(contiguousBlockRange(doc, [positions[0]!, positions[2]!])).toBeNull()
   })
 })

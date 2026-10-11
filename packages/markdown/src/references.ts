@@ -28,7 +28,9 @@ export function rewriteMarkdownReferences(
   let referenceCount = 0;
   const rewriteText = (text: string): string => {
     let rewritten = text.replace(
-      /(!?)\[([^\]\n]*)\]\(([^)\n]*)\)/gu,
+      // An optional <...> destination, then text with one level of parentheses,
+      // so `<image (23).png>` and `image (23).png` are read whole.
+      /(!?)\[([^\]\n]*)\]\(((?:<[^>\n]*>)?(?:[^()\n]|\([^()\n]*\))*)\)/gu,
       (match, imagePrefix: string, label: string, destinationBody: string) => {
         const destination = rewriteDestinationBody(destinationBody, previous, next, sourcePath);
         if (!destination.changed) return match;
@@ -124,7 +126,8 @@ function rewriteDestinationBody(
 
   const wrapped = core.startsWith("<") && core.endsWith(">");
   const target = wrapped ? core.slice(1, -1) : core;
-  const mapped = rewriteReferenceTarget(target, previousPath, nextPath, sourcePath, true);
+  // Angle brackets already allow spaces; bare destinations encode them.
+  const mapped = rewriteReferenceTarget(target, previousPath, nextPath, sourcePath, !wrapped);
   if (!mapped) return { changed: false, value: body };
   return {
     changed: true,

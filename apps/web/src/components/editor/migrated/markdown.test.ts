@@ -161,6 +161,36 @@ describe("live editor Markdown round trips", () => {
       .toBe("`![](.assets/image (23).png)`\n")
   })
 
+  it("reads back image captions saved as a comment above the image", () => {
+    const markdown = [
+      "Intro",
+      "",
+      "<!-- caption=\"perfect bodywork (not &quot;stance&quot;)\" -->",
+      "![](<.assets/image (32).png>)",
+      "",
+      "<!-- caption=\"Not directly above an image\" -->",
+      "",
+      "![](.assets/other.png)",
+      ""
+    ].join("\n")
+    const parsed = parseMarkdown(markdown, schema)
+    const images: Array<Record<string, unknown>> = []
+    parsed.forEach((node) => {
+      if (node.type.name === "image") images.push(node.attrs)
+    })
+
+    expect(images.map((attrs) => attrs.caption)).toEqual(['perfect bodywork (not "stance")', ""])
+    expect(serializeMarkdown(parsed)).toBe([
+      "Intro",
+      "",
+      "<!-- caption=\"perfect bodywork (not &quot;stance&quot;)\" -->",
+      "![](<.assets/image (32).png>)",
+      "",
+      "![](.assets/other.png)",
+      ""
+    ].join("\n"))
+  })
+
   it("reads link paths with one level of parentheses", () => {
     const parsed = parseMarkdown("See [plan](Plans/Plan (draft).md)\n", schema)
     const link = parsed.firstChild?.content.content

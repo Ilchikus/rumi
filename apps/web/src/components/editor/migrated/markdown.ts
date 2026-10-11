@@ -238,19 +238,30 @@ function convertBlockSequence(
   quoted: boolean
 ): ProseMirrorNode[] {
   const positioned: PositionedBlock[] = []
+  let caption: { text: string; startLine?: number } | null = null
 
-  for (const child of children) {
+  for (const [childIndex, child] of children.entries()) {
     if (child.type === "list") {
       positioned.push(...convertListPositioned(child, schema, 0))
       continue
     }
 
+    const captionText = imageCaptionFor(child, children[childIndex + 1])
+    if (captionText !== null) {
+      caption = { text: captionText, startLine: child.position?.start.line }
+      continue
+    }
+
     const block = convertBlock(child, schema, sourceLines)
+    const blockCaption = caption
+    caption = null
     if (!block) continue
     const nodes = Array.isArray(block) ? block : [block]
     nodes.forEach((node, index) => positioned.push({
-      node,
-      startLine: index === 0 ? child.position?.start.line : undefined,
+      node: index === 0 && blockCaption && node.type.name === "image"
+        ? node.type.create({ ...node.attrs, caption: blockCaption.text })
+        : node,
+      startLine: index === 0 ? blockCaption?.startLine ?? child.position?.start.line : undefined,
       endLine: index === nodes.length - 1 ? child.position?.end.line : undefined
     }))
   }
@@ -270,6 +281,19 @@ function convertBlockSequence(
   }
 
   return blocks
+}
+
+// The serializer stores an image caption as a comment on the line directly
+// above the image: `<!-- caption="..." -->`.
+function imageCaptionFor(node: RootContent, next: RootContent | undefined): string | null {
+  if (node.type !== "html" || next?.type !== "paragraph") return null
+  const match = node.value.trim().match(/^<!--\s*caption="([^"]*)"\s*-->$/u)
+  if (!match) return null
+  if (next.children.length !== 1 || next.children[0].type !== "image") return null
+  const commentEnd = node.position?.end.line
+  const imageStart = next.position?.start.line
+  if (commentEnd !== undefined && imageStart !== undefined && imageStart !== commentEnd + 1) return null
+  return match[1].replace(/&quot;/gu, '"')
 }
 
 function countBlankLinesBefore(

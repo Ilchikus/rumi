@@ -10,6 +10,8 @@ entries go first; releases without meaningful product-behavior changes may be om
 after a reload and losing the image on the next save. Pages already saved that way show their
 images again.
 - Images renamed in Uploads to a name with a space now still display in pages.
+- Image captions are kept when a page is reopened. They were saved to the file but dropped the next
+time the page was opened and saved.
 - Pasting an image copied from a web page keeps the original file name instead of `image.png`.
 - Dragging a list item now moves its nested items with it.
 - Collapsed headings stay collapsed when you come back to a page or reload it. This is remembered

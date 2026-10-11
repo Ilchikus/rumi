@@ -107,6 +107,16 @@ A mention is an internal link whose label starts with `@`, such as `[@Roadmap](R
 the mentioned item is renamed, Rumi updates both the destination and the `@` label. Links with other
 labels keep their text.
 
+### Image captions
+
+An image caption is an HTML comment on the line directly above the image, so it stays invisible in
+other Markdown viewers:
+
+```markdown
+<!-- caption="Front three-quarter view" -->
+![](<.assets/image (2).png>)
+```
+
 ### File and database embeds
 
 Rumi supports an Obsidian-style file embed on its own line:

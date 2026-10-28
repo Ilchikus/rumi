@@ -49,6 +49,7 @@ import { databaseEmbedNodeView } from "./plugins/databaseEmbedNodeView"
 import { linkMarkerNodeView } from "./plugins/linkMarkerNodeView"
 import { pasteHandlerPlugin } from "./plugins/pasteHandler"
 import { collapsibleHeadingsPlugin, headingNodeView } from "./plugins/collapsibleHeadings"
+import { collapsedHeadingsStorageKey } from "./headingCollapseMemory"
 import { createDocumentEndClickTransaction } from "./documentEnd"
 import {
   inlineReplacementsPlugin,
@@ -193,7 +194,7 @@ function ProseMirrorEditor(
     const state = EditorState.create({
       doc,
       plugins: [
-        collapsibleHeadingsPlugin(),
+        collapsibleHeadingsPlugin(collapsedHeadingsStorageKey(workspaceKey, documentKey)),
         inlineCodeInputSessionPlugin(schema),
         buildInputRules(schema),
         inlineReplacementsPlugin(schema, inlineReplacements),

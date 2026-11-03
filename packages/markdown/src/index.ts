@@ -1,4 +1,5 @@
 import { parse, stringify } from "yaml";
+export { splitColumnsSource } from "./columns";
 import type { FrontmatterRecord } from "@rumi/contracts";
 
 export {

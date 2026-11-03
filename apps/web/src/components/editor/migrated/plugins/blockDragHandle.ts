@@ -72,6 +72,15 @@ export function areaSelectionBounds(
   }
 }
 
+// Pixels per second, independent of display refresh rate.
+export function blockDragScrollVelocity(pointerY: number, top: number, bottom: number): number {
+  const height = bottom - top
+  if (height <= 0 || pointerY < top || pointerY > bottom) return 0
+  const distance = Math.min(pointerY - top, bottom - pointerY) / height
+  const speed = distance <= 0.05 ? 720 : distance <= 0.10 ? 360 : 0
+  return pointerY < (top + bottom) / 2 ? -speed : speed
+}
+
 export function areaSelectionScrollVelocity(
   pointerY: number,
   viewportTop: number,
@@ -208,6 +217,9 @@ class BlockDragHandleView {
   private draggedBlock: HandledBlock | null = null
   private draggedBlockX: number = 0
   private scrollParent: HTMLElement | null = null
+  private dragScrollFrame: number | null = null
+  private dragScrollPointer: { x: number; y: number } | null = null
+  private dragScrollTime: number | null = null
 
   // RAF throttle for mousemove — process only the latest event per animation frame
   private mouseMoveRafId: number | null = null
@@ -1770,6 +1782,7 @@ class BlockDragHandleView {
     this.handle.style.cursor = "grabbing"
     this.addButton.style.display = "none"
 
+    document.addEventListener("dragend", this.onDragEnd)
     document.addEventListener("dragover", this.onDragOver)
     document.addEventListener("drop", this.onDrop)
   }
@@ -1778,6 +1791,8 @@ class BlockDragHandleView {
     e.preventDefault()
     if (!e.dataTransfer) return
     e.dataTransfer.dropEffect = "move"
+    this.dragScrollPointer = { x: e.clientX, y: e.clientY }
+    if (this.dragScrollFrame === null) this.dragScrollFrame = requestAnimationFrame(this.runDragScroll)
 
     if (this.dragGhost) {
       const wrapperRect = this.getEditorWrapper()?.getBoundingClientRect()
@@ -1828,6 +1843,30 @@ class BlockDragHandleView {
     }
 
     this.showDropIndicator(target)
+  }
+
+  private runDragScroll = (time: number) => {
+    this.dragScrollFrame = null
+    if (!this.draggedBlock || !this.dragScrollPointer) return
+    const viewport = this.getAreaSelectionViewport()
+    const velocity = blockDragScrollVelocity(this.dragScrollPointer.y, viewport.top, viewport.bottom)
+    const elapsed = this.dragScrollTime === null ? 1 / 60 : Math.min(0.05, (time - this.dragScrollTime) / 1000)
+    this.dragScrollTime = time
+    if (velocity) {
+      const delta = velocity * elapsed
+      if (this.scrollParent) this.scrollParent.scrollTop += delta
+      else window.scrollBy(0, delta)
+      const target = this.getDropTarget(this.dragScrollPointer.y)
+      if (target) this.showDropIndicator(target)
+    }
+    this.dragScrollFrame = requestAnimationFrame(this.runDragScroll)
+  }
+
+  private stopDragScroll() {
+    if (this.dragScrollFrame !== null) cancelAnimationFrame(this.dragScrollFrame)
+    this.dragScrollFrame = null
+    this.dragScrollPointer = null
+    this.dragScrollTime = null
   }
 
   private getDropTarget(clientY: number): { insertPos: number; y: number; isSamePosition?: boolean; isHeadingAppend?: boolean; headingPos?: number } | null {
@@ -2188,6 +2227,7 @@ class BlockDragHandleView {
   }
 
   private cleanupDrag() {
+    this.stopDragScroll()
     this.dropIndicator.style.display = "none"
     this.headingHighlight.style.display = "none"
     this.handle.style.cursor = "grab"
@@ -2198,6 +2238,7 @@ class BlockDragHandleView {
       this.dragGhost.remove()
       this.dragGhost = null
     }
+    document.removeEventListener("dragend", this.onDragEnd)
     document.removeEventListener("dragover", this.onDragOver)
     document.removeEventListener("drop", this.onDrop)
 
@@ -2244,6 +2285,7 @@ class BlockDragHandleView {
   }
 
   destroy() {
+    this.stopDragScroll()
     if (this.mouseMoveRafId !== null) {
       cancelAnimationFrame(this.mouseMoveRafId)
       this.mouseMoveRafId = null
@@ -2282,6 +2324,7 @@ class BlockDragHandleView {
     } else {
       window.removeEventListener("scroll", this.onScroll)
     }
+    document.removeEventListener("dragend", this.onDragEnd)
     document.removeEventListener("dragover", this.onDragOver)
     document.removeEventListener("drop", this.onDrop)
   }

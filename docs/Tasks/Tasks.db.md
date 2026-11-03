@@ -63,6 +63,8 @@ properties:
         color: violet
       - name: "0.1.19"
         color: green
+      - name: "0.1.20"
+        color: sky
   owner_layer:
     type: select
     options:

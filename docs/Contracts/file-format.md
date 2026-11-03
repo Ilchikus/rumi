@@ -123,3 +123,13 @@ content-addressed Markdown snapshots.
 Future database relation definitions are not part of the accepted file contract yet. Proposed
 Decision 019 recommends typed schema definitions whose record values reuse quoted internal-link
 strings rather than opaque IDs or nested path objects.
+
+Two-column content uses a `columns` fence with two Markdown sections separated by a standalone
+`|||` outside nested code fences. The editor grows the outer fence to contain nested fences safely.
+Malformed containers remain code. See [Decision 028](../Decisions/028-explicit-two-column-source.md).
+Generated document outlines, heading fragment IDs and personal Markdown table widths do not alter
+Markdown or frontmatter. Heading anchors follow [Decision 027](../Decisions/027-derived-document-outline.md).
+
+The shared Markdown layer recognizes valid columns when repairing references. Links and images in
+both columns follow page/asset moves; ordinary nested code examples and malformed columns fences
+remain untouched.

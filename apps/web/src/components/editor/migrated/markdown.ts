@@ -1,6 +1,7 @@
 // @ts-nocheck -- functionality-first migration from the proven Rumi editor
 import { Node as ProseMirrorNode, Schema, Fragment } from "prosemirror-model"
 import { unified } from "unified"
+import { splitColumnsSource } from "@rumi/markdown"
 import remarkParse from "remark-parse"
 import remarkGfm from "remark-gfm"
 import { mentionKindForPath } from "./mentionTypes"
@@ -200,8 +201,6 @@ function normalizeWorkspaceLinkDestinations(markdown: string): string {
     if (
       !/\s/u.test(destination)
       || destination.startsWith("<")
-      || /^[a-z][a-z\d+.-]*:/iu.test(destination)
-      || destination.startsWith("//")
       || /[<>\n\r]/u.test(destination)
     ) {
       return match
@@ -366,14 +365,27 @@ function convertParagraph(node: Paragraph, schema: Schema): ProseMirrorNode | Pr
     }
   }
 
-  // Check if paragraph contains only an image (make it a block image)
-  if (node.children.length === 1 && node.children[0].type === "image" && schema.nodes.image) {
-    const imgNode = node.children[0] as Image
-    return schema.nodes.image.create({
-      src: imgNode.url,
-      alt: imgNode.alt || "",
-      title: imgNode.title || null
-    })
+  if (schema.nodes.image && node.children.some((child) => child.type === "image" || (child.type === "link" && child.children.some((nested) => nested.type === "image")))) {
+    const blocks: ProseMirrorNode[] = []
+    let text: MdastPhrasingContent[] = []
+    const flush = () => {
+      if (text[0]?.type === "text") text[0] = { ...text[0], value: text[0].value.trimStart() }
+      const last = text.length - 1
+      if (text[last]?.type === "text") text[last] = { ...text[last], value: text[last].value.trimEnd() }
+      if (text.some((child) => child.type !== "text" || child.value.trim())) {
+        blocks.push(schema.nodes.paragraph.create(null, convertInlineContent(text, schema)))
+      }
+      text = []
+    }
+    for (const child of node.children) {
+      const image = child.type === "image" ? child : child.type === "link" && child.children.length === 1 && child.children[0].type === "image" ? child.children[0] : null
+      if (image) {
+        flush()
+        blocks.push(schema.nodes.image.create({ src: image.url, alt: image.alt || "", title: image.title || null, href: child.type === "link" ? child.url : null }))
+      } else text.push(child)
+    }
+    flush()
+    return blocks
   }
 
   const inline = convertInlineContent(node.children, schema)
@@ -487,6 +499,15 @@ function convertTable(node: Table, schema: Schema): ProseMirrorNode | null {
 }
 
 function convertCodeBlock(node: Code, schema: Schema): ProseMirrorNode | null {
+  if (node.lang === "columns" && schema.nodes.columns) {
+    const sections = splitColumnsSource(node.value || "")
+    if (sections) {
+      const columns = sections.map((source) => schema.nodes.column.create(null, parseMarkdown(source, schema).content))
+      return schema.nodes.columns.create(null, columns)
+    }
+    // Malformed containers remain ordinary source, never silently drop content.
+  }
+
   // Check if it's a mermaid diagram
   if (node.lang === "mermaid" && schema.nodes.mermaid) {
     const code = node.value || ""
@@ -856,22 +877,35 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       lines.push("")
       break
 
-    case "code_block":
-      lines.push(indent + "```" + (node.attrs.language || ""))
-      lines.push(indent + node.textContent)
-      lines.push(indent + "```")
-      lines.push("")
+    case "columns": {
+      const columns: string[] = []
+      node.forEach((column) => columns.push(serializeMarkdown(columnDocument(column)).trimEnd()))
+      const source = columns.join("\n\n|||\n\n")
+      const fence = codeFenceFor(source)
+      lines.push(indent + fence + "columns")
+      source.split("\n").forEach((line) => lines.push(indent + line))
+      lines.push(indent + fence, "")
       break
+    }
 
-    case "mermaid":
-      lines.push(indent + "```mermaid")
+    case "code_block": {
+      const fence = codeFenceFor(node.textContent)
+      lines.push(indent + fence + (node.attrs.language || ""))
+      node.textContent.split("\n").forEach((line) => lines.push(indent + line))
+      lines.push(indent + fence, "")
+      break
+    }
+
+    case "mermaid": {
+      const fence = codeFenceFor(node.textContent)
+      lines.push(indent + fence + "mermaid")
       const code = node.textContent
       code.split("\n").forEach((line: string) => {
         lines.push(indent + line)
       })
-      lines.push(indent + "```")
-      lines.push("")
+      lines.push(indent + fence, "")
       break
+    }
 
     case "database_embed":
       lines.push(indent + "```db")
@@ -900,7 +934,8 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       if (node.attrs.caption) {
         lines.push(indent + `<!-- caption="${node.attrs.caption.replace(/"/g, '&quot;')}" -->`)
       }
-      lines.push(indent + `![${alt}](${serializeLinkDestination(src)}${title})`)
+      const image = `![${alt}](${serializeLinkDestination(src)}${title})`
+      lines.push(indent + (node.attrs.href ? `[${image}](${serializeLinkDestination(node.attrs.href)})` : image))
       lines.push("")
       break
 
@@ -914,6 +949,15 @@ function serializeBlock(node: ProseMirrorNode, lines: string[], indent: string, 
       lines.push(indent + serializeInline(node))
       lines.push("")
   }
+}
+
+function codeFenceFor(source: string): string {
+  const longest = Math.max(2, ...(source.match(/`+/g) ?? []).map((run) => run.length))
+  return "`".repeat(longest + 1)
+}
+
+function columnDocument(column: ProseMirrorNode): ProseMirrorNode {
+  return column.type.schema.nodes.doc.create(null, column.content)
 }
 
 function serializeTable(node: ProseMirrorNode, lines: string[], indent: string): void {
@@ -989,59 +1033,63 @@ function serializeListItem(node: ProseMirrorNode, lines: string[], indent: strin
   })
 }
 
+const readableInlineCache = new Map<string, string>()
 function serializeInline(parent: ProseMirrorNode): string {
-  let result = ""
-
+  let conservative = ""
+  let readable = ""
   parent.forEach((node) => {
-    if (node.type.name === "text") {
-      const marks = node.marks
-      const isInlineCode = marks.some((mark) => mark.type.name === "code")
-      let text = isInlineCode
-        ? node.text || ""
-        : escapeMarkdownText(node.text || "", result.length === 0 || result.endsWith("\n"))
-
-      // Apply marks - order matters for nesting
-      for (const mark of marks) {
-        switch (mark.type.name) {
-          case "bold":
-            text = `**${text}**`
-            break
-          case "italic":
-            text = `*${text}*`
-            break
-          case "underline":
-            text = `__${text}__`
-            break
-          case "strikethrough":
-            text = `~~${text}~~`
-            break
-          case "code":
-            text = `\`${text}\``
-            break
-          case "highlight":
-            text = `==${text}==`
-            break
-          case "link":
-            const title = mark.attrs.title ? ` "${mark.attrs.title}"` : ""
-            const label = mark.attrs.mention ? `@${text}` : text
-            text = `[${label}](${serializeLinkDestination(mark.attrs.href)}${title})`
-            break
-        }
-      }
-
-      result += text
-    } else if (node.type.name === "soft_break") {
-      result += "\n"
-    } else if (node.type.name === "hard_break") {
-      result += "  \n"
-    } else if (node.type.name === "link_marker") {
-      // Derived editor-only atoms. The adjacent marked text owns the durable
-      // [label](destination) Markdown representation.
-      return
+    if (node.isText) {
+      const code = node.marks.some((mark) => mark.type.name === "code")
+      const escaped = code ? node.text || "" : escapeMarkdownText(node.text || "", conservative.length === 0 || conservative.endsWith("\n"))
+      const candidate = code ? escaped : escaped.replace(/\\([_~])/g, "$1")
+      conservative += serializeMarkedText(node, escaped)
+      readable += serializeMarkedText(node, candidate)
+    } else if (node.type.name === "soft_break" || node.type.name === "hard_break") {
+      const newline = node.type.name === "hard_break" ? "  \n" : "\n"
+      conservative += newline
+      readable += newline
     }
+    // Link marker atoms are derived chrome; the adjacent mark owns source.
   })
-
+  if (readable === conservative) return conservative
+  // Single delimiters and ASCII intraword underscores cannot introduce markup.
+  // Keep ordinary prose on a cheap path; validate potential delimiter pairs below.
+  const underscores = readable.match(/_/g)?.length ?? 0
+  const tildes = readable.match(/~/g)?.length ?? 0
+  if (tildes < 2 && (underscores < 2 || !/(?<![a-zA-Z0-9])_|_(?![a-zA-Z0-9])/u.test(readable))) return readable
+  const key = conservative + "\0" + JSON.stringify(parent.content.toJSON())
+  const cached = readableInlineCache.get(key)
+  if (cached !== undefined) return cached
+  // Validate the whole inline sequence, including mark boundaries. Individually
+  // harmless delimiters can pair up across bold text or links after serialization.
+  const reparsed = parseMarkdown(readable, parent.type.schema)
+  const unchanged = reparsed.childCount === 1 && reparsed.firstChild?.type.name === "paragraph"
+    && reparsed.firstChild.content.eq(parent.content)
+  const result = unchanged ? readable : conservative
+  if (readableInlineCache.size >= 500) readableInlineCache.delete(readableInlineCache.keys().next().value!)
+  readableInlineCache.set(key, result)
   return result
+}
+
+function serializeMarkedText(node: ProseMirrorNode, source: string): string {
+  let text = source
+  for (const mark of node.marks) {
+    switch (mark.type.name) {
+      case "bold": text = `**${text}**`; break
+      case "italic": text = `*${text}*`; break
+      case "underline": text = `__${text}__`; break
+      case "strikethrough": text = `~~${text}~~`; break
+      case "code": text = `\`${text}\``; break
+      case "highlight": text = `==${text}==`; break
+      case "link": {
+        const title = mark.attrs.title ? ` "${mark.attrs.title}"` : ""
+        const label = mark.attrs.mention ? `@${text}` : text
+        text = `[${label}](${serializeLinkDestination(mark.attrs.href)}${title})`
+        break
+      }
+    }
+  }
+  return text
 }
 
 function escapeMarkdownText(text: string, startsAtLineStart: boolean): string {

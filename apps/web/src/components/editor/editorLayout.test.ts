@@ -431,7 +431,7 @@ describe("editor layout contracts", () => {
     expect(selectionToolbar).toContain('closest<HTMLElement>("[data-rumi-editor-canvas]")');
     expect(selectionToolbar).toContain("selectedBlockInlineRanges(state)");
     expect(selectionToolbar).toContain("EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS.forEach");
-    expect(selectionToolbar).toContain('["mermaid", "table", "horizontal_rule"]');
+    expect(selectionToolbar).toContain('["mermaid", "table", "horizontal_rule", "columns"]');
     expect(selectionToolbar).toContain('"Upload media"');
     expect(selectionToolbar).toContain('"Delete block"');
     expect(selectionToolbar).toContain('"Undo (⌘Z)"');

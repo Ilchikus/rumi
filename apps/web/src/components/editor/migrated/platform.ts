@@ -45,7 +45,24 @@ export function subscribeMigratedEditorPlatform(listener: () => void): () => voi
 export function workspaceAssetUrl(src: string): string {
   const trimmed = src.trim();
   if (/^[a-z][a-z\d+.-]*:/iu.test(trimmed) || trimmed.startsWith("//")) return trimmed;
-  return `/api/asset?${new URLSearchParams({ path: decodedWorkspacePath(trimmed) }).toString()}`;
+  const suffixIndex = trimmed.search(/[?#]/u);
+  const destination = suffixIndex < 0 ? trimmed : trimmed.slice(0, suffixIndex);
+  const fragmentIndex = trimmed.indexOf("#");
+  const fragment = fragmentIndex < 0 ? "" : trimmed.slice(fragmentIndex);
+  const decoded = decodedWorkspacePath(destination);
+  const rooted = decoded.startsWith("/") || decoded.startsWith(".assets/");
+  const directory = currentPlatform.documentKey.split("/").slice(0, -1).join("/");
+  const source = rooted ? decoded.replace(/^\/+/, "") : `${directory}/${decoded}`;
+  const parts: string[] = [];
+  for (const part of source.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!parts.length) return `/api/asset?${new URLSearchParams({ path: source }).toString()}`;
+      parts.pop();
+    }
+    else parts.push(part);
+  }
+  return `/api/asset?${new URLSearchParams({ path: parts.join("/") }).toString()}${fragment}`;
 }
 
 // Markdown destinations are URLs: `image%20(1).png`, as written by asset renames
@@ -71,6 +88,9 @@ export function openEditorHref(
       target === "new" ? "noopener,noreferrer" : undefined
     );
     if (target === "new") opened?.focus();
+  } else if (trimmed.startsWith("#") && target === "current") {
+    window.history.pushState(window.history.state, "", trimmed);
+    window.dispatchEvent(new Event("rumi:heading-navigation"));
   } else {
     currentPlatform.openDocument?.(trimmed, target);
   }

@@ -1,3 +1,5 @@
+import { splitColumnsSource } from "./columns";
+
 export interface RewrittenReferences {
   markdown: string;
   referenceCount: number;
@@ -208,29 +210,47 @@ function movedReferencePath(target: string, previousPath: string, nextPath: stri
 function rewriteOutsideCode(markdown: string, rewrite: (text: string) => string): string {
   const pieces = markdown.split(/(\r?\n)/u);
   let fence: { marker: "`" | "~"; length: number } | null = null;
+  let output = "";
 
-  return pieces.map((piece, index) => {
-    if (index % 2 === 1) return piece;
-    const markerMatch = piece.match(/^\s{0,3}(`{3,}|~{3,})/u);
+  for (let index = 0; index < pieces.length; index++) {
+    const piece = pieces[index]!;
+    if (index % 2 === 1) { output += piece; continue; }
+    const markerMatch = piece.match(/^ {0,3}(`{3,}|~{3,})(.*)$/u);
     if (markerMatch) {
       const markerText = markerMatch[1]!;
       const marker = markerText[0] as "`" | "~";
+      if (!fence && markerMatch[2]!.trim() === "columns") {
+        let closing = index + 2;
+        while (closing < pieces.length) {
+          const end = pieces[closing]!.match(/^ {0,3}(`{3,}|~{3,})\s*$/u);
+          if (end && end[1]![0] === marker && end[1]!.length >= markerText.length) break;
+          closing += 2;
+        }
+        if (closing < pieces.length) {
+          const source = pieces.slice(index + 2, closing).join("");
+          if (splitColumnsSource(source)) {
+            output += piece + (pieces[index + 1] ?? "") + rewriteOutsideCode(source, rewrite) + pieces[closing];
+            index = closing;
+            continue;
+          }
+        }
+      }
       if (!fence) fence = { marker, length: markerText.length };
-      else if (marker === fence.marker && markerText.length >= fence.length) fence = null;
-      return piece;
+      else if (marker === fence.marker && markerText.length >= fence.length && !markerMatch[2]!.trim()) fence = null;
+      output += piece;
+      continue;
     }
-    if (fence) return piece;
+    if (fence) { output += piece; continue; }
 
-    let result = "";
     let cursor = 0;
     for (const match of piece.matchAll(/(`+)(.*?)\1/gu)) {
       const start = match.index ?? 0;
-      result += rewrite(piece.slice(cursor, start));
-      result += match[0];
+      output += rewrite(piece.slice(cursor, start)) + match[0];
       cursor = start + match[0].length;
     }
-    return result + rewrite(piece.slice(cursor));
-  }).join("");
+    output += rewrite(piece.slice(cursor));
+  }
+  return output;
 }
 
 function firstSuffixIndex(target: string): number {

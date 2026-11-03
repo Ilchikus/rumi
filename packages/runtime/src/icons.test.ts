@@ -6,8 +6,12 @@ import { createTempWorkspace, WorkspaceRuntime } from "./index";
 import { rewriteMarkdownReferences } from "./reference-repair";
 
 const cleanupPaths: string[] = [];
+const cleanupRuntimes: WorkspaceRuntime[] = [];
 
 afterEach(async () => {
+  for (const runtime of cleanupRuntimes.splice(0)) {
+    await runtime.stopWatchingWorkspace();
+  }
   for (const cleanupPath of cleanupPaths.splice(0)) {
     await fs.rm(cleanupPath, { recursive: true, force: true });
   }
@@ -20,7 +24,9 @@ async function workspace(files: Record<string, string>): Promise<{ root: string;
     await fs.mkdir(path.dirname(path.join(root, relPath)), { recursive: true });
     await fs.writeFile(path.join(root, relPath), content, "utf8");
   }
-  return { root, runtime: await WorkspaceRuntime.open({ rootPath: root }) };
+  const runtime = await WorkspaceRuntime.open({ rootPath: root });
+  cleanupRuntimes.push(runtime);
+  return { root, runtime };
 }
 
 function findNode(node: WorkspaceNode, nodePath: string): WorkspaceNode | undefined {

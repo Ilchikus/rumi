@@ -153,6 +153,22 @@ const nodes: { [key: string]: NodeSpec } = {
     defining: true
   },
 
+  columns: {
+    content: "column column",
+    group: "block",
+    isolating: true,
+    defining: true,
+    parseDOM: [{ tag: "div.rumi-columns" }],
+    toDOM() { return ["div", { class: "rumi-columns" }, 0] }
+  },
+
+  column: {
+    content: "block+",
+    isolating: true,
+    parseDOM: [{ tag: "div.rumi-column" }],
+    toDOM() { return ["div", { class: "rumi-column" }, 0] }
+  },
+
   table: {
     content: "table_row+",
     group: "block",
@@ -179,6 +195,7 @@ const nodes: { [key: string]: NodeSpec } = {
     attrs: {
       colspan: { default: 1 },
       rowspan: { default: 1 },
+      colwidth: { default: null },
       alignment: { default: null }
     },
     isolating: true,
@@ -186,6 +203,7 @@ const nodes: { [key: string]: NodeSpec } = {
       return {
         colspan: Number(dom.getAttribute("colspan") || 1),
         rowspan: Number(dom.getAttribute("rowspan") || 1),
+        colwidth: dom.getAttribute("data-colwidth")?.split(",").map(Number) ?? null,
         alignment: dom.getAttribute("data-alignment") || dom.style.textAlign || null
       }
     }}],
@@ -193,6 +211,7 @@ const nodes: { [key: string]: NodeSpec } = {
       const attrs: Record<string, string> = {}
       if (node.attrs.colspan !== 1) attrs.colspan = String(node.attrs.colspan)
       if (node.attrs.rowspan !== 1) attrs.rowspan = String(node.attrs.rowspan)
+      if (node.attrs.colwidth) attrs["data-colwidth"] = node.attrs.colwidth.join(",")
       if (node.attrs.alignment) {
         attrs["data-alignment"] = node.attrs.alignment
         attrs.style = `text-align: ${node.attrs.alignment}`
@@ -207,6 +226,7 @@ const nodes: { [key: string]: NodeSpec } = {
     attrs: {
       colspan: { default: 1 },
       rowspan: { default: 1 },
+      colwidth: { default: null },
       alignment: { default: null }
     },
     isolating: true,
@@ -214,6 +234,7 @@ const nodes: { [key: string]: NodeSpec } = {
       return {
         colspan: Number(dom.getAttribute("colspan") || 1),
         rowspan: Number(dom.getAttribute("rowspan") || 1),
+        colwidth: dom.getAttribute("data-colwidth")?.split(",").map(Number) ?? null,
         alignment: dom.getAttribute("data-alignment") || dom.style.textAlign || null
       }
     }}],
@@ -221,6 +242,7 @@ const nodes: { [key: string]: NodeSpec } = {
       const attrs: Record<string, string> = {}
       if (node.attrs.colspan !== 1) attrs.colspan = String(node.attrs.colspan)
       if (node.attrs.rowspan !== 1) attrs.rowspan = String(node.attrs.rowspan)
+      if (node.attrs.colwidth) attrs["data-colwidth"] = node.attrs.colwidth.join(",")
       if (node.attrs.alignment) {
         attrs["data-alignment"] = node.attrs.alignment
         attrs.style = `text-align: ${node.attrs.alignment}`
@@ -333,6 +355,7 @@ const nodes: { [key: string]: NodeSpec } = {
       title: { default: null },
       alignment: { default: "left" }, // left, center, full
       caption: { default: "" },
+      href: { default: null },
       widthPx: { default: null }
     },
     parseDOM: [{
@@ -346,6 +369,7 @@ const nodes: { [key: string]: NodeSpec } = {
           title: img?.getAttribute("title") || null,
           alignment: dom.getAttribute("data-alignment") || "left",
           caption: caption?.textContent || "",
+          href: dom.querySelector("a[href]")?.getAttribute("href") || null,
           widthPx: null
         }
       }

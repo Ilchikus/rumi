@@ -14,6 +14,9 @@ import { history } from "prosemirror-history"
 import { baseKeymap } from "prosemirror-commands"
 import { keymap } from "prosemirror-keymap"
 import { schema } from "./schema"
+import { documentOutlinePlugin } from "./plugins/documentOutline"
+import { internalLinkPreviewPlugin } from "./plugins/internalLinkPreview"
+import { restoreTableWidths, tableWidthMemoryPlugin, tableWidthStorageKey } from "./tableWidthMemory"
 import { buildKeymap } from "./keymap"
 import { inactiveBlockSelectionPlugin } from "./inactiveBlockSelection"
 import { structuralCaretPlugin } from "./plugins/structuralCaret"
@@ -187,13 +190,14 @@ function ProseMirrorEditor(
     if (!editorRef.current) return
 
     const doc = applyImagePresentationToDocument(
-      parseMarkdown(markdown, schema),
+      restoreTableWidths(parseMarkdown(markdown, schema), tableWidthStorageKey(workspaceKey, documentKey)),
       presentation
     )
 
     const state = EditorState.create({
       doc,
       plugins: [
+        documentOutlinePlugin(),
         collapsibleHeadingsPlugin(collapsedHeadingsStorageKey(workspaceKey, documentKey)),
         inlineCodeInputSessionPlugin(schema),
         buildInputRules(schema),
@@ -216,8 +220,10 @@ function ProseMirrorEditor(
         slashCommandsPlugin(schema),
         selectionToolbarPlugin(schema, editorToolbar, allowedUploadFileTypes),
         linkPlugin(schema),
+        internalLinkPreviewPlugin(),
         atMentionPlugin(schema, getFiles),
         columnResizing(),
+        tableWidthMemoryPlugin(tableWidthStorageKey(workspaceKey, documentKey)),
         tableEditing(),
         codeHighlightPlugin(),
       ]
@@ -420,7 +426,7 @@ function ProseMirrorEditor(
     if (markdown !== contentRef.current) {
       contentRef.current = markdown
       const doc = applyImagePresentationToDocument(
-        parseMarkdown(markdown, schema),
+        restoreTableWidths(parseMarkdown(markdown, schema), tableWidthStorageKey(workspaceKey, documentKey)),
         presentation
       )
       const newState = EditorState.create({

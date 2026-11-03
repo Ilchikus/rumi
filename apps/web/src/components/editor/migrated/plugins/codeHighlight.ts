@@ -2,7 +2,7 @@
 import { Plugin, PluginKey } from "prosemirror-state"
 import { Decoration, DecorationSet } from "prosemirror-view"
 import { Node as PmNode } from "prosemirror-model"
-import hljs from "highlight.js/lib/core"
+import { hljs } from "./codeLanguages"
 
 const codeHighlightKey = new PluginKey("codeHighlight")
 
@@ -20,7 +20,7 @@ function getDecorations(doc: PmNode): DecorationSet {
   const decorations: Decoration[] = []
 
   doc.descendants((node, pos) => {
-    if (node.type.name !== "code_block") return false
+    if (node.type.name !== "code_block") return
     const lang = node.attrs.language
     if (!lang || !hljs.getLanguage(lang)) return false
 
@@ -34,6 +34,7 @@ function getDecorations(doc: PmNode): DecorationSet {
       try {
         const result = hljs.highlight(text, { language: lang })
         tokens = parseHljsResult(result.value)
+        if (tokenCache.size >= 200) tokenCache.delete(tokenCache.keys().next().value!)
         tokenCache.set(cacheKey, tokens)
       } catch {
         return false
@@ -42,7 +43,7 @@ function getDecorations(doc: PmNode): DecorationSet {
 
     let offset = pos + 1 // +1 to get inside the node
     for (const token of tokens) {
-      if (token.cls) {
+      if (token.cls && token.text.length) {
         decorations.push(
           Decoration.inline(offset, offset + token.text.length, {
             class: token.cls
@@ -58,52 +59,23 @@ function getDecorations(doc: PmNode): DecorationSet {
   return DecorationSet.create(doc, decorations)
 }
 
-function parseHljsResult(html: string): HljsToken[] {
+export function parseHljsResult(html: string): HljsToken[] {
+  // Parse the actual tree: highlight.js nests scopes (HTML tags, PHP, templates).
+  // TextContent decodes every entity once and preserves UTF-16 editor offsets.
+  const template = document.createElement("template")
+  template.innerHTML = html
   const tokens: HljsToken[] = []
-  let i = 0
-
-  while (i < html.length) {
-    if (html[i] === "<") {
-      const closeIdx = html.indexOf(">", i)
-      if (closeIdx === -1) break
-
-      const tag = html.slice(i, closeIdx + 1)
-
-      if (tag.startsWith("</")) {
-        // Closing tag - skip
-        i = closeIdx + 1
-        continue
-      }
-
-      // Extract class from opening tag
-      const classMatch = tag.match(/class="([^"]*)"/)
-      const cls = classMatch ? classMatch[1] : null
-
-      i = closeIdx + 1
-
-      // Find the text content until the closing tag
-      const endTag = html.indexOf("</span>", i)
-      if (endTag === -1) break
-
-      const content = html.slice(i, endTag)
-      // Content might contain nested spans, so we recursively parse
-      const nested = parseHljsResult(content)
-      for (const t of nested) {
-        tokens.push({ text: t.text, cls: t.cls || cls })
-      }
-      i = endTag + 7 // "</span>".length
+  const visit = (node: Node, classes: string[]) => {
+    if (node.nodeType === 3) {
+      const text = node.textContent ?? ""
+      if (text) tokens.push({ text, cls: classes.join(" ") || null })
     } else {
-      // Plain text - collect until next tag or end
-      let end = html.indexOf("<", i)
-      if (end === -1) end = html.length
-      const text = html.slice(i, end).replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
-      if (text) {
-        tokens.push({ text, cls: null })
-      }
-      i = end
+      const nested = node instanceof Element && node.className
+        ? node.className.split(/\s+/) : classes
+      node.childNodes.forEach((child) => visit(child, nested))
     }
   }
-
+  visit(template.content, [])
   return tokens
 }
 

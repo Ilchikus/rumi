@@ -1030,3 +1030,20 @@ function dispatchPrimaryClick(target: HTMLElement): void {
     button: 0
   }))
 }
+
+ it.each(["example.com", "www.example.com", "sub.example.com/docs"])("prefills a selected domain as a fully selected, applicable link URL: %s", async (domain) => {
+   const host = document.createElement("div")
+   document.body.append(host)
+   const doc = schema.nodes.doc!.create(null, schema.nodes.paragraph!.create(null, schema.text(domain)))
+   const view = new EditorView(host, { state: EditorState.create({ doc, selection: TextSelection.create(doc, 1, domain.length + 1), plugins: [selectionToolbarPlugin(schema, "top")] }) })
+   openSelectionToolbarLinkEditor(view.state, view.dispatch)
+   const input = document.querySelector<HTMLInputElement>(".link-url-input")!
+   await vi.waitFor(() => expect(document.activeElement).toBe(input))
+   expect(input.value).toBe(domain)
+   expect(input.selectionStart).toBe(0)
+   expect(input.selectionEnd).toBe(domain.length)
+   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+   expect(schema.marks.link!.isInSet(view.state.doc.firstChild!.firstChild!.marks)?.attrs.href).toBe(`https://${domain}`)
+   view.destroy()
+   host.remove()
+ })

@@ -13,7 +13,7 @@ export function collapsedHeadingsStorageKey(workspaceKey: string, documentKey: s
 function headingIdentities(doc: ProseMirrorNode): Map<number, string> {
   const occurrences = new Map<string, number>()
   const identities = new Map<number, string>()
-  doc.forEach((node, offset) => {
+  doc.descendants((node, offset) => {
     if (node.type.name !== "heading") return
     const heading = `${node.attrs.level}:${node.textContent}`
     const occurrence = occurrences.get(heading) ?? 0

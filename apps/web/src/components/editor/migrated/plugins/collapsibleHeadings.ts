@@ -53,14 +53,14 @@ export function expandHeading(view: EditorView, headingPos: number) {
 
 // Find the end of a heading's section: the position before the next heading of equal or higher level
 export function findSectionEnd(doc: PmNode, headingPos: number, headingLevel: number): number {
-  let sectionEnd = doc.content.size
+  let sectionEnd = doc.resolve(headingPos).end()
   let pos = headingPos
   const headingNode = doc.nodeAt(headingPos)
   if (!headingNode) return sectionEnd
 
   pos = headingPos + headingNode.nodeSize
 
-  while (pos < doc.content.size) {
+  while (pos < sectionEnd) {
     const node = doc.nodeAt(pos)
     if (!node) break
     if (node.type.name === "horizontal_rule") {

@@ -58,6 +58,7 @@ describe("canonical block-type presentation", () => {
       ["Quote", BLOCK_TYPE_ICONS.quote],
       ["Code Block", BLOCK_TYPE_ICONS.codeBlock],
       ["Mermaid", BLOCK_TYPE_ICONS.mermaid],
+      ["Columns", BLOCK_TYPE_ICONS.columns],
       ["Table", BLOCK_TYPE_ICONS.table],
       ["Divider", BLOCK_TYPE_ICONS.divider]
     ])

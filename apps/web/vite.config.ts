@@ -45,6 +45,7 @@ export default defineConfig({
       strict: true,
       allow: [
         webRoot,
+        new URL("../../packages/markdown/src", import.meta.url).pathname,
         new URL("../../packages/api-client/src", import.meta.url).pathname,
         new URL("../../packages/contracts/src", import.meta.url).pathname,
         new URL("../../packages/workspace-format/src", import.meta.url).pathname,
@@ -63,6 +64,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@rumi/markdown": new URL("../../packages/markdown/src/index.ts", import.meta.url).pathname,
       "@rumi/api-client": new URL("../../packages/api-client/src/index.ts", import.meta.url).pathname,
       "@rumi/contracts": new URL("../../packages/contracts/src/index.ts", import.meta.url).pathname,
       "@rumi/workspace-format": new URL("../../packages/workspace-format/src/index.ts", import.meta.url).pathname

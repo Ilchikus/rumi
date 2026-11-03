@@ -4,6 +4,26 @@ This is a short, product-focused record of changes shipped in the public `@rumi-
 package. It describes what changed for people using Rumi rather than implementation details. New
 entries go first; releases without meaningful product-behavior changes may be omitted.
 
+## 0.1.20 — 2026-11-03
+
+- Added a live On this page outline and shareable heading links, including links into another page
+and collapsed sections, without inserting generated content into Markdown.
+- Internal links now preview the target page's title, properties and content on hover.
+- Added two editable columns through the slash and Change type menus, with explicit readable
+`columns` source that supports rich Markdown in each column.
+- Dragging blocks near the viewport edges now scrolls the page, faster closer to the edge.
+- Added Command/Ctrl+; for the local date and Command/Ctrl+Shift+; for date and time. Creating a
+link from selected destination text prefills and selects its URL for immediate apply or replacement.
+- Markdown tables keep resized column widths, including after reopening the page in that browser.
+- Fixed nested syntax highlighting, including HTML, across all supported code languages. Enter on
+a code block's final empty line now exits; Shift+Enter keeps a literal newline.
+- Mermaid diagrams now render with Pele and follow the theme without regenerating the diagram.
+Triple-click source selection and an explicit Copy source action make reusing diagram code reliable.
+- Adjacent images and images alongside prose survive save and reload. Relative asset paths resolve
+from the page folder, and linked images keep their destinations.
+- Harmless underscores and tildes stay readable in Markdown instead of acquiring unnecessary
+backslashes, while literal formatting syntax stays protected. Heading carets remain visible and blink.
+
 ## 0.1.19 — 2026-11-03
 
 - Fixed images whose file name contains a space, such as `image (23).png`, turning into `.png)`

@@ -41,6 +41,8 @@ replace the title.
 | Strikethrough | `Command+Shift+S` | `Ctrl+Shift+S` |
 | Inline code | `Command+E` | `Ctrl+E` |
 | Highlight | `Command+Shift+H` | `Ctrl+Shift+H` |
+| Insert local date (`YYYY-MM-DD`) | `Command+;` | `Ctrl+;` |
+| Insert local date and time (`YYYY-MM-DD HH:mm`) | `Command+Shift+;` | `Ctrl+Shift+;` |
 | Insert a line break without a new block | `Shift+Enter` | `Shift+Enter` |
 
 ## Blocks
@@ -60,3 +62,6 @@ replace the title.
 | Indent a list item or move to the next table cell | `Tab` | `Tab` |
 | Outdent a list item or move to the previous table cell | `Shift+Tab` | `Shift+Tab` |
 | Exit a code block | `Command+Enter` | `Ctrl+Enter` |
+
+Inside code and Mermaid source, Enter creates a newline. Enter on the final empty line exits to a
+paragraph; Shift+Enter always inserts a literal newline. Command/Ctrl+Enter exits immediately.

@@ -280,7 +280,8 @@ export function App(): ReactElement {
       startupSnapshot.selection.kind === "workspace"
         && startupSnapshot.selection.nodePath === ""
         && startupSnapshot.tree.path === ""
-        && startupSnapshot.tree.companionPath === startupSnapshot.selection.openPath
+        && startupSnapshot.tree.companionPath === startupSnapshot.selection.openPath,
+      window.location.hash
     )
   );
   const setMessage = useCallback((message: string) => {
@@ -1711,23 +1712,36 @@ export function App(): ReactElement {
     startupSnapshotRef.current = null;
   }, [mediaOpen, openNode, settingsOpen, trashOpen, tree, workspaceRootPath]);
 
+  const pendingHeadingFragmentRef = useRef<{ nodePath: string; fragment: string } | null>(null);
   const openDocumentLink = useCallback((
     path: string,
     target: "current" | "new" = "current"
   ) => {
-    const linkedNode = resolveWorkspaceDocumentLink(tree, path, pageRef.current?.path);
+    const hashIndex = path.indexOf("#");
+    const fragment = hashIndex === -1 ? "" : path.slice(hashIndex);
+    const linkedNode = resolveWorkspaceDocumentLink(
+      tree,
+      path.startsWith("#") ? `/${pageRef.current?.path ?? ""}` : path,
+      pageRef.current?.path
+    );
     if (!linkedNode) {
       return;
     }
     if (target === "new") {
       const opened = window.open(
-        workspaceUrlForNode(linkedNode, tree),
+        workspaceUrlForNode(linkedNode, tree) + fragment,
         "_blank",
         "noopener,noreferrer"
       );
       opened?.focus();
       return;
     }
+    if ((linkedNode.companionPath ?? linkedNode.path) === pageRef.current?.path && fragment) {
+      window.history.pushState(window.history.state, "", fragment);
+      window.dispatchEvent(new Event("rumi:heading-navigation"));
+      return;
+    }
+    pendingHeadingFragmentRef.current = { nodePath: linkedNode.path, fragment };
     void openNode(linkedNode);
   }, [openNode, tree]);
 
@@ -1838,7 +1852,7 @@ export function App(): ReactElement {
         && snapshotMatchesWorkspace(startupSnapshot, workspaceRootPath)
         ? startupSnapshot.selection
         : null;
-      const savedPage = startupPageMode === "last-visited"
+      const savedPage = startupPageMode === "last-visited" && !window.location.hash
         ? readLastOpenedPage(window.localStorage, workspaceRootPath) ?? cachedSelection
         : null;
       const savedNode = savedPage ? findWorkspaceNode(tree, savedPage.nodePath) : null;
@@ -1962,7 +1976,7 @@ export function App(): ReactElement {
 
   useEffect(() => {
     if (!routeSyncReady) return;
-    const nextUrl = settingsOpen
+    const baseUrl = settingsOpen
       ? "/settings"
       : mediaOpen
         ? "/uploads"
@@ -1976,7 +1990,14 @@ export function App(): ReactElement {
               ? workspaceUrlForNode({ path: selection.nodePath, kind: selection.kind }, tree)
               : "/";
 
-    if (`${window.location.pathname}${window.location.search}` === nextUrl) {
+    const pendingFragment = pendingHeadingFragmentRef.current;
+    const fragment = pendingFragment && pendingFragment.nodePath === selection?.nodePath
+      ? pendingFragment.fragment
+      : null;
+    pendingHeadingFragmentRef.current = null;
+    const sameRoute = `${window.location.pathname}${window.location.search}` === baseUrl;
+    const nextUrl = baseUrl + (fragment ?? (sameRoute ? window.location.hash : ""));
+    if (sameRoute && (fragment === null || window.location.hash === fragment)) {
       pendingHistoryActionRef.current = "replace";
       return;
     }
@@ -2007,6 +2028,7 @@ export function App(): ReactElement {
       "",
       nextUrl
     );
+    if (fragment) window.dispatchEvent(new Event("rumi:heading-navigation"));
     pendingScrollRestoreRef.current = replacementScrollTop;
     setScrollRestoreRevision((revision) => revision + 1);
     pendingHistoryActionRef.current = "replace";
@@ -2022,6 +2044,11 @@ export function App(): ReactElement {
   ]);
 
   useEffect(() => {
+    if (window.location.hash) {
+      pendingScrollRestoreRef.current = null;
+      window.dispatchEvent(new Event("rumi:heading-navigation"));
+      return;
+    }
     const scrollTop = pendingScrollRestoreRef.current;
     if (scrollTop === null) return;
     if (selection?.openPath && page?.path !== selection.openPath) return;

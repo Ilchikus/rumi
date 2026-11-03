@@ -4,7 +4,7 @@ This is a short, product-focused record of changes shipped in the public `@rumi-
 package. It describes what changed for people using Rumi rather than implementation details. New
 entries go first; releases without meaningful product-behavior changes may be omitted.
 
-## 0.1.19 — Unreleased
+## 0.1.19 — 2026-11-03
 
 - Fixed images whose file name contains a space, such as `image (23).png`, turning into `.png)`
 after a reload and losing the image on the next save. Pages already saved that way show their

@@ -102,9 +102,11 @@ export function writeStartupPageMode(
 export function canHydrateStartupPage(
   pathname: string,
   mode: StartupPageMode,
-  cachedPageIsHome: boolean
+  cachedPageIsHome: boolean,
+  fragment = ""
 ): boolean {
   if (pathname !== "/") return false;
+  if (fragment) return cachedPageIsHome;
   return mode === "last-visited" || cachedPageIsHome;
 }
 

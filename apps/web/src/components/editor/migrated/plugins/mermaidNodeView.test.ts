@@ -5,13 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { schema } from "../schema"
 
 const mermaidMocks = vi.hoisted(() => ({
-  initialize: vi.fn(),
   render: vi.fn()
 }))
 
-vi.mock("mermaid", () => ({
-  default: mermaidMocks
-}))
+vi.mock("pele", () => mermaidMocks)
 
 import { mermaidNodeView } from "./mermaidNodeView"
 import { mermaidModePlugin } from "./mermaidMode"
@@ -25,53 +22,29 @@ interface PendingRender {
 describe("Mermaid node view", () => {
   beforeEach(() => {
     document.documentElement.classList.remove("dark")
-    mermaidMocks.initialize.mockReset()
     mermaidMocks.render.mockReset()
     mermaidMocks.render.mockResolvedValue({ svg: "<svg></svg>" })
   })
 
-  it("suppresses Mermaid's document-level syntax error rendering", async () => {
-    const node = schema.nodes.mermaid!.create(
-      { mode: "view" },
-      schema.text("not valid Mermaid")
-    )
-    const state = EditorState.create({
-      doc: schema.nodes.doc!.create(null, node)
-    })
-    const view = { state, dispatch: vi.fn() } as unknown as EditorView
-    const nodeView = mermaidNodeView(node, view, () => 0)
-
-    await vi.waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({ suppressErrorRendering: true })
-    ))
-
+  it("renders through Pele with document-local errors and inactive diagram links", async () => {
+    mermaidMocks.render.mockRejectedValue(new Error("Invalid Mermaid source"))
+    const node = schema.nodes.mermaid!.create(null, schema.text("not valid Mermaid"))
+    const state = EditorState.create({ doc: schema.nodes.doc!.create(null, node) })
+    const nodeView = mermaidNodeView(node, { state, dispatch: vi.fn() } as unknown as EditorView, () => 0)
+    await vi.waitFor(() => expect(nodeView.dom.textContent).toContain("Invalid Mermaid source"))
+    expect(mermaidMocks.render).toHaveBeenCalledWith("not valid Mermaid", expect.objectContaining({ links: false, images: false }))
+    expect(document.body.textContent).not.toContain("Invalid Mermaid source")
     nodeView.destroy?.()
   })
 
-  it("re-renders open diagrams with Mermaid's matching application theme", async () => {
-    const node = schema.nodes.mermaid!.create(
-      { mode: "view" },
-      schema.text("graph TD; A-->B")
-    )
-    const state = EditorState.create({
-      doc: schema.nodes.doc!.create(null, node)
-    })
-    const view = { state, dispatch: vi.fn() } as unknown as EditorView
-    const nodeView = mermaidNodeView(node, view, () => 0)
-
-    await vi.waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(1))
-    expect(mermaidMocks.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ theme: "default" })
-    )
-
+  it("does not regenerate SVG when the application's theme changes", async () => {
+    const node = schema.nodes.mermaid!.create(null, schema.text("graph TD; A-->B"))
+    const state = EditorState.create({ doc: schema.nodes.doc!.create(null, node) })
+    const nodeView = mermaidNodeView(node, { state, dispatch: vi.fn() } as unknown as EditorView, () => 0)
+    await vi.waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledOnce())
     document.documentElement.classList.add("dark")
     window.dispatchEvent(new Event("rumi-theme-change"))
-
-    await vi.waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(2))
-    expect(mermaidMocks.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ theme: "dark" })
-    )
-
+    expect(mermaidMocks.render).toHaveBeenCalledOnce()
     nodeView.destroy?.()
   })
 
@@ -198,7 +171,7 @@ describe("Mermaid node view", () => {
 
   it("ignores an obsolete render failure after newer code succeeds", async () => {
     const pending: PendingRender[] = []
-    mermaidMocks.render.mockImplementation((_id: string, code: string) => (
+    mermaidMocks.render.mockImplementation((code: string) => (
       new Promise<{ svg: string }>((resolve, reject) => {
         pending.push({ code, resolve, reject })
       })
@@ -225,12 +198,7 @@ describe("Mermaid node view", () => {
       "graph TD; A-->B",
       "graph TD; A-->C"
     ])
-    expect(mermaidMocks.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({
-        securityLevel: "strict",
-        suppressErrorRendering: true
-      })
-    )
+
 
     pending[1]!.resolve({ svg: "<svg data-current=\"true\"></svg>" })
     await Promise.resolve()
@@ -245,4 +213,18 @@ describe("Mermaid node view", () => {
 
     nodeView.destroy?.()
   })
+})
+
+it("copies the current Mermaid source exactly without toolbar or diagram text", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.assign(navigator, { clipboard: { writeText } })
+  const node = schema.nodes.mermaid!.create(null, schema.text("flowchart TD\nA --> B"))
+  const state = EditorState.create({ doc: schema.nodes.doc!.create(null, node) })
+  const view = mermaidNodeView(node, { state, dispatch: vi.fn() } as unknown as EditorView, () => 0)
+  const next = schema.nodes.mermaid!.create(null, schema.text("flowchart LR\nB --> C"))
+  view.update?.(next, [], DecorationSet.empty)
+  ;(view.dom as HTMLElement).querySelector<HTMLButtonElement>('[aria-label="Copy Mermaid source"]')!.click()
+  await Promise.resolve()
+  expect(writeText).toHaveBeenCalledWith("flowchart LR\nB --> C")
+  view.destroy?.()
 })

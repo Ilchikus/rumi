@@ -238,6 +238,26 @@ export function createCommands(schema: Schema): SlashCommand[] {
     })
   }
 
+  if (schema.nodes.columns) {
+    commands.push({
+      name: "Columns",
+      aliases: ["columns", "two columns", "2 columns", "side by side"],
+      description: "Two columns of content",
+      icon: BLOCK_TYPE_ICONS.columns,
+      execute: (view) => {
+        const { state, dispatch } = view
+        const { $from } = state.selection
+        const start = $from.before()
+        const column = () => schema.nodes.column.create(null, schema.nodes.paragraph.create())
+        const node = schema.nodes.columns.create(null, [column(), column()])
+        const tr = state.tr.replaceWith(start, $from.after(), node)
+        tr.setSelection(TextSelection.create(tr.doc, start + 3))
+        dispatch(tr.scrollIntoView())
+        view.focus()
+      }
+    })
+  }
+
   if (schema.nodes.code_block) {
     commands.push({
       name: "Code Block",

@@ -15,6 +15,18 @@ function completeSlice(markdown: string): Slice {
   return new Slice(parseMarkdown(markdown, schema).content, 0, 0)
 }
 
+it("copies both columns portably and retains exact structure for Rumi paste", () => {
+  const slice = completeSlice("```columns\n**Left column**\n\n|||\n\nRight column\n```")
+  const html = serializeClipboardHtml(slice)
+  expect(html).toContain('class="rumi-columns"')
+  expect(html).toContain("<strong>Left column</strong>")
+  expect(html).toContain("Right column")
+  expect(serializeClipboardText(slice)).toBe("Left column\n\nRight column")
+  const pasted = parseRumiClipboardSlice(serializeRumiClipboardSlice(slice), schema)!
+  expect(pasted.content.eq(slice.content)).toBe(true)
+  expect(pasted.content.firstChild?.type.name).toBe("columns")
+})
+
 describe("portable editor clipboard serialization", () => {
   it("exports common formatting as semantic HTML", () => {
     const slice = completeSlice([

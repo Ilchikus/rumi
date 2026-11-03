@@ -201,6 +201,9 @@ function serializeBlockHtml(node: ProseMirrorNode): string {
       return serializeTableHtml(node)
     case "horizontal_rule":
       return "<hr>"
+    case "columns":
+    case "column":
+      return `<div class="rumi-${node.type.name}">${fragmentChildren(node.content).map(serializeBlockHtml).join("")}</div>`
     case "mermaid":
       return serializeCodeHtml(node.textContent, "mermaid")
     case "database_embed": {
@@ -219,7 +222,8 @@ function serializeBlockHtml(node: ProseMirrorNode): string {
     case "image": {
       const image = `<img${htmlAttribute("src", node.attrs.src)}${htmlAttribute("alt", node.attrs.alt)}${htmlAttribute("title", node.attrs.title)}>`
       const caption = node.attrs.caption ? `<figcaption>${escapeHtml(String(node.attrs.caption))}</figcaption>` : ""
-      return `<figure>${image}${caption}</figure>`
+      const linked = node.attrs.href ? `<a${htmlAttribute("href", node.attrs.href)}>${image}</a>` : image
+      return `<figure>${linked}${caption}</figure>`
     }
     default:
       return node.isTextblock
@@ -320,6 +324,9 @@ function serializeBlockText(node: ProseMirrorNode): string {
     }
     case "horizontal_rule":
       return "---"
+    case "columns":
+    case "column":
+      return serializeClipboardText(new Slice(node.content, 0, 0))
     case "mermaid":
       return node.textContent
     case "database_embed":

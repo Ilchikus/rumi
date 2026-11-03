@@ -126,3 +126,20 @@ related: "[[Notes/Old]]"
     expect(result.markdown).toContain("```md\n[Old](Old.md)\n```");
   });
 });
+
+it("repairs live column links and images while preserving nested code examples", () => {
+  const source = ["````columns", "[Left](Old.md#heading)", "", "```text", "[Example](Old.md)", "```", "", "|||", "", "[Right](Old.md)", "![](.assets/old.png)", "````", ""].join("\n");
+  const renamed = rewriteMarkdownReferences(source, "Old.md", "New.md");
+  expect(renamed.referenceCount).toBe(2);
+  expect(renamed.markdown).toContain("[Left](New.md#heading)");
+  expect(renamed.markdown).toContain("[Right](New.md)");
+  expect(renamed.markdown).toContain("[Example](Old.md)");
+  const asset = rewriteMarkdownReferences(renamed.markdown, ".assets/old.png", ".assets/new.png");
+  expect(asset.referenceCount).toBe(1);
+  expect(asset.markdown).toContain("![](.assets/new.png)");
+});
+it("keeps malformed columns and ordinary code source outside reference repair", () => {
+  for (const source of ["```columns\n[Example](Old.md)\n```", "````text\n```columns\n[Example](Old.md)\n|||\nright\n```\n````"]) {
+    expect(rewriteMarkdownReferences(source, "Old.md", "New.md")).toEqual({ markdown: source, referenceCount: 0 });
+  }
+});

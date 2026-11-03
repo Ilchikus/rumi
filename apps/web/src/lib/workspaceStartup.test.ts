@@ -157,3 +157,8 @@ function memoryStorage(): BrowserStorage {
     removeItem: (key) => values.delete(key)
   };
 }
+
+it("keeps a home heading deep link authoritative over the last-visited page", () => {
+  expect(canHydrateStartupPage("/", "last-visited", false, "#heading")).toBe(false);
+  expect(canHydrateStartupPage("/", "last-visited", true, "#heading")).toBe(true);
+});

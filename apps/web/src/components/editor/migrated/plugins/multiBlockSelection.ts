@@ -74,7 +74,7 @@ export function textRowSelectionAtPosition(
 
   const textblock = $pos.node(textblockDepth)
   const separators = textRowSeparators(textblock)
-  if (separators.length === 0) return null
+  if (separators.length === 0 && !textblock.type.spec.code) return null
 
   const contentStart = $pos.start(textblockDepth)
   const clickOffset = Math.max(0, Math.min(textblock.content.size, pos - contentStart))

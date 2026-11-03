@@ -2,20 +2,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mermaidMocks = vi.hoisted(() => ({
-  initialize: vi.fn(),
   render: vi.fn()
 }));
 
-vi.mock("mermaid", () => ({
-  default: mermaidMocks
-}));
+vi.mock("pele", () => mermaidMocks);
 
 import { codeBlockNodeView, findHeadingSectionEnd } from "./editorNodeViews";
 import { lightEditorSchema, parseLightMarkdown } from "./lightProseMirrorMarkdown";
 
 beforeEach(() => {
   mermaidMocks.render.mockReset();
-  mermaidMocks.render.mockRejectedValue(new Error("invalid diagram"));
+  mermaidMocks.render.mockImplementation(() => { throw new Error("invalid diagram"); });
 });
 
 describe("collapsible heading sections", () => {
@@ -47,9 +44,6 @@ describe("Mermaid code block preview", () => {
     );
     const nodeView = codeBlockNodeView(node, {} as never, () => undefined);
 
-    await vi.waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({ suppressErrorRendering: true })
-    ));
     await vi.waitFor(() => expect(nodeView.dom.textContent).toContain("Diagram error"));
 
     expect(document.body.textContent).not.toContain("Syntax error in text");

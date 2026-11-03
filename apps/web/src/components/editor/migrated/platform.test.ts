@@ -84,3 +84,15 @@ describe("workspace asset URLs", () => {
     expect(workspaceAssetUrl("https://example.com/a%20b.png")).toBe("https://example.com/a%20b.png");
   });
 });
+
+ it("resolves relative images from the page while keeping Rumi uploads workspace-rooted", () => {
+   setMigratedEditorPlatform({ databaseRefreshRevisions: {}, workspaceKey: "/workspace", documentKey: "Notes/Cars.md", documents: [] })
+   const path = (src: string) => new URL(workspaceAssetUrl(src), "http://rumi.test").searchParams.get("path")
+   expect(path("./photos/car%20(1).png")).toBe("Notes/photos/car (1).png")
+   expect(path("../photos/car.png")).toBe("photos/car.png")
+   expect(path(".assets/car.png")).toBe(".assets/car.png")
+   expect(path("/.assets/car.png")).toBe(".assets/car.png")
+   expect(path(".assets/car%23one.png")).toBe(".assets/car#one.png")
+   expect(path(".assets/car.svg#front")).toBe(".assets/car.svg")
+   expect(new URL(workspaceAssetUrl(".assets/car.svg#front"), "http://rumi.test").hash).toBe("#front")
+ })

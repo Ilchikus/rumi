@@ -141,6 +141,12 @@ function createBlockNodeForType(
         [headerRow, dataRow, dataRow.copy(dataRow.content)]
       )]
     }
+    case "columns":
+      if (!schema.nodes.column || !schema.nodes.paragraph) return null
+      return [targetType.create(null, [
+        schema.nodes.column.create(null, schema.nodes.paragraph.create(null, inlineContent)),
+        schema.nodes.column.create(null, schema.nodes.paragraph.create())
+      ])]
     case "mermaid":
       return [targetType.create(
         { mode: "view" },

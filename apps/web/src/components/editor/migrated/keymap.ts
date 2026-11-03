@@ -37,6 +37,36 @@ import { unlinkSelectedLinkMarker } from "./plugins/linkPlugin"
 
 const mac = typeof navigator !== "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false
 
+export function formatLocalDate(now: Date, includeTime = false): string {
+  const pad = (value: number) => String(value).padStart(2, "0")
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return includeTime ? `${date} ${pad(now.getHours())}:${pad(now.getMinutes())}` : date
+}
+
+export function insertCurrentDate(includeTime = false): Command {
+  return (state, dispatch) => {
+    if (dispatch) dispatch(closeHistory(state.tr).insertText(formatLocalDate(new Date(), includeTime)).scrollIntoView())
+    return true
+  }
+}
+
+export function exitCodeOnEmptyLine(state: EditorState, dispatch?: (tr: any) => void): boolean {
+  const { $from, empty } = state.selection
+  if (!empty || !$from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size) return false
+  if ($from.parent.content.size && !$from.parent.textContent.endsWith("\n")) return false
+  if (dispatch) {
+    const tr = closeHistory(state.tr)
+    if ($from.parent.content.size) tr.delete($from.pos - 1, $from.pos)
+    exitCode(state.apply(tr), (next) => {
+      // Keep removal of the trailing empty line and paragraph insertion atomic.
+      for (const step of next.steps) tr.step(step)
+      tr.setSelection(TextSelection.create(tr.doc, next.selection.from, next.selection.to))
+    })
+    dispatch(tr.scrollIntoView())
+  }
+  return true
+}
+
 // When cursor is on a horizontal_rule (NodeSelection), insert a paragraph after it (Enter)
 function exitHorizontalRuleEnter(schema: Schema): Command {
   return (state, dispatch) => {
@@ -546,9 +576,13 @@ function buildKeymap(schema: Schema) {
   const outdentFlatListItem = adjustFlatListItemIndent(schema, -1)
 
   // Enter key: ordered by priority
+  keys["Mod-;"] = insertCurrentDate()
+  keys["Shift-Mod-;"] = insertCurrentDate(true)
+  keys["Mod-:"] = insertCurrentDate(true)
   keys["Enter"] = chainCommands(
     exitHorizontalRuleEnter(schema),
     convertCodeFenceOnEnter(schema),
+    exitCodeOnEmptyLine,
     newlineInCode,
     splitFlatListItem(schema),
     liftEmptyBlock,

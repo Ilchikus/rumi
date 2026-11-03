@@ -37,6 +37,7 @@ import {
 } from "../platform"
 import {
   isExternalLinkHref,
+  isLinkDestination,
   normalizeLinkHref
 } from "../linkHref"
 import { linkRangeAtSelection } from "../linkSelection"
@@ -159,7 +160,7 @@ const REDO_SVG = phosphorSvg("M170.34,130.34,204.69,96H88a48,48,0,0,0,0,96h88a8,
 const TRASH_SVG = phosphorSvg("M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z")
 
 const EDITOR_TOOLBAR_BLOCK_TYPE_OPTIONS = BLOCK_TYPE_OPTIONS.filter(
-  ({ type }) => !["mermaid", "table", "horizontal_rule"].includes(type)
+  ({ type }) => !["mermaid", "table", "horizontal_rule", "columns"].includes(type)
 )
 
 export function setSelectionToolbarPreferences(
@@ -772,7 +773,10 @@ export function selectionToolbarPlugin(
           }
           linkEditorSessionOpen = true
           linkPopup.style.display = "block"
-          linkInput.value = caretLink?.href ?? ""
+          const selectedText = !blockSelection && !empty
+            ? editorView.state.doc.textBetween(from, to, " ").trim()
+            : ""
+          linkInput.value = caretLink?.href ?? (isLinkDestination(selectedText) ? selectedText : "")
           updateLinkSuggestions()
           linkTextInput.value = savedSelection.existingText ?? ""
           linkTextInput.style.display = savedSelection.existingText === null

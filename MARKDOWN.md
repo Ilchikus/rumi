@@ -137,6 +137,38 @@ view: table
 These blocks remain readable plain text outside Rumi, but their interactive rendering is
 Rumi-specific. Mermaid diagrams use ordinary fenced code blocks with the `mermaid` language.
 
+### Two columns
+
+A `columns` fence contains two Markdown sections separated by one standalone `|||` line:
+
+````markdown
+```columns
+## Left
+
+Text in the first column.
+
+|||
+
+## Right
+
+Text in the second column.
+```
+````
+
+Both columns can contain headings, lists, code, images and tables. Use a longer outer fence when
+nesting code fences; the editor chooses that length automatically. A divider inside a nested code
+fence is literal code. A malformed columns fence stays a code block. Ordinary inline pipes such as
+`x | y` and GFM tables retain their meaning. Other Markdown viewers display the columns as source.
+
+### Document outline and heading links
+
+The frontend generates **On this page** from the live headings without adding a TOC to source.
+Link to a heading with `[Section](#section)` or `[Section](Other.md#section)`. Anchors use lowercase
+Unicode text, remove punctuation, replace whitespace with hyphens, and add numeric suffixes for
+duplicates. Renaming a heading changes its anchor. Navigation reveals collapsed parent sections.
+Markdown table column widths are remembered in the browser per workspace and page, without changing
+the table source.
+
 ## Read-time compatibility
 
 Workspace link and image destinations containing spaces are accepted without angle brackets and are
@@ -146,3 +178,7 @@ saved in portable GFM form, for example `[Notes](<Project notes/index.md>)` and
 destinations such as `![](.assets/image%20(2).png)` name the same file.
 
 Custom inline syntax is not interpreted inside code.
+
+Adjacent images and images beside prose are retained as separate image blocks. An image wrapped in
+a Markdown link keeps that destination. Rumi uploads beginning with `.assets/` resolve from the
+workspace root; other relative image and file destinations resolve from the current page folder.

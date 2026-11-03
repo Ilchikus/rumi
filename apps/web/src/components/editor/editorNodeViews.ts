@@ -175,7 +175,7 @@ const CODE_LANGUAGES = [
   "mermaid"
 ];
 
-let mermaidModule: Promise<typeof import("mermaid")> | null = null;
+let mermaidModule: Promise<typeof import("pele")> | null = null;
 let mermaidRenderId = 0;
 
 export function codeBlockNodeView(
@@ -299,16 +299,9 @@ async function renderMermaid(
   source: string
 ): Promise<{ ok: true; svg: string } | { ok: false; message: string }> {
   try {
-    mermaidModule ??= import("mermaid");
-    const { default: mermaid } = await mermaidModule;
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "neutral",
-      suppressErrorRendering: true
-    });
-    const id = `rumi-mermaid-${++mermaidRenderId}`;
-    const { svg } = await mermaid.render(id, source);
+    mermaidModule ??= import("pele");
+    const pele = await mermaidModule;
+    const { svg } = pele.render(source, { idPrefix: `rumi-mermaid-${++mermaidRenderId}`, links: false, images: false });
     return { ok: true, svg };
   } catch (error) {
     return {

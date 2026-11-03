@@ -1,25 +1,35 @@
 ## Next release
 
-- [x] [images links failed](Tasks/M07-046-image-paths-with-spaces.md): filenames on load created as `image (23).png`, but at some point insted of images i see only `.png)` - prob some replacement roles took place.
-    - [x] regarding images, investigate the possibility to pass the original filename on image paste
-- [x] [when dragging parent list item, childs should move with it as a whole](Tasks/M07-047-drag-list-item-with-children.md)
-- [x] [preserve heading toggle state](Tasks/M07-048-remember-heading-collapse.md) - investigate if the editor can persist the last state of a heading 1..3 for the user, not conflicting with the file-first approach (no source file edits)
+- [x] drag near the bottom of viewport should scroll the page, the closer - the faster. i'd say last 10% - 0.5x of scroll speed, last 5% - 1x. what's the baseline of scroll speed decide yourself ([task](Tasks/M07-049-drag-edge-autoscroll.md))
+- [x] on cmd+; paste the date. on cmd+shift+; paste date and time. ignore browser grammar default actions for these ([task](Tasks/M07-050-date-time-shortcuts.md))
+- [x] when highlighting the text that looks like domain, pass highlighted text to the link input when make link action is triggered. make it selected and active in input, so on keydown or cmd+v it gets replaced completely, otherwise on enter it will apply the highlighted text as url. ([task](Tasks/M07-051-selected-domain-link-input.md))
+- [x] https://my.ilchik.com/cars - images broken again ([task](Tasks/M07-052-image-resolution.md))
+- [x] a lot of `\` spawned without typing/pasting on my end and source file edits, should be something with the app. [https://qs.ilchik.com/todo](https://qs.ilchik.com/todo) - here. like it's escaping `~`, `_` from what i saw, maybe other chars too. ([task](Tasks/M07-053-minimal-markdown-escaping.md))
+- [x] copy text from mermaid sometimes clumsy (triple click is not working properly, clipboard contents is scuffed) ([task](Tasks/M07-054-mermaid-source-copy.md))
+- [x] use pele for mermaid instead of mermaid.js itself ([task](Tasks/M07-055-pele-diagrams.md))
+- [x] table (block) column resize width is not saved in the ui, just animation to drag-n-drop, on drop width resets. ([task](Tasks/M07-056-table-width-memory.md))
+- [x] add columns support: similartly to tables, but only with `|` chars. prob `|` with double space to distinguish with comon `x | y` inline text. perhaps there's a better way, investigate. only 2 cols for now. ([task](Tasks/M07-057-two-column-blocks.md))
+- [x] code block:
+    - [x] highlight is not working properly (html tested), check highlight algo for all langs presented in current list of supported langs ([task](Tasks/M07-058-code-highlighting.md))
+    - [x] can't escape the codeblock on enter, investigate the common practices (notion, obsidian, slack) and implement best ([task](Tasks/M07-059-code-block-exit.md))
+- [x] text cursor is not blinking for headings ([task](Tasks/M07-060-heading-caret.md))
+- [x] add table of contents (in-source or front end only?) ([task](Tasks/M07-061-document-outline.md))
+- [x] on internal link hover, show page preview: title, props, content excerpt ([task](Tasks/M07-062-internal-link-previews.md))
+- [x] Support links to page headings via `#heading` anchors ([task](Tasks/M07-063-heading-anchor-links.md))
 
 ## Backlog
 
-- [ ] add table of contents (in-source or front end only?)
-- [ ] on internal link hover, show page preview: title, props, content excerpt
+- [ ] [Confirm the image and escaping fixes against the original private pages](Tasks/xxx-confirm-private-page-reports.md) after signing in. The reported APIs returned 401 during release QA.
 - [ ] Slash command on mobile
 - [ ] Mobile editor header
 - [ ] Mobile zoom-in on focus (editor, login)
 - [ ] Block dnd and context actions on mobile
-- [ ] Support links to page headings via `#heading` anchors
 - [ ] drag-n-drop block into db:
     - [ ] into page - append to it
     - [ ] between rows - create new item
 - [ ] `Cmd+F` already works as browser-native feature, let's keep that. But on `Cmd+Shift+F` i want to toggle the find-and-replace modal. good reference is how sublime text working in this regard. It should support regex and normal replacements, buttons to jump between occurences, replace next, replace all. this operation should be stored in the file's operations history to undo on Cmd+Z like any other change.
 - [ ] [Inline-code caret boundary](Tasks/xxx-inline-code-caret-boundary.md)
-- [ ] shortcut to delecte text cursor __block__ - currently `cmd+a` then `delete` (should i tho?)
+- [ ] shortcut to delete text cursor __block__ - currently `cmd+a` then `delete` (should i tho?)
 - [ ] sidebar database props visibility, sort, filter:
     - [ ] selector for property (-ies?) to display as labels next to text
     - [ ] sort/filter items in sidebar by prop
@@ -42,6 +52,10 @@
 
 ## Archive
 
+- [x] [images links failed](Tasks/M07-046-image-paths-with-spaces.md): filenames on load created as `image (23).png`, but at some point insted of images i see only `.png)` - prob some replacement roles took place.
+    - [x] regarding images, investigate the possibility to pass the original filename on image paste
+- [x] [when dragging parent list item, childs should move with it as a whole](Tasks/M07-047-drag-list-item-with-children.md)
+- [x] [preserve heading toggle state](Tasks/M07-048-remember-heading-collapse.md) - investigate if the editor can persist the last state of a heading 1..3 for the user, not conflicting with the file-first approach (no source file edits)
 - [x] [update app in settings](Tasks/M07-039-app-update-check-and-install.md) - when current ≠ latest npm, show indicator near `settings` in sidebar. add new item with version and update button if available
 - [x] [page/db/folder and workspace icon picker](Tasks/M07-040-workspace-item-icons.md): emojis, phosphor icons and custom uploaded icons
     - [x]  the icon picker opens with noticable delay
